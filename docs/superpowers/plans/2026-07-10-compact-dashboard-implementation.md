@@ -1,53 +1,61 @@
-# SpendScope 紧凑看板实施计划
+# SpendScope 四周期紧凑看板实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**目标：** 将详细看板改为 `920 × 620` 的无滚动单页布局，顶部使用 5 小时/7 天同心额度环和今日/7 日/累计三周期 Token 明细。
+**目标：** 在现有 `920 × 620` 无滚动看板基础上，将额度区加宽到 330 点，并把右侧三周期横排升级为今日、7 日、30 日、累计的 2×2 四宫格。
 
-**架构：** 在 `DashboardSnapshot` 中引入可复用的 `PeriodUsage`，为三个周期提供一致且可验证的统计口径。`DashboardView` 移除滚动容器和模型分布，将顶部两排替换为一张左右复合卡；下方继续保留趋势与 Token 构成。
+**架构：** `DashboardSnapshot.periods` 从三个周期扩展为四个周期，并保证输入、缓存、可见输出和推理之和等于总量。`DashboardView` 保留同心双环和下方图表，只替换复合卡的左右尺寸与右侧周期展示组件。
 
 **技术栈：** Xcode 26.6、Swift 6、SwiftUI、Swift Charts、XCTest、macOS 14+
 
 ## 全局约束
 
-- 详细看板默认和最小尺寸均为 `920 × 620`。
-- 详细看板不得使用 `ScrollView`，不得出现水平或垂直滚动条。
-- 菜单栏弹窗的尺寸和视觉保持不变。
-- 外环为紫色 5 小时额度，内环为蓝色 7 天额度。
-- 顶部右侧只展示今日、7 日、累计的总量、未缓存输入、缓存输入和输出。
-- 顶部不展示总额度进度条或模型分布。
-- 下方 Token 构成保留，并将输出拆分为可见输出和推理输出。
-- 命令行 DerivedData 使用 `/private/tmp/SpendScope-CompactDashboard`。
+- 详细看板默认和最小尺寸保持 `920 × 620`。
+- 详细看板不得使用 `ScrollView`。
+- 左侧额度区固定宽度为 330 点。
+- 外层 5 小时环直径为 138 点，内层 7 天环直径为 92 点。
+- 右侧周期顺序固定为：左上今日、右上 7 日、左下 30 日、右下累计。
+- 每个宫格展示周期名称、Token 总量、输入、缓存、输出、推理。
+- 输入表示未缓存输入；输出表示不含推理的可见输出。
+- 输入 + 缓存 + 输出 + 推理必须等于周期 Token 总量。
+- 下方 Token 趋势与 Token 构成保持不变。
+- DerivedData 使用 `/private/tmp/SpendScope-FourPeriodGrid`。
 
 ---
 
-### Task 1：建立三周期 Token 数据模型
+### Task 1：将周期模型扩展到 30 日
 
 **文件：**
 
-- 修改：`Sources/SpendScope/Models/DashboardSnapshot.swift`
 - 修改：`Tests/SpendScopeTests/TokenFormatterTests.swift`
+- 修改：`Sources/SpendScope/Models/DashboardSnapshot.swift`
 
 **接口：**
 
-- 产出：`PeriodUsage(id:title:total:uncachedInput:cachedInput:output:reasoning:)`
-- 产出：`PeriodUsage.visibleOutput -> Int`
-- 产出：`DashboardSnapshot.periods -> [PeriodUsage]`
-- 保持：`DashboardSnapshot.todayTokens` 与 `DashboardSnapshot.breakdown`，供菜单栏继续使用。
+- 保持：`DashboardSnapshot.periods -> [PeriodUsage]`
+- 新增：`DashboardSnapshot.thirtyDayTokens -> Int`
+- 调整：`DashboardSnapshot.totalTokens` 从 `periods[2]` 改为 `periods[3]`。
+- 保持：`PeriodUsage.visibleOutput = output - reasoning`。
 
-- [ ] **Step 1：编写失败的数据口径测试**
+- [ ] **Step 1：修改测试，要求四周期与四类明细可相加**
 
-在 `Tests/SpendScopeTests/TokenFormatterTests.swift` 追加：
+将 `DashboardSnapshotTests` 替换为：
 
 ```swift
 final class DashboardSnapshotTests: XCTestCase {
     func testPreviewPeriodsUseConsistentTotals() {
-        XCTAssertEqual(DashboardSnapshot.preview.periods.count, 3)
+        let periods = DashboardSnapshot.preview.periods
 
-        for period in DashboardSnapshot.preview.periods {
+        XCTAssertEqual(periods.map(\.title), ["今日", "7 日", "30 日", "累计"])
+        XCTAssertEqual(periods.count, 4)
+
+        for period in periods {
             XCTAssertEqual(
                 period.total,
-                period.uncachedInput + period.cachedInput + period.output
+                period.uncachedInput
+                    + period.cachedInput
+                    + period.visibleOutput
+                    + period.reasoning
             )
         }
     }
@@ -57,9 +65,11 @@ final class DashboardSnapshotTests: XCTestCase {
         let today = snapshot.periods[0]
 
         XCTAssertEqual(snapshot.todayTokens, today.total)
+        XCTAssertEqual(snapshot.thirtyDayTokens, snapshot.periods[2].total)
+        XCTAssertEqual(snapshot.totalTokens, snapshot.periods[3].total)
         XCTAssertEqual(snapshot.breakdown.input, today.uncachedInput)
         XCTAssertEqual(snapshot.breakdown.cachedInput, today.cachedInput)
-        XCTAssertEqual(snapshot.breakdown.output, today.output - today.reasoning)
+        XCTAssertEqual(snapshot.breakdown.output, today.visibleOutput)
         XCTAssertEqual(snapshot.breakdown.reasoning, today.reasoning)
         XCTAssertEqual(snapshot.breakdown.total, today.total)
     }
@@ -74,12 +84,12 @@ final class DashboardSnapshotTests: XCTestCase {
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project SpendScope.xcodeproj -scheme SpendScope \
   -configuration Debug -destination "platform=macOS,arch=arm64" \
-  -derivedDataPath /private/tmp/SpendScope-CompactDashboard test -quiet
+  -derivedDataPath /private/tmp/SpendScope-FourPeriodGrid test -quiet
 ```
 
-预期：测试目标编译失败，提示 `DashboardSnapshot` 没有 `periods`。
+预期：`periods.count` 和周期名称断言失败，或编译提示缺少 `thirtyDayTokens`。
 
-- [ ] **Step 3：替换领域模型实现**
+- [ ] **Step 3：替换四周期领域模型**
 
 将 `Sources/SpendScope/Models/DashboardSnapshot.swift` 替换为：
 
@@ -96,7 +106,8 @@ struct DashboardSnapshot: Sendable {
 
     var todayTokens: Int { periods[0].total }
     var sevenDayTokens: Int { periods[1].total }
-    var totalTokens: Int { periods[2].total }
+    var thirtyDayTokens: Int { periods[2].total }
+    var totalTokens: Int { periods[3].total }
 
     var breakdown: TokenBreakdown {
         let today = periods[0]
@@ -121,6 +132,11 @@ struct DashboardSnapshot: Sendable {
                 id: "sevenDays", title: "7 日", total: 84_200_000,
                 uncachedInput: 35_200_000, cachedInput: 45_500_000,
                 output: 3_500_000, reasoning: 900_000
+            ),
+            PeriodUsage(
+                id: "thirtyDays", title: "30 日", total: 198_600_000,
+                uncachedInput: 78_400_000, cachedInput: 112_100_000,
+                output: 8_100_000, reasoning: 1_900_000
             ),
             PeriodUsage(
                 id: "allTime", title: "累计", total: 326_800_000,
@@ -199,475 +215,176 @@ struct DailyUsage: Identifiable, Sendable {
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project SpendScope.xcodeproj -scheme SpendScope \
   -configuration Debug -destination "platform=macOS,arch=arm64" \
-  -derivedDataPath /private/tmp/SpendScope-CompactDashboard test -quiet
+  -derivedDataPath /private/tmp/SpendScope-FourPeriodGrid test -quiet
 ```
 
-预期：`TokenFormatterTests` 和 `DashboardSnapshotTests` 全部通过。
+预期：`TokenFormatterTests` 和 `DashboardSnapshotTests` 共 3 个测试通过。
 
-- [ ] **Step 5：提交数据模型增量**
+- [ ] **Step 5：提交四周期数据模型**
 
 ```bash
 git add Sources/SpendScope/Models/DashboardSnapshot.swift Tests/SpendScopeTests/TokenFormatterTests.swift
-git commit -m "feat: add period token usage model"
+git commit -m "feat: add thirty-day token usage"
 ```
 
-### Task 2：实现无滚动紧凑看板
+### Task 2：将右侧周期区域改为四宫格
 
 **文件：**
 
-- 修改：`Sources/SpendScope/App/SpendScopeApp.swift`
-- 修改：`Sources/SpendScope/Support/DesignSystem.swift`
 - 修改：`Sources/SpendScope/Features/Dashboard/DashboardView.swift`
 
 **接口：**
 
-- 消费：`DashboardSnapshot.periods`
-- 消费：`DashboardSnapshot.quotas`
-- 产出：`View.dashboardCard(padding:)`
-- 产出：`DashboardView` 的同心额度环、三周期指标和无滚动固定布局。
+- 消费：`DashboardSnapshot.periods`，顺序为今日、7 日、30 日、累计。
+- 消费：`PeriodUsage.visibleOutput` 与 `PeriodUsage.reasoning`。
+- 产出：左侧 330 点额度区与右侧 2×2 周期四宫格。
 
-- [ ] **Step 1：让卡片支持局部紧凑内边距**
+- [ ] **Step 1：调整额度区和同心环尺寸**
 
-将 `DashboardCard` 和扩展改为：
+在 `overviewCard` 中使用：
 
 ```swift
-struct DashboardCard: ViewModifier {
-    let padding: CGFloat
-
-    func body(content: Content) -> some View {
-        content
-            .padding(padding)
-            .background(SpendScopeTheme.cardBackground, in: RoundedRectangle(cornerRadius: 16))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.primary.opacity(0.08))
-            }
-    }
-}
-
-extension View {
-    func dashboardCard(padding: CGFloat = 18) -> some View {
-        modifier(DashboardCard(padding: padding))
-    }
-}
+currentQuotaSection.frame(width: 330)
 ```
 
-菜单栏继续调用 `.dashboardCard()`，因此保持原 18 点内边距；详细看板调用 `.dashboardCard(padding: 12)`。
-
-- [ ] **Step 2：调整详细窗口默认尺寸**
-
-在 `Sources/SpendScope/App/SpendScopeApp.swift` 中将：
+在 `currentQuotaSection` 中使用：
 
 ```swift
-.defaultSize(width: 1080, height: 760)
+quotaRing(
+    snapshot.quotas[0],
+    diameter: 138,
+    lineWidth: 10,
+    color: SpendScopeTheme.accent
+)
+quotaRing(
+    snapshot.quotas[1],
+    diameter: 92,
+    lineWidth: 8,
+    color: SpendScopeTheme.accentBlue
+)
 ```
 
-改为：
+双环容器使用 `.frame(width: 142, height: 142)`。
+
+- [ ] **Step 2：用 2×2 LazyVGrid 替换横向周期列**
+
+删除旧的 `periodColumn` 和 `periodMetric`，加入：
 
 ```swift
-.defaultSize(width: 920, height: 620)
-```
-
-- [ ] **Step 3：替换详细看板根布局与顶部区域**
-
-`DashboardView.body` 使用以下结构，不得包含 `ScrollView`：
-
-```swift
-var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-        dashboardHeader
-        overviewCard
-            .frame(height: 190)
-        HStack(alignment: .top, spacing: 10) {
-            trendCard.frame(maxWidth: .infinity, maxHeight: .infinity)
-            compositionCard
-                .frame(width: 300)
-                .frame(maxHeight: .infinity)
-        }
-    }
-    .padding(16)
-    .frame(minWidth: 920, minHeight: 620)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-```
-
-顶部复合卡按以下组件边界实现：
-
-```swift
-private var overviewCard: some View {
-    HStack(spacing: 14) {
-        currentQuotaSection
-            .frame(width: 280)
-        Divider()
-        periodMetricsSection
-    }
-    .dashboardCard(padding: 12)
-}
-
-private var currentQuotaSection: some View {
-    HStack(spacing: 14) {
-        ZStack {
-            quotaRing(snapshot.quotas[0], diameter: 128, lineWidth: 10, color: SpendScopeTheme.accent)
-            quotaRing(snapshot.quotas[1], diameter: 86, lineWidth: 8, color: SpendScopeTheme.accentBlue)
-            VStack(spacing: 1) {
-                Text("当前额度").font(.caption2).foregroundStyle(.secondary)
-                Text(snapshot.planName).font(.headline)
-            }
-        }
-        .frame(width: 132, height: 132)
-
-        VStack(alignment: .leading, spacing: 12) {
-            quotaLegend(snapshot.quotas[0], color: SpendScopeTheme.accent)
-            quotaLegend(snapshot.quotas[1], color: SpendScopeTheme.accentBlue)
-        }
-    }
-}
-
-private func quotaRing(
-    _ quota: QuotaSnapshot,
-    diameter: CGFloat,
-    lineWidth: CGFloat,
-    color: Color
-) -> some View {
-    ZStack {
-        Circle().stroke(Color.primary.opacity(0.07), lineWidth: lineWidth)
-        Circle()
-            .trim(from: 0, to: quota.remaining)
-            .stroke(color.gradient, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-            .rotationEffect(.degrees(-90))
-    }
-    .frame(width: diameter, height: diameter)
-}
-
-private func quotaLegend(_ quota: QuotaSnapshot, color: Color) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            Text(quota.title).font(.caption.bold())
-        }
-        Text("\(quota.remainingPercent)% 剩余").font(.callout.bold()).monospacedDigit()
-        Text(quota.resetText).font(.caption2).foregroundStyle(.secondary)
-    }
+private var periodGridColumns: [GridItem] {
+    [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
 }
 
 private var periodMetricsSection: some View {
-    HStack(spacing: 0) {
-        ForEach(Array(snapshot.periods.enumerated()), id: \.element.id) { index, period in
-            periodColumn(period)
-            if index < snapshot.periods.count - 1 {
-                Divider().padding(.horizontal, 10)
-            }
+    LazyVGrid(columns: periodGridColumns, spacing: 8) {
+        ForEach(snapshot.periods) { period in
+            periodTile(period)
         }
     }
     .frame(maxWidth: .infinity)
 }
 
-private func periodColumn(_ period: PeriodUsage) -> some View {
-    VStack(alignment: .leading, spacing: 7) {
-        Text(period.title).font(.caption).foregroundStyle(.secondary)
-        Text(TokenFormatter.compact(period.total))
-            .font(.system(size: 22, weight: .bold))
-            .monospacedDigit()
-        periodMetric("未缓存", period.uncachedInput, SpendScopeTheme.accent)
-        periodMetric("缓存", period.cachedInput, SpendScopeTheme.accentBlue)
-        periodMetric("输出", period.output, SpendScopeTheme.output)
+private func periodTile(_ period: PeriodUsage) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .firstTextBaseline) {
+            Text(period.title).font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Text(TokenFormatter.compact(period.total))
+                .font(.system(size: 18, weight: .bold))
+                .monospacedDigit()
+                .minimumScaleFactor(0.8)
+        }
+
+        HStack(spacing: 6) {
+            periodMetric("输入", period.uncachedInput, SpendScopeTheme.accent)
+            periodMetric("缓存", period.cachedInput, SpendScopeTheme.accentBlue)
+            periodMetric("输出", period.visibleOutput, SpendScopeTheme.output)
+            periodMetric("推理", period.reasoning, SpendScopeTheme.reasoning)
+        }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(8)
+    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+    .overlay {
+        RoundedRectangle(cornerRadius: 10)
+            .stroke(Color.primary.opacity(0.06))
+    }
 }
 
 private func periodMetric(_ title: String, _ value: Int, _ color: Color) -> some View {
-    HStack(spacing: 5) {
-        Circle().fill(color).frame(width: 6, height: 6)
-        Text(title).font(.caption2).foregroundStyle(.secondary)
-        Spacer(minLength: 4)
-        Text(TokenFormatter.compact(value)).font(.caption).monospacedDigit()
+    VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 3) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text(title).font(.system(size: 9)).foregroundStyle(.secondary)
+        }
+        Text(TokenFormatter.compact(value))
+            .font(.caption2)
+            .monospacedDigit()
+            .minimumScaleFactor(0.75)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
 }
 ```
 
-- [ ] **Step 4：压缩底部图表并移除旧组件**
-
-- 删除 `summaryCards`、`metricCard`、`quotaCard`、`modelCard`。
-- `trendCard` 的 Chart 高度由 260 调整为 180，并使用 `.dashboardCard(padding: 12)`。
-- `compositionCard` 使用 `.dashboardCard(padding: 12)`，继续展示输入、缓存输入、可见输出和推理。
-- 时间范围选择器宽度由 300 调整为 260。
-
-完成后 `Sources/SpendScope/Features/Dashboard/DashboardView.swift` 的完整内容为：
-
-```swift
-import Charts
-import SwiftUI
-
-struct DashboardView: View {
-    let snapshot: DashboardSnapshot
-    @State private var selectedRange = "7 天"
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            dashboardHeader
-            overviewCard.frame(height: 190)
-            HStack(alignment: .top, spacing: 10) {
-                trendCard.frame(maxWidth: .infinity, maxHeight: .infinity)
-                compositionCard
-                    .frame(width: 300)
-                    .frame(maxHeight: .infinity)
-            }
-        }
-        .padding(16)
-        .frame(minWidth: 920, minHeight: 620)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var dashboardHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("SpendScope").font(.title.bold())
-                Text("Codex · \(snapshot.planName)  ·  \(snapshot.updatedText)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("时间范围", selection: $selectedRange) {
-                ForEach(["今日", "7 天", "30 天", "全部"], id: \.self) {
-                    Text($0)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 260)
-        }
-    }
-
-    private var overviewCard: some View {
-        HStack(spacing: 14) {
-            currentQuotaSection.frame(width: 280)
-            Divider()
-            periodMetricsSection
-        }
-        .dashboardCard(padding: 12)
-    }
-
-    private var currentQuotaSection: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                quotaRing(snapshot.quotas[0], diameter: 128, lineWidth: 10, color: SpendScopeTheme.accent)
-                quotaRing(snapshot.quotas[1], diameter: 86, lineWidth: 8, color: SpendScopeTheme.accentBlue)
-                VStack(spacing: 1) {
-                    Text("当前额度").font(.caption2).foregroundStyle(.secondary)
-                    Text(snapshot.planName).font(.headline)
-                }
-            }
-            .frame(width: 132, height: 132)
-
-            VStack(alignment: .leading, spacing: 12) {
-                quotaLegend(snapshot.quotas[0], color: SpendScopeTheme.accent)
-                quotaLegend(snapshot.quotas[1], color: SpendScopeTheme.accentBlue)
-            }
-        }
-    }
-
-    private func quotaRing(
-        _ quota: QuotaSnapshot,
-        diameter: CGFloat,
-        lineWidth: CGFloat,
-        color: Color
-    ) -> some View {
-        ZStack {
-            Circle().stroke(Color.primary.opacity(0.07), lineWidth: lineWidth)
-            Circle()
-                .trim(from: 0, to: quota.remaining)
-                .stroke(color.gradient, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-        }
-        .frame(width: diameter, height: diameter)
-    }
-
-    private func quotaLegend(_ quota: QuotaSnapshot, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 5) {
-                Circle().fill(color).frame(width: 7, height: 7)
-                Text(quota.title).font(.caption.bold())
-            }
-            Text("\(quota.remainingPercent)% 剩余")
-                .font(.callout.bold())
-                .monospacedDigit()
-            Text(quota.resetText).font(.caption2).foregroundStyle(.secondary)
-        }
-    }
-
-    private var periodMetricsSection: some View {
-        HStack(spacing: 0) {
-            ForEach(snapshot.periods) { period in
-                periodColumn(period)
-                if period.id != snapshot.periods.last?.id {
-                    Divider().padding(.horizontal, 10)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func periodColumn(_ period: PeriodUsage) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(period.title).font(.caption).foregroundStyle(.secondary)
-            Text(TokenFormatter.compact(period.total))
-                .font(.system(size: 22, weight: .bold))
-                .monospacedDigit()
-            periodMetric("未缓存", period.uncachedInput, SpendScopeTheme.accent)
-            periodMetric("缓存", period.cachedInput, SpendScopeTheme.accentBlue)
-            periodMetric("输出", period.output, SpendScopeTheme.output)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func periodMetric(_ title: String, _ value: Int, _ color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Spacer(minLength: 4)
-            Text(TokenFormatter.compact(value)).font(.caption).monospacedDigit()
-        }
-    }
-
-    private var trendCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Token 趋势").font(.headline)
-            Chart(snapshot.dailyUsage) { item in
-                AreaMark(
-                    x: .value("日期", item.day),
-                    y: .value("Token", item.total)
-                )
-                .foregroundStyle(SpendScopeTheme.accent.opacity(0.12))
-
-                LineMark(
-                    x: .value("日期", item.day),
-                    y: .value("Token", item.total)
-                )
-                .foregroundStyle(SpendScopeTheme.accent)
-                .lineStyle(StrokeStyle(lineWidth: 3))
-
-                PointMark(
-                    x: .value("日期", item.day),
-                    y: .value("Token", item.total)
-                )
-                .foregroundStyle(SpendScopeTheme.accent)
-            }
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisGridLine()
-                    AxisValueLabel {
-                        if let tokens = value.as(Int.self) {
-                            Text(TokenFormatter.compact(tokens))
-                        }
-                    }
-                }
-            }
-            .frame(height: 180)
-        }
-        .dashboardCard(padding: 12)
-    }
-
-    private var compositionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Token 构成").font(.headline)
-            ForEach(breakdownItems) { item in
-                VStack(spacing: 5) {
-                    HStack {
-                        Circle().fill(item.color).frame(width: 8, height: 8)
-                        Text(item.title).font(.caption)
-                        Spacer()
-                        Text(TokenFormatter.compact(item.value)).font(.caption).monospacedDigit()
-                    }
-                    ProgressView(
-                        value: Double(item.value),
-                        total: Double(snapshot.breakdown.total)
-                    )
-                    .tint(item.color)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .dashboardCard(padding: 12)
-    }
-
-    private var breakdownItems: [BreakdownDisplayItem] {
-        [
-            BreakdownDisplayItem(id: "input", title: "未缓存输入", value: snapshot.breakdown.input, color: SpendScopeTheme.accent),
-            BreakdownDisplayItem(id: "cached", title: "缓存输入", value: snapshot.breakdown.cachedInput, color: SpendScopeTheme.accentBlue),
-            BreakdownDisplayItem(id: "output", title: "可见输出", value: snapshot.breakdown.output, color: SpendScopeTheme.output),
-            BreakdownDisplayItem(id: "reasoning", title: "推理输出", value: snapshot.breakdown.reasoning, color: SpendScopeTheme.reasoning)
-        ]
-    }
-}
-
-private struct BreakdownDisplayItem: Identifiable {
-    let id: String
-    let title: String
-    let value: Int
-    let color: Color
-}
-```
-
-- [ ] **Step 5：构建并验证没有滚动容器**
+- [ ] **Step 3：构建并检查布局契约**
 
 运行：
 
 ```bash
 ! rg -n "ScrollView" Sources/SpendScope/Features/Dashboard/DashboardView.swift
+rg -n "frame\(width: 330\)|diameter: 138|diameter: 92|LazyVGrid" \
+  Sources/SpendScope/Features/Dashboard/DashboardView.swift
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project SpendScope.xcodeproj -scheme SpendScope \
   -configuration Debug -destination "platform=macOS,arch=arm64" \
-  -derivedDataPath /private/tmp/SpendScope-CompactDashboard build -quiet
+  -derivedDataPath /private/tmp/SpendScope-FourPeriodGrid build -quiet
 ```
 
-预期：`rg` 无匹配，Xcode 构建成功。
+预期：无 `ScrollView`；四项布局约束命中；Xcode 构建成功。
 
-- [ ] **Step 6：提交紧凑看板布局**
+- [ ] **Step 4：提交四宫格布局**
 
 ```bash
-git add Sources/SpendScope/App/SpendScopeApp.swift \
-  Sources/SpendScope/Support/DesignSystem.swift \
-  Sources/SpendScope/Features/Dashboard/DashboardView.swift
-git commit -m "feat: compact the detailed dashboard"
+git add Sources/SpendScope/Features/Dashboard/DashboardView.swift \
+  docs/superpowers/plans/2026-07-10-compact-dashboard-implementation.md
+git commit -m "feat: add four-period dashboard grid"
 ```
 
 ### Task 3：执行完整验证
 
 **文件：** 无新增文件。
 
-**接口：** 验证已有 Xcode Scheme、构建脚本和应用 Bundle。
+**接口：** 验证 Xcode Scheme、构建脚本、应用 Bundle 和工作区状态。
 
-- [ ] **Step 1：运行完整单元测试**
-
-运行：
+- [ ] **Step 1：运行完整测试**
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project SpendScope.xcodeproj -scheme SpendScope \
   -configuration Debug -destination "platform=macOS,arch=arm64" \
-  -derivedDataPath /private/tmp/SpendScope-CompactDashboard test -quiet
+  -derivedDataPath /private/tmp/SpendScope-FourPeriodGrid test -quiet
 ```
 
-预期：所有测试通过，0 failures。
+预期：3 个测试通过，0 failures。
 
 - [ ] **Step 2：构建并启动应用**
 
-运行：
-
 ```bash
-SPENDSCOPE_DERIVED_DATA=/private/tmp/SpendScope-CompactDashboard \
+SPENDSCOPE_DERIVED_DATA=/private/tmp/SpendScope-FourPeriodGrid \
   ./script/build_and_run.sh --verify
 ```
 
 预期：输出 `SpendScope is running.`。
 
-- [ ] **Step 3：检查窗口约束与工作区**
-
-运行：
+- [ ] **Step 3：检查最终状态**
 
 ```bash
+! rg -n "ScrollView" Sources/SpendScope/Features/Dashboard/DashboardView.swift
 rg -n "defaultSize\(width: 920, height: 620\)|minWidth: 920, minHeight: 620" Sources/SpendScope
 git diff --check
 git status -sb
 ```
 
-预期：两处尺寸约束均命中，无格式错误，工作区干净。
+预期：无滚动容器，两个窗口尺寸约束命中，无格式错误，工作区干净。
