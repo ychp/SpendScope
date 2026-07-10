@@ -11,6 +11,11 @@
 		A00000000000000000000002 /* TokenFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000004 /* TokenFormatterTests.swift */; };
 		A00000000000000000000003 /* DashboardSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000005 /* DashboardSnapshot.swift */; };
 		A00000000000000000000004 /* TokenFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000006 /* TokenFormatter.swift */; };
+		A00000000000000000000005 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000007 /* AppDelegate.swift */; };
+		A00000000000000000000006 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000008 /* DesignSystem.swift */; };
+		A00000000000000000000007 /* MenuBarPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000009 /* MenuBarPopoverView.swift */; };
+		A00000000000000000000008 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000010 /* DashboardView.swift */; };
+		A00000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -30,6 +35,11 @@
 		B00000000000000000000004 /* TokenFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/TokenFormatterTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000005 /* DashboardSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Models/DashboardSnapshot.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000006 /* TokenFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Support/TokenFormatter.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000007 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/App/AppDelegate.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000008 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Support/DesignSystem.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000009 /* MenuBarPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/MenuBar/MenuBarPopoverView.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000010 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/DashboardView.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Settings/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,8 +73,13 @@
 			isa = PBXGroup;
 			children = (
 				B00000000000000000000003 /* SpendScopeApp.swift */,
+				B00000000000000000000007 /* AppDelegate.swift */,
 				B00000000000000000000005 /* DashboardSnapshot.swift */,
 				B00000000000000000000006 /* TokenFormatter.swift */,
+				B00000000000000000000008 /* DesignSystem.swift */,
+				B00000000000000000000009 /* MenuBarPopoverView.swift */,
+				B00000000000000000000010 /* DashboardView.swift */,
+				B00000000000000000000011 /* SettingsView.swift */,
 			);
 			name = Sources;
 			sourceTree = "<group>";
@@ -186,8 +201,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000001 /* SpendScopeApp.swift in Sources */,
+				A00000000000000000000005 /* AppDelegate.swift in Sources */,
 				A00000000000000000000003 /* DashboardSnapshot.swift in Sources */,
 				A00000000000000000000004 /* TokenFormatter.swift in Sources */,
+				A00000000000000000000006 /* DesignSystem.swift in Sources */,
+				A00000000000000000000007 /* MenuBarPopoverView.swift in Sources */,
+				A00000000000000000000008 /* DashboardView.swift in Sources */,
+				A00000000000000000000009 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

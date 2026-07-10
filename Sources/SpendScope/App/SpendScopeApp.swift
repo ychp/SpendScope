@@ -2,9 +2,27 @@ import SwiftUI
 
 @main
 struct SpendScopeApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    private let snapshot = DashboardSnapshot.preview
+
     var body: some Scene {
-        WindowGroup {
-            Text("SpendScope")
+        MenuBarExtra {
+            MenuBarPopoverView(snapshot: snapshot)
+        } label: {
+            Label(
+                "5h \(snapshot.quotas[0].remainingPercent)% · 7d \(snapshot.quotas[1].remainingPercent)%",
+                systemImage: "chart.bar.fill"
+            )
+        }
+        .menuBarExtraStyle(.window)
+
+        Window("SpendScope", id: "dashboard") {
+            DashboardView(snapshot: snapshot)
+        }
+        .defaultSize(width: 1080, height: 760)
+
+        Settings {
+            SettingsView()
         }
     }
 }
