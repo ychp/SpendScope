@@ -17,7 +17,7 @@
 - 所有界面文案使用简体中文；产品名、Codex、模型名和技术标识保留英文。
 - 初始化阶段只使用静态原型数据，不读取真实 Codex 文件。
 - 菜单栏与详细看板必须是同一个原生应用进程中的两个入口。
-- 命令行构建使用项目内的 `.build/xcode` 作为 DerivedData，`.build/` 不提交 Git。
+- 命令行构建默认使用 `/private/tmp/SpendScope-DerivedData`，避免 `Documents` 的 File Provider 扩展属性破坏代码签名；可通过 `SPENDSCOPE_DERIVED_DATA` 覆盖。
 
 ---
 
@@ -47,6 +47,7 @@ README.md                                  开发和运行说明
 
 - 创建：`SpendScope.xcodeproj/project.pbxproj`
 - 创建：`SpendScope.xcodeproj/xcshareddata/xcschemes/SpendScope.xcscheme`
+- 创建：`Sources/SpendScope/App/SpendScopeApp.swift`（最小测试宿主，Task 2 扩展）
 - 创建：`Sources/SpendScope/Models/DashboardSnapshot.swift`
 - 创建：`Sources/SpendScope/Support/TokenFormatter.swift`
 - 创建：`Tests/SpendScopeTests/TokenFormatterTests.swift`
@@ -87,12 +88,27 @@ final class TokenFormatterTests: XCTestCase {
 - 本地调试使用 ad-hoc 签名，不要求 Development Team；
 - 共享 Scheme 同时包含 Build、Run 和 Test 动作。
 
+同时创建可供单元测试加载的最小 App Host：
+
+```swift
+import SwiftUI
+
+@main
+struct SpendScopeApp: App {
+    var body: some Scene {
+        WindowGroup {
+            Text("SpendScope")
+        }
+    }
+}
+```
+
 运行：
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project SpendScope.xcodeproj -scheme SpendScope \
-  -configuration Debug -derivedDataPath .build/xcode test
+  -configuration Debug -derivedDataPath /private/tmp/SpendScope-DerivedData test
 ```
 
 预期：失败，提示找不到 `TokenFormatter`。
@@ -216,7 +232,7 @@ xcuserdata/
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project SpendScope.xcodeproj -scheme SpendScope \
-  -configuration Debug -derivedDataPath .build/xcode test
+  -configuration Debug -derivedDataPath /private/tmp/SpendScope-DerivedData test
 ```
 
 预期：4 个断言全部通过。
@@ -233,7 +249,7 @@ git commit -m "feat: bootstrap SpendScope domain model"
 **文件：**
 
 - 创建：`Sources/SpendScope/App/AppDelegate.swift`
-- 创建：`Sources/SpendScope/App/SpendScopeApp.swift`
+- 修改：`Sources/SpendScope/App/SpendScopeApp.swift`
 - 创建：`Sources/SpendScope/Support/DesignSystem.swift`
 - 创建：`Sources/SpendScope/Features/MenuBar/MenuBarPopoverView.swift`
 - 创建：`Sources/SpendScope/Features/Dashboard/DashboardView.swift`
@@ -667,7 +683,7 @@ struct SettingsView: View {
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project SpendScope.xcodeproj -scheme SpendScope \
-  -configuration Debug -derivedDataPath .build/xcode build
+  -configuration Debug -derivedDataPath /private/tmp/SpendScope-DerivedData build
 ```
 
 预期：`** BUILD SUCCEEDED **`，无 Swift 并发或平台可用性错误。
@@ -690,7 +706,7 @@ git commit -m "feat: add native macOS app shell"
 **接口：**
 
 - 消费：Xcode Scheme `SpendScope`
-- 产出：`.build/xcode/Build/Products/Debug/SpendScope.app`
+- 产出：`/private/tmp/SpendScope-DerivedData/Build/Products/Debug/SpendScope.app`
 - 产出：`./script/build_and_run.sh [run|--debug|--logs|--telemetry|--verify]`
 
 - [ ] **Step 1：创建构建运行脚本**
@@ -699,7 +715,7 @@ git commit -m "feat: add native macOS app shell"
 
 1. 停止已运行的 `SpendScope` 进程；
 2. 使用 `/Applications/Xcode.app` 和共享 Scheme 执行 `xcodebuild`；
-3. 将 DerivedData 固定在 `.build/xcode`；
+3. 将 DerivedData 默认放在 `/private/tmp/SpendScope-DerivedData`，并允许环境变量覆盖；
 4. 直接启动 Xcode 产出的 `SpendScope.app`；
 5. 支持启动、LLDB、日志、Telemetry 和进程验证模式。
 
@@ -715,7 +731,7 @@ BUNDLE_ID="com.ychp.SpendScope"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT="$ROOT_DIR/SpendScope.xcodeproj"
 SCHEME="SpendScope"
-DERIVED_DATA="$ROOT_DIR/.build/xcode"
+DERIVED_DATA="${SPENDSCOPE_DERIVED_DATA:-/private/tmp/SpendScope-DerivedData}"
 APP_BUNDLE="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
@@ -807,12 +823,12 @@ SpendScope 是一款仅在本机运行的 macOS 菜单栏应用，用于查看 C
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
   -project SpendScope.xcodeproj -scheme SpendScope \
-  -configuration Debug -derivedDataPath .build/xcode test
+  -configuration Debug -derivedDataPath /private/tmp/SpendScope-DerivedData test
 ./script/build_and_run.sh
 ./script/build_and_run.sh --verify
 ```
 
-运行脚本会构建并启动 `.build/xcode/Build/Products/Debug/SpendScope.app`。Debug Bundle 使用本地签名，仅用于开发，尚未进行发布公证。
+运行脚本会构建并启动 `/private/tmp/SpendScope-DerivedData/Build/Products/Debug/SpendScope.app`。Debug Bundle 使用本地签名，仅用于开发，尚未进行发布公证。
 
 ## 工程结构
 
@@ -834,11 +850,11 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
   -project SpendScope.xcodeproj -scheme SpendScope \
-  -configuration Debug -derivedDataPath .build/xcode test
+  -configuration Debug -derivedDataPath /private/tmp/SpendScope-DerivedData test
 ./script/build_and_run.sh --verify
 ```
 
-预期：测试通过、构建通过、`.build/xcode/Build/Products/Debug/SpendScope.app` 存在，应用启动后 `pgrep -x SpendScope` 成功。
+预期：测试通过、构建通过、`/private/tmp/SpendScope-DerivedData/Build/Products/Debug/SpendScope.app` 存在，应用启动后 `pgrep -x SpendScope` 成功。
 
 - [ ] **Step 5：提交构建与开发体验**
 
