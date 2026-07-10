@@ -12,12 +12,18 @@ final class TokenFormatterTests: XCTestCase {
 
 final class DashboardSnapshotTests: XCTestCase {
     func testPreviewPeriodsUseConsistentTotals() {
-        XCTAssertEqual(DashboardSnapshot.preview.periods.count, 3)
+        let periods = DashboardSnapshot.preview.periods
 
-        for period in DashboardSnapshot.preview.periods {
+        XCTAssertEqual(periods.map(\.title), ["今日", "7 日", "30 日", "累计"])
+        XCTAssertEqual(periods.count, 4)
+
+        for period in periods {
             XCTAssertEqual(
                 period.total,
-                period.uncachedInput + period.cachedInput + period.output
+                period.uncachedInput
+                    + period.cachedInput
+                    + period.visibleOutput
+                    + period.reasoning
             )
         }
     }
@@ -27,9 +33,11 @@ final class DashboardSnapshotTests: XCTestCase {
         let today = snapshot.periods[0]
 
         XCTAssertEqual(snapshot.todayTokens, today.total)
+        XCTAssertEqual(snapshot.thirtyDayTokens, snapshot.periods[2].total)
+        XCTAssertEqual(snapshot.totalTokens, snapshot.periods[3].total)
         XCTAssertEqual(snapshot.breakdown.input, today.uncachedInput)
         XCTAssertEqual(snapshot.breakdown.cachedInput, today.cachedInput)
-        XCTAssertEqual(snapshot.breakdown.output, today.output - today.reasoning)
+        XCTAssertEqual(snapshot.breakdown.output, today.visibleOutput)
         XCTAssertEqual(snapshot.breakdown.reasoning, today.reasoning)
         XCTAssertEqual(snapshot.breakdown.total, today.total)
     }

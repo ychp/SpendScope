@@ -10,7 +10,8 @@ struct DashboardSnapshot: Sendable {
 
     var todayTokens: Int { periods[0].total }
     var sevenDayTokens: Int { periods[1].total }
-    var totalTokens: Int { periods[2].total }
+    var thirtyDayTokens: Int { periods[2].total }
+    var totalTokens: Int { periods[3].total }
 
     var breakdown: TokenBreakdown {
         let today = periods[0]
@@ -35,6 +36,11 @@ struct DashboardSnapshot: Sendable {
                 id: "sevenDays", title: "7 日", total: 84_200_000,
                 uncachedInput: 35_200_000, cachedInput: 45_500_000,
                 output: 3_500_000, reasoning: 900_000
+            ),
+            PeriodUsage(
+                id: "thirtyDays", title: "30 日", total: 198_600_000,
+                uncachedInput: 78_400_000, cachedInput: 112_100_000,
+                output: 8_100_000, reasoning: 1_900_000
             ),
             PeriodUsage(
                 id: "allTime", title: "累计", total: 326_800_000,
