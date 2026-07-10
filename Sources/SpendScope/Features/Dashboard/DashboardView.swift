@@ -42,7 +42,7 @@ struct DashboardView: View {
 
     private var overviewCard: some View {
         HStack(spacing: 14) {
-            currentQuotaSection.frame(width: 280)
+            currentQuotaSection.frame(width: 330)
             Divider()
             periodMetricsSection
         }
@@ -54,13 +54,13 @@ struct DashboardView: View {
             ZStack {
                 quotaRing(
                     snapshot.quotas[0],
-                    diameter: 128,
+                    diameter: 138,
                     lineWidth: 10,
                     color: SpendScopeTheme.accent
                 )
                 quotaRing(
                     snapshot.quotas[1],
-                    diameter: 86,
+                    diameter: 92,
                     lineWidth: 8,
                     color: SpendScopeTheme.accentBlue
                 )
@@ -69,7 +69,7 @@ struct DashboardView: View {
                     Text(snapshot.planName).font(.headline)
                 }
             }
-            .frame(width: 132, height: 132)
+            .frame(width: 142, height: 142)
 
             VStack(alignment: .leading, spacing: 12) {
                 quotaLegend(snapshot.quotas[0], color: SpendScopeTheme.accent)
@@ -110,38 +110,60 @@ struct DashboardView: View {
         }
     }
 
+    private var periodGridColumns: [GridItem] {
+        [
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8)
+        ]
+    }
+
     private var periodMetricsSection: some View {
-        HStack(spacing: 0) {
+        LazyVGrid(columns: periodGridColumns, spacing: 8) {
             ForEach(snapshot.periods) { period in
-                periodColumn(period)
-                if period.id != snapshot.periods.last?.id {
-                    Divider().padding(.horizontal, 10)
-                }
+                periodTile(period)
             }
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func periodColumn(_ period: PeriodUsage) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(period.title).font(.caption).foregroundStyle(.secondary)
-            Text(TokenFormatter.compact(period.total))
-                .font(.system(size: 22, weight: .bold))
-                .monospacedDigit()
-            periodMetric("未缓存", period.uncachedInput, SpendScopeTheme.accent)
-            periodMetric("缓存", period.cachedInput, SpendScopeTheme.accentBlue)
-            periodMetric("输出", period.output, SpendScopeTheme.output)
+    private func periodTile(_ period: PeriodUsage) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(period.title).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text(TokenFormatter.compact(period.total))
+                    .font(.system(size: 18, weight: .bold))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.8)
+            }
+
+            HStack(spacing: 6) {
+                periodMetric("输入", period.uncachedInput, SpendScopeTheme.accent)
+                periodMetric("缓存", period.cachedInput, SpendScopeTheme.accentBlue)
+                periodMetric("输出", period.visibleOutput, SpendScopeTheme.output)
+                periodMetric("推理", period.reasoning, SpendScopeTheme.reasoning)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.06))
+        }
     }
 
     private func periodMetric(_ title: String, _ value: Int, _ color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Spacer(minLength: 4)
-            Text(TokenFormatter.compact(value)).font(.caption).monospacedDigit()
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 3) {
+                Circle().fill(color).frame(width: 5, height: 5)
+                Text(title).font(.system(size: 9)).foregroundStyle(.secondary)
+            }
+            Text(TokenFormatter.compact(value))
+                .font(.caption2)
+                .monospacedDigit()
+                .minimumScaleFactor(0.75)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var trendCard: some View {
