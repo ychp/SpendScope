@@ -9,3 +9,28 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(TokenFormatter.compact(1_061_100_000), "1.1B")
     }
 }
+
+final class DashboardSnapshotTests: XCTestCase {
+    func testPreviewPeriodsUseConsistentTotals() {
+        XCTAssertEqual(DashboardSnapshot.preview.periods.count, 3)
+
+        for period in DashboardSnapshot.preview.periods {
+            XCTAssertEqual(
+                period.total,
+                period.uncachedInput + period.cachedInput + period.output
+            )
+        }
+    }
+
+    func testTodayBreakdownSplitsReasoningFromOutput() {
+        let snapshot = DashboardSnapshot.preview
+        let today = snapshot.periods[0]
+
+        XCTAssertEqual(snapshot.todayTokens, today.total)
+        XCTAssertEqual(snapshot.breakdown.input, today.uncachedInput)
+        XCTAssertEqual(snapshot.breakdown.cachedInput, today.cachedInput)
+        XCTAssertEqual(snapshot.breakdown.output, today.output - today.reasoning)
+        XCTAssertEqual(snapshot.breakdown.reasoning, today.reasoning)
+        XCTAssertEqual(snapshot.breakdown.total, today.total)
+    }
+}
