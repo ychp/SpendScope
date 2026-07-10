@@ -9,9 +9,11 @@ enum SpendScopeTheme {
 }
 
 struct DashboardCard: ViewModifier {
+    let padding: CGFloat
+
     func body(content: Content) -> some View {
         content
-            .padding(18)
+            .padding(padding)
             .background(SpendScopeTheme.cardBackground, in: RoundedRectangle(cornerRadius: 16))
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
@@ -21,7 +23,7 @@ struct DashboardCard: ViewModifier {
 }
 
 extension View {
-    func dashboardCard() -> some View {
-        modifier(DashboardCard())
+    func dashboardCard(padding: CGFloat = 18) -> some View {
+        modifier(DashboardCard(padding: padding))
     }
 }

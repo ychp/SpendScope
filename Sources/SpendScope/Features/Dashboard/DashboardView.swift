@@ -6,32 +6,27 @@ struct DashboardView: View {
     @State private var selectedRange = "7 天"
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                dashboardHeader
-                summaryCards
-
-                HStack(alignment: .top, spacing: 14) {
-                    quotaCard.frame(maxWidth: .infinity)
-                    modelCard.frame(maxWidth: .infinity)
-                }
-
-                HStack(alignment: .top, spacing: 14) {
-                    trendCard.frame(maxWidth: .infinity)
-                    compositionCard.frame(width: 360)
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            dashboardHeader
+            overviewCard.frame(height: 190)
+            HStack(alignment: .top, spacing: 10) {
+                trendCard.frame(maxWidth: .infinity, maxHeight: .infinity)
+                compositionCard
+                    .frame(width: 300)
+                    .frame(maxHeight: .infinity)
             }
-            .padding(24)
         }
-        .frame(minWidth: 1040, minHeight: 700)
+        .padding(16)
+        .frame(minWidth: 920, minHeight: 620)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var dashboardHeader: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("SpendScope").font(.largeTitle.bold())
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SpendScope").font(.title.bold())
                 Text("Codex · \(snapshot.planName)  ·  \(snapshot.updatedText)")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -41,86 +36,116 @@ struct DashboardView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 300)
+            .frame(width: 260)
         }
     }
 
-    private var summaryCards: some View {
+    private var overviewCard: some View {
         HStack(spacing: 14) {
-            metricCard("今日", snapshot.todayTokens, "waveform.path.ecg")
-            metricCard("近 7 天", snapshot.sevenDayTokens, "calendar")
-            metricCard("累计", snapshot.totalTokens, "square.stack.3d.up.fill")
+            currentQuotaSection.frame(width: 280)
+            Divider()
+            periodMetricsSection
         }
+        .dashboardCard(padding: 12)
     }
 
-    private func metricCard(_ title: String, _ value: Int, _ icon: String) -> some View {
+    private var currentQuotaSection: some View {
         HStack(spacing: 14) {
-            Image(systemName: icon)
-                .foregroundStyle(SpendScopeTheme.accent)
-                .font(.title2)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title).foregroundStyle(.secondary)
-                Text(TokenFormatter.compact(value))
-                    .font(.system(size: 30, weight: .bold))
-                    .monospacedDigit()
+            ZStack {
+                quotaRing(
+                    snapshot.quotas[0],
+                    diameter: 128,
+                    lineWidth: 10,
+                    color: SpendScopeTheme.accent
+                )
+                quotaRing(
+                    snapshot.quotas[1],
+                    diameter: 86,
+                    lineWidth: 8,
+                    color: SpendScopeTheme.accentBlue
+                )
+                VStack(spacing: 1) {
+                    Text("当前额度").font(.caption2).foregroundStyle(.secondary)
+                    Text(snapshot.planName).font(.headline)
+                }
             }
-            Spacer()
+            .frame(width: 132, height: 132)
+
+            VStack(alignment: .leading, spacing: 12) {
+                quotaLegend(snapshot.quotas[0], color: SpendScopeTheme.accent)
+                quotaLegend(snapshot.quotas[1], color: SpendScopeTheme.accentBlue)
+            }
+        }
+    }
+
+    private func quotaRing(
+        _ quota: QuotaSnapshot,
+        diameter: CGFloat,
+        lineWidth: CGFloat,
+        color: Color
+    ) -> some View {
+        ZStack {
+            Circle().stroke(Color.primary.opacity(0.07), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: quota.remaining)
+                .stroke(
+                    color.gradient,
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: diameter, height: diameter)
+    }
+
+    private func quotaLegend(_ quota: QuotaSnapshot, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text(quota.title).font(.caption.bold())
+            }
+            Text("\(quota.remainingPercent)% 剩余")
+                .font(.callout.bold())
+                .monospacedDigit()
+            Text(quota.resetText).font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private var periodMetricsSection: some View {
+        HStack(spacing: 0) {
+            ForEach(snapshot.periods) { period in
+                periodColumn(period)
+                if period.id != snapshot.periods.last?.id {
+                    Divider().padding(.horizontal, 10)
+                }
+            }
         }
         .frame(maxWidth: .infinity)
-        .dashboardCard()
     }
 
-    private var quotaCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("额度状态").font(.headline)
-            HStack(spacing: 36) {
-                ForEach(snapshot.quotas) { quota in
-                    VStack(spacing: 10) {
-                        ZStack {
-                            Circle().stroke(Color.primary.opacity(0.08), lineWidth: 9)
-                            Circle()
-                                .trim(from: 0, to: quota.remaining)
-                                .stroke(
-                                    SpendScopeTheme.accent.gradient,
-                                    style: StrokeStyle(lineWidth: 9, lineCap: .round)
-                                )
-                                .rotationEffect(.degrees(-90))
-                            VStack {
-                                Text(quota.title).font(.caption)
-                                Text("\(quota.remainingPercent)%").font(.title.bold())
-                                Text("剩余").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        .frame(width: 118, height: 118)
-                        Text(quota.resetText).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity)
+    private func periodColumn(_ period: PeriodUsage) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(period.title).font(.caption).foregroundStyle(.secondary)
+            Text(TokenFormatter.compact(period.total))
+                .font(.system(size: 22, weight: .bold))
+                .monospacedDigit()
+            periodMetric("未缓存", period.uncachedInput, SpendScopeTheme.accent)
+            periodMetric("缓存", period.cachedInput, SpendScopeTheme.accentBlue)
+            periodMetric("输出", period.output, SpendScopeTheme.output)
         }
-        .dashboardCard()
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var modelCard: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("模型分布").font(.headline)
-            ForEach(snapshot.models) { model in
-                VStack(spacing: 8) {
-                    HStack {
-                        Text(model.name)
-                        Spacer()
-                        Text("\(Int(model.share * 100))%").monospacedDigit()
-                    }
-                    ProgressView(value: model.share).tint(SpendScopeTheme.accent)
-                }
-            }
-            Spacer(minLength: 0)
+    private func periodMetric(_ title: String, _ value: Int, _ color: Color) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Text(TokenFormatter.compact(value)).font(.caption).monospacedDigit()
         }
-        .dashboardCard()
     }
 
     private var trendCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Token 趋势").font(.headline)
             Chart(snapshot.dailyUsage) { item in
                 AreaMark(
@@ -152,21 +177,23 @@ struct DashboardView: View {
                     }
                 }
             }
-            .frame(height: 260)
+            .frame(height: 180)
         }
-        .dashboardCard()
+        .dashboardCard(padding: 12)
     }
 
     private var compositionCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Token 构成").font(.headline)
             ForEach(breakdownItems) { item in
-                VStack(spacing: 7) {
+                VStack(spacing: 5) {
                     HStack {
-                        Circle().fill(item.color).frame(width: 9, height: 9)
-                        Text(item.title)
+                        Circle().fill(item.color).frame(width: 8, height: 8)
+                        Text(item.title).font(.caption)
                         Spacer()
-                        Text(TokenFormatter.compact(item.value)).monospacedDigit()
+                        Text(TokenFormatter.compact(item.value))
+                            .font(.caption)
+                            .monospacedDigit()
                     }
                     ProgressView(
                         value: Double(item.value),
@@ -177,15 +204,35 @@ struct DashboardView: View {
             }
             Spacer(minLength: 0)
         }
-        .dashboardCard()
+        .dashboardCard(padding: 12)
     }
 
     private var breakdownItems: [BreakdownDisplayItem] {
         [
-            BreakdownDisplayItem(id: "input", title: "输入", value: snapshot.breakdown.input, color: SpendScopeTheme.accent),
-            BreakdownDisplayItem(id: "cached", title: "缓存输入", value: snapshot.breakdown.cachedInput, color: SpendScopeTheme.accentBlue),
-            BreakdownDisplayItem(id: "output", title: "输出", value: snapshot.breakdown.output, color: SpendScopeTheme.output),
-            BreakdownDisplayItem(id: "reasoning", title: "推理", value: snapshot.breakdown.reasoning, color: SpendScopeTheme.reasoning)
+            BreakdownDisplayItem(
+                id: "input",
+                title: "未缓存输入",
+                value: snapshot.breakdown.input,
+                color: SpendScopeTheme.accent
+            ),
+            BreakdownDisplayItem(
+                id: "cached",
+                title: "缓存输入",
+                value: snapshot.breakdown.cachedInput,
+                color: SpendScopeTheme.accentBlue
+            ),
+            BreakdownDisplayItem(
+                id: "output",
+                title: "可见输出",
+                value: snapshot.breakdown.output,
+                color: SpendScopeTheme.output
+            ),
+            BreakdownDisplayItem(
+                id: "reasoning",
+                title: "推理输出",
+                value: snapshot.breakdown.reasoning,
+                color: SpendScopeTheme.reasoning
+            )
         ]
     }
 }

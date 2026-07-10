@@ -280,7 +280,9 @@ var body: some View {
             .frame(height: 190)
         HStack(alignment: .top, spacing: 10) {
             trendCard.frame(maxWidth: .infinity, maxHeight: .infinity)
-            compositionCard.frame(width: 300, maxHeight: .infinity)
+            compositionCard
+                .frame(width: 300)
+                .frame(maxHeight: .infinity)
         }
     }
     .padding(16)
@@ -406,7 +408,9 @@ struct DashboardView: View {
             overviewCard.frame(height: 190)
             HStack(alignment: .top, spacing: 10) {
                 trendCard.frame(maxWidth: .infinity, maxHeight: .infinity)
-                compositionCard.frame(width: 300, maxHeight: .infinity)
+                compositionCard
+                    .frame(width: 300)
+                    .frame(maxHeight: .infinity)
             }
         }
         .padding(16)

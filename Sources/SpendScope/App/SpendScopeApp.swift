@@ -19,7 +19,7 @@ struct SpendScopeApp: App {
         Window("SpendScope", id: "dashboard") {
             DashboardView(snapshot: snapshot)
         }
-        .defaultSize(width: 1080, height: 760)
+        .defaultSize(width: 920, height: 620)
 
         Settings {
             SettingsView()
