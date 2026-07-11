@@ -8,9 +8,38 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(TokenFormatter.compact(17_000_000), "17.0M")
         XCTAssertEqual(TokenFormatter.compact(1_061_100_000), "1.1B")
     }
+
+    func testFormatsPercentagesWithOneDecimalPlace() {
+        XCTAssertEqual(TokenFormatter.percentage(0.48235), "48.2%")
+        XCTAssertEqual(TokenFormatter.percentage(0), "0.0%")
+        XCTAssertEqual(TokenFormatter.percentage(1), "100.0%")
+    }
 }
 
 final class DashboardSnapshotTests: XCTestCase {
+    func testPeriodShareUsesCurrentPeriodTotal() {
+        let today = DashboardSnapshot.preview.periods[0]
+
+        XCTAssertEqual(today.share(of: today.uncachedInput), 0.48235, accuracy: 0.00001)
+    }
+
+    func testPeriodShareHandlesZeroAndClampsInvalidValues() {
+        let zeroTotal = PeriodUsage(
+            id: "zero",
+            title: "空周期",
+            total: 0,
+            uncachedInput: 0,
+            cachedInput: 0,
+            output: 0,
+            reasoning: 0
+        )
+        let regular = DashboardSnapshot.preview.periods[0]
+
+        XCTAssertEqual(zeroTotal.share(of: 10), 0)
+        XCTAssertEqual(regular.share(of: -1), 0)
+        XCTAssertEqual(regular.share(of: regular.total + 1), 1)
+    }
+
     func testQuotaCenterLabelsUseCompactPeriods() {
         let quotas = DashboardSnapshot.preview.quotas
 

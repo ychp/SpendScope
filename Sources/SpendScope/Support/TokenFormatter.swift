@@ -13,4 +13,9 @@ enum TokenFormatter {
             String(value)
         }
     }
+
+    static func percentage(_ value: Double) -> String {
+        let normalized = value.isFinite ? min(max(value, 0), 1) : 0
+        return String(format: "%.1f%%", normalized * 100)
+    }
 }

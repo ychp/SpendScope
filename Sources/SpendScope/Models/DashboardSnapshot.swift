@@ -83,6 +83,11 @@ struct PeriodUsage: Identifiable, Sendable {
     let reasoning: Int
 
     var visibleOutput: Int { max(0, output - reasoning) }
+
+    func share(of value: Int) -> Double {
+        guard total > 0 else { return 0 }
+        return min(max(Double(value) / Double(total), 0), 1)
+    }
 }
 
 struct QuotaSnapshot: Identifiable, Sendable {

@@ -148,7 +148,7 @@ struct DashboardView: View {
     }
 
     private func periodTile(_ period: PeriodUsage) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
                 Text(period.title)
                     .font(.system(size: 14, weight: .semibold))
@@ -159,14 +159,34 @@ struct DashboardView: View {
                     .minimumScaleFactor(0.75)
             }
 
-            LazyVGrid(columns: periodMetricGridColumns, alignment: .leading, spacing: 4) {
-                periodMetric("输入", period.uncachedInput, SpendScopeTheme.accent)
-                periodMetric("缓存", period.cachedInput, SpendScopeTheme.accentBlue)
-                periodMetric("输出", period.visibleOutput, SpendScopeTheme.output)
-                periodMetric("推理", period.reasoning, SpendScopeTheme.reasoning)
+            LazyVGrid(columns: periodMetricGridColumns, alignment: .leading, spacing: 3) {
+                periodMetric(
+                    "输入",
+                    value: period.uncachedInput,
+                    share: period.share(of: period.uncachedInput),
+                    color: SpendScopeTheme.accent
+                )
+                periodMetric(
+                    "缓存",
+                    value: period.cachedInput,
+                    share: period.share(of: period.cachedInput),
+                    color: SpendScopeTheme.accentBlue
+                )
+                periodMetric(
+                    "输出",
+                    value: period.visibleOutput,
+                    share: period.share(of: period.visibleOutput),
+                    color: SpendScopeTheme.output
+                )
+                periodMetric(
+                    "推理",
+                    value: period.reasoning,
+                    share: period.share(of: period.reasoning),
+                    color: SpendScopeTheme.reasoning
+                )
             }
         }
-        .padding(10)
+        .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
         .overlay {
@@ -175,18 +195,46 @@ struct DashboardView: View {
         }
     }
 
-    private func periodMetric(_ title: String, _ value: Int, _ color: Color) -> some View {
+    private func periodMetric(
+        _ title: String,
+        value: Int,
+        share: Double,
+        color: Color
+    ) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
                 Circle().fill(color).frame(width: 6, height: 6)
-                Text(title).font(.caption2).foregroundStyle(.secondary)
+                Text(title)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
             }
-            Text(TokenFormatter.compact(value))
-                .font(.system(size: 11, weight: .medium))
-                .monospacedDigit()
-                .minimumScaleFactor(0.75)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(TokenFormatter.compact(value))
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 2)
+                Text(TokenFormatter.percentage(share))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.08))
+                    Capsule()
+                        .fill(color)
+                        .frame(width: geometry.size.width * share)
+                }
+            }
+            .frame(height: 3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(title) \(TokenFormatter.compact(value))，占当前周期 \(TokenFormatter.percentage(share))"
+        )
     }
 
     private var trendCard: some View {
