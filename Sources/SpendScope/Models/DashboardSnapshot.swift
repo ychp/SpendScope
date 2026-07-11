@@ -23,6 +23,39 @@ struct DashboardSnapshot: Sendable {
         )
     }
 
+    private static let previewDailyUsage: [DailyUsage] = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        guard let startDate = calendar.date(
+            from: DateComponents(year: 2026, month: 5, day: 28)
+        ) else {
+            return []
+        }
+
+        return (0..<45).compactMap { index in
+            guard let date = calendar.date(byAdding: .day, value: index, to: startDate) else {
+                return nil
+            }
+            let components = calendar.dateComponents([.year, .month, .day], from: date)
+            guard
+                let year = components.year,
+                let month = components.month,
+                let day = components.day
+            else {
+                return nil
+            }
+
+            let total = 8_400_000
+                + (index % 10) * 650_000
+                + (index / 10) * 300_000
+            return DailyUsage(
+                id: String(format: "%04d-%02d-%02d", year, month, day),
+                day: String(format: "%d/%d", month, day),
+                total: total
+            )
+        }
+    }()
+
     static let preview = DashboardSnapshot(
         planName: "Pro",
         updatedText: "刚刚刷新",
@@ -61,16 +94,32 @@ struct DashboardSnapshot: Sendable {
             ModelUsage(id: "gpt-5.5", name: "gpt-5.5", share: 0.68),
             ModelUsage(id: "gpt-5.4", name: "gpt-5.4", share: 0.32)
         ],
-        dailyUsage: [
-            DailyUsage(id: "5/10", day: "5/10", total: 8_400_000),
-            DailyUsage(id: "5/11", day: "5/11", total: 10_300_000),
-            DailyUsage(id: "5/12", day: "5/12", total: 11_100_000),
-            DailyUsage(id: "5/13", day: "5/13", total: 12_500_000),
-            DailyUsage(id: "5/14", day: "5/14", total: 13_700_000),
-            DailyUsage(id: "5/15", day: "5/15", total: 14_200_000),
-            DailyUsage(id: "5/16", day: "5/16", total: 14_000_000)
-        ]
+        dailyUsage: previewDailyUsage
     )
+}
+
+enum TrendRange: String, CaseIterable, Identifiable, Sendable {
+    case today = "今日"
+    case sevenDays = "7 天"
+    case thirtyDays = "30 天"
+    case all = "全部"
+
+    static let defaultRange: TrendRange = .sevenDays
+
+    var id: Self { self }
+
+    func select(from usage: [DailyUsage]) -> [DailyUsage] {
+        let limit: Int?
+        switch self {
+        case .today: limit = 1
+        case .sevenDays: limit = 7
+        case .thirtyDays: limit = 30
+        case .all: limit = nil
+        }
+
+        guard let limit else { return usage }
+        return Array(usage.suffix(limit))
+    }
 }
 
 struct PeriodUsage: Identifiable, Sendable {

@@ -3,18 +3,13 @@ import SwiftUI
 
 struct DashboardView: View {
     let snapshot: DashboardSnapshot
-    @State private var selectedRange = "7 天"
+    @State private var selectedRange = TrendRange.defaultRange
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             dashboardHeader
             overviewCard.frame(height: 260)
-            HStack(alignment: .top, spacing: 10) {
-                trendCard.frame(maxWidth: .infinity, maxHeight: .infinity)
-                compositionCard
-                    .frame(width: 300)
-                    .frame(maxHeight: .infinity)
-            }
+            trendCard.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(16)
         .frame(minWidth: 920, minHeight: 620)
@@ -22,21 +17,11 @@ struct DashboardView: View {
     }
 
     private var dashboardHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("SpendScope").font(.title.bold())
-                Text("Codex · \(snapshot.planName)  ·  \(snapshot.updatedText)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Picker("时间范围", selection: $selectedRange) {
-                ForEach(["今日", "7 天", "30 天", "全部"], id: \.self) {
-                    Text($0)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 260)
+        VStack(alignment: .leading, spacing: 2) {
+            Text("SpendScope").font(.title.bold())
+            Text("Codex · \(snapshot.planName)  ·  \(snapshot.updatedText)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -239,8 +224,20 @@ struct DashboardView: View {
 
     private var trendCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Token 趋势").font(.headline)
-            Chart(snapshot.dailyUsage) { item in
+            HStack {
+                Text("Token 趋势").font(.headline)
+                Spacer()
+                Picker("时间范围", selection: $selectedRange) {
+                    ForEach(TrendRange.allCases) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+            }
+
+            Chart(selectedRange.select(from: snapshot.dailyUsage)) { item in
                 AreaMark(
                     x: .value("日期", item.day),
                     y: .value("Token", item.total)
@@ -270,69 +267,8 @@ struct DashboardView: View {
                     }
                 }
             }
-            .frame(height: 180)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .dashboardCard(padding: 12)
     }
-
-    private var compositionCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Token 构成").font(.headline)
-            ForEach(breakdownItems) { item in
-                VStack(spacing: 5) {
-                    HStack {
-                        Circle().fill(item.color).frame(width: 8, height: 8)
-                        Text(item.title).font(.caption)
-                        Spacer()
-                        Text(TokenFormatter.compact(item.value))
-                            .font(.caption)
-                            .monospacedDigit()
-                    }
-                    ProgressView(
-                        value: Double(item.value),
-                        total: Double(snapshot.breakdown.total)
-                    )
-                    .tint(item.color)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .dashboardCard(padding: 12)
-    }
-
-    private var breakdownItems: [BreakdownDisplayItem] {
-        [
-            BreakdownDisplayItem(
-                id: "input",
-                title: "未缓存输入",
-                value: snapshot.breakdown.input,
-                color: SpendScopeTheme.accent
-            ),
-            BreakdownDisplayItem(
-                id: "cached",
-                title: "缓存输入",
-                value: snapshot.breakdown.cachedInput,
-                color: SpendScopeTheme.accentBlue
-            ),
-            BreakdownDisplayItem(
-                id: "output",
-                title: "可见输出",
-                value: snapshot.breakdown.output,
-                color: SpendScopeTheme.output
-            ),
-            BreakdownDisplayItem(
-                id: "reasoning",
-                title: "推理输出",
-                value: snapshot.breakdown.reasoning,
-                color: SpendScopeTheme.reasoning
-            )
-        ]
-    }
-}
-
-private struct BreakdownDisplayItem: Identifiable {
-    let id: String
-    let title: String
-    let value: Int
-    let color: Color
 }

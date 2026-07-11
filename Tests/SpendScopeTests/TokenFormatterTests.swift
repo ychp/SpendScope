@@ -17,6 +17,31 @@ final class TokenFormatterTests: XCTestCase {
 }
 
 final class DashboardSnapshotTests: XCTestCase {
+    func testTrendRangesExposeExpectedLabelsAndDefault() {
+        XCTAssertEqual(TrendRange.allCases.map(\.rawValue), ["今日", "7 天", "30 天", "全部"])
+        XCTAssertEqual(TrendRange.defaultRange, .sevenDays)
+    }
+
+    func testTrendRangesSelectLatestUsage() {
+        let history = makeDailyUsage(count: 45)
+
+        XCTAssertEqual(TrendRange.today.select(from: history).map(\.total), [45])
+        XCTAssertEqual(TrendRange.sevenDays.select(from: history).map(\.total), Array(39...45))
+        XCTAssertEqual(TrendRange.thirtyDays.select(from: history).map(\.total), Array(16...45))
+        XCTAssertEqual(TrendRange.all.select(from: history).map(\.total), Array(1...45))
+    }
+
+    func testTrendRangeHandlesLimitedAndEmptyUsage() {
+        let limited = makeDailyUsage(count: 3)
+
+        XCTAssertEqual(TrendRange.sevenDays.select(from: limited).map(\.total), [1, 2, 3])
+        XCTAssertTrue(TrendRange.thirtyDays.select(from: []).isEmpty)
+    }
+
+    func testPreviewContainsHistoryForAllTrendRanges() {
+        XCTAssertGreaterThanOrEqual(DashboardSnapshot.preview.dailyUsage.count, 45)
+    }
+
     func testPeriodShareUsesCurrentPeriodTotal() {
         let today = DashboardSnapshot.preview.periods[0]
 
@@ -83,5 +108,11 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.breakdown.output, today.visibleOutput)
         XCTAssertEqual(snapshot.breakdown.reasoning, today.reasoning)
         XCTAssertEqual(snapshot.breakdown.total, today.total)
+    }
+
+    private func makeDailyUsage(count: Int) -> [DailyUsage] {
+        (1...count).map { value in
+            DailyUsage(id: "\(value)", day: "\(value)", total: value)
+        }
     }
 }
