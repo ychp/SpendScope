@@ -11,6 +11,20 @@ final class TokenFormatterTests: XCTestCase {
 }
 
 final class DashboardSnapshotTests: XCTestCase {
+    func testQuotaCenterLabelsUseCompactPeriods() {
+        let quotas = DashboardSnapshot.preview.quotas
+
+        XCTAssertEqual(quotas.map(\.compactTitle), ["5H", "7d"])
+        XCTAssertEqual(quotas.map(\.remainingLabel), ["5H 85%", "7d 84%"])
+    }
+
+    func testPreviewQuotaResetTextUsesDashboardFormat() {
+        let quotas = DashboardSnapshot.preview.quotas
+
+        XCTAssertEqual(quotas.map(\.resetText), ["02:52", "2026-07-13 10:45"])
+        XCTAssertFalse(quotas.contains { $0.resetText.contains("重置") })
+    }
+
     func testPreviewPeriodsUseConsistentTotals() {
         let periods = DashboardSnapshot.preview.periods
 

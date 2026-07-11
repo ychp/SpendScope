@@ -8,7 +8,7 @@ struct DashboardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             dashboardHeader
-            overviewCard.frame(height: 190)
+            overviewCard.frame(height: 260)
             HStack(alignment: .top, spacing: 10) {
                 trendCard.frame(maxWidth: .infinity, maxHeight: .infinity)
                 compositionCard
@@ -42,7 +42,7 @@ struct DashboardView: View {
 
     private var overviewCard: some View {
         HStack(spacing: 14) {
-            currentQuotaSection.frame(width: 330)
+            currentQuotaSection.frame(width: 340)
             Divider()
             periodMetricsSection
         }
@@ -50,32 +50,46 @@ struct DashboardView: View {
     }
 
     private var currentQuotaSection: some View {
-        HStack(spacing: 14) {
+        VStack(spacing: 8) {
             ZStack {
                 quotaRing(
                     snapshot.quotas[0],
-                    diameter: 138,
-                    lineWidth: 10,
+                    diameter: 174,
+                    lineWidth: 11,
                     color: SpendScopeTheme.accent
                 )
                 quotaRing(
                     snapshot.quotas[1],
-                    diameter: 92,
-                    lineWidth: 8,
+                    diameter: 124,
+                    lineWidth: 9,
                     color: SpendScopeTheme.accentBlue
                 )
-                VStack(spacing: 1) {
-                    Text("当前额度").font(.caption2).foregroundStyle(.secondary)
-                    Text(snapshot.planName).font(.headline)
+                VStack(spacing: 5) {
+                    quotaCenterLabel(snapshot.quotas[0])
+                    quotaCenterLabel(snapshot.quotas[1])
                 }
             }
-            .frame(width: 142, height: 142)
+            .frame(width: 178, height: 178)
 
-            VStack(alignment: .leading, spacing: 12) {
-                quotaLegend(snapshot.quotas[0], color: SpendScopeTheme.accent)
-                quotaLegend(snapshot.quotas[1], color: SpendScopeTheme.accentBlue)
+            VStack(alignment: .leading, spacing: 3) {
+                quotaResetRow(snapshot.quotas[0], color: SpendScopeTheme.accent)
+                quotaResetRow(snapshot.quotas[1], color: SpendScopeTheme.accentBlue)
             }
+            .frame(width: 178, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private func quotaCenterLabel(_ quota: QuotaSnapshot) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(quota.compactTitle)
+                .font(.system(size: 13, weight: .semibold))
+            Text("\(quota.remainingPercent)%")
+                .font(.system(size: 20, weight: .bold))
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(quota.remainingLabel)
     }
 
     private func quotaRing(
@@ -97,16 +111,16 @@ struct DashboardView: View {
         .frame(width: diameter, height: diameter)
     }
 
-    private func quotaLegend(_ quota: QuotaSnapshot, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 5) {
-                Circle().fill(color).frame(width: 7, height: 7)
-                Text(quota.title).font(.caption.bold())
-            }
-            Text("\(quota.remainingPercent)% 剩余")
-                .font(.callout.bold())
+    private func quotaResetRow(_ quota: QuotaSnapshot, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(quota.compactTitle)
+                .font(.caption.bold())
+                .frame(width: 20, alignment: .leading)
+            Text(quota.resetText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 .monospacedDigit()
-            Text(quota.resetText).font(.caption2).foregroundStyle(.secondary)
         }
     }
 
@@ -123,28 +137,37 @@ struct DashboardView: View {
                 periodTile(period)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var periodMetricGridColumns: [GridItem] {
+        [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ]
     }
 
     private func periodTile(_ period: PeriodUsage) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(period.title).font(.caption).foregroundStyle(.secondary)
+                Text(period.title)
+                    .font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Text(TokenFormatter.compact(period.total))
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 24, weight: .bold))
                     .monospacedDigit()
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(0.75)
             }
 
-            HStack(spacing: 6) {
+            LazyVGrid(columns: periodMetricGridColumns, alignment: .leading, spacing: 4) {
                 periodMetric("输入", period.uncachedInput, SpendScopeTheme.accent)
                 periodMetric("缓存", period.cachedInput, SpendScopeTheme.accentBlue)
                 periodMetric("输出", period.visibleOutput, SpendScopeTheme.output)
                 periodMetric("推理", period.reasoning, SpendScopeTheme.reasoning)
             }
         }
-        .padding(8)
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 10)
@@ -154,12 +177,12 @@ struct DashboardView: View {
 
     private func periodMetric(_ title: String, _ value: Int, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 3) {
-                Circle().fill(color).frame(width: 5, height: 5)
-                Text(title).font(.system(size: 9)).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Circle().fill(color).frame(width: 6, height: 6)
+                Text(title).font(.caption2).foregroundStyle(.secondary)
             }
             Text(TokenFormatter.compact(value))
-                .font(.caption2)
+                .font(.system(size: 11, weight: .medium))
                 .monospacedDigit()
                 .minimumScaleFactor(0.75)
         }

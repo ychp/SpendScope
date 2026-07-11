@@ -49,8 +49,13 @@ struct DashboardSnapshot: Sendable {
             )
         ],
         quotas: [
-            QuotaSnapshot(id: "5h", title: "5 小时", remaining: 0.85, resetText: "02:52 重置"),
-            QuotaSnapshot(id: "7d", title: "7 天", remaining: 0.84, resetText: "周一 10:45 重置")
+            QuotaSnapshot(id: "5h", title: "5 小时", remaining: 0.85, resetText: "02:52"),
+            QuotaSnapshot(
+                id: "7d",
+                title: "7 天",
+                remaining: 0.84,
+                resetText: "2026-07-13 10:45"
+            )
         ],
         models: [
             ModelUsage(id: "gpt-5.5", name: "gpt-5.5", share: 0.68),
@@ -87,6 +92,18 @@ struct QuotaSnapshot: Identifiable, Sendable {
     let resetText: String
 
     var remainingPercent: Int { Int((remaining * 100).rounded()) }
+
+    var compactTitle: String {
+        switch id {
+        case "5h": "5H"
+        case "7d": "7d"
+        default: title
+        }
+    }
+
+    var remainingLabel: String {
+        "\(compactTitle) \(remainingPercent)%"
+    }
 }
 
 struct TokenBreakdown: Sendable {
