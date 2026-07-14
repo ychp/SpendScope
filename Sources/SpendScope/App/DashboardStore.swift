@@ -93,6 +93,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         try store.persistSourceStatus(
             indexHealth: importResult.indexHealth,
             discoveredFileIDs: importResult.discoveredFileIDs,
+            issues: importResult.issues,
             processedFileCount: importResult.processedFileCount
         )
         return try await makeResult(importResult: importResult)
@@ -109,6 +110,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         try store.persistSourceStatus(
             indexHealth: importResult.indexHealth,
             discoveredFileIDs: importResult.discoveredFileIDs,
+            issues: importResult.issues,
             processedFileCount: importResult.processedFileCount
         )
         return try await makeResult(importResult: importResult)
@@ -163,9 +165,16 @@ actor LiveDashboardDataClient: DashboardDataClient {
         )
         let issues = importResult?.issues ?? []
         let hasUsage = snapshot.totalTokens > 0
+        let hasDegradedIndex: Bool
+        if case .degraded = facts.indexHealth {
+            hasDegradedIndex = true
+        } else {
+            hasDegradedIndex = false
+        }
 
         if hasUsage {
-            if !issues.isEmpty || facts.hasDegradedFiles || facts.hasUnsupportedFiles {
+            if !issues.isEmpty || hasDegradedIndex
+                || facts.hasDegradedFiles || facts.hasUnsupportedFiles {
                 return .stale(
                     snapshot,
                     summary,

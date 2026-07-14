@@ -217,17 +217,10 @@ final class UsageStoreTests: XCTestCase {
 
     func testCurrentFileHealthClearsRemovedHistoricalErrorAfterSuccessfulDiscovery() throws {
         let store = try makeStore()
-        try store.commit(ImportBatch(
-            file: .fixture(
-                fileID: "removed-bad", committedOffset: 0,
-                formatStatus: "error", lastError: "malformed-event"
-            ),
-            usageEvents: [], quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
-        ))
-
         try store.persistSourceStatus(
             indexHealth: .missing,
             discoveredFileIDs: ["removed-bad"],
+            issues: [.init(kind: .read, fileID: "removed-bad", detail: "read-failed")],
             processedFileCount: 1
         )
         XCTAssertTrue(try store.sourceFacts().hasDegradedFiles)
@@ -235,6 +228,7 @@ final class UsageStoreTests: XCTestCase {
         try store.persistSourceStatus(
             indexHealth: .missing,
             discoveredFileIDs: [],
+            issues: [],
             processedFileCount: 0
         )
         let recovered = try store.sourceFacts()
@@ -255,12 +249,72 @@ final class UsageStoreTests: XCTestCase {
         try store.persistSourceStatus(
             indexHealth: .available,
             discoveredFileIDs: ["current-unsupported"],
+            issues: [],
             processedFileCount: 1
         )
         let facts = try store.sourceFacts()
 
         XCTAssertTrue(facts.hasUnsupportedFiles)
         XCTAssertFalse(facts.hasDegradedFiles)
+    }
+
+    func testCurrentReadFailureWithoutCheckpointSurvivesUnrelatedForegroundPass() throws {
+        let store = try makeStore()
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: ["old-unread", "newest"],
+            issues: [.init(kind: .read, fileID: "old-unread", detail: "raw-sensitive")],
+            processedFileCount: 1
+        )
+
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: ["old-unread", "newest"],
+            issues: [],
+            processedFileCount: 1
+        )
+
+        XCTAssertTrue(try store.sourceFacts().hasDegradedFiles)
+    }
+
+    func testSuccessfulCheckpointRetryClearsPersistedCurrentReadFailure() throws {
+        let store = try makeStore()
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: ["retry-file"],
+            issues: [.init(kind: .read, fileID: "retry-file", detail: "read-failed")],
+            processedFileCount: 0
+        )
+        try store.commit(ImportBatch(
+            file: .fixture(fileID: "retry-file", committedOffset: 10),
+            usageEvents: [], quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: ["retry-file"],
+            issues: [],
+            processedFileCount: 1
+        )
+
+        XCTAssertFalse(try store.sourceFacts().hasDegradedFiles)
+    }
+
+    func testEmptyCurrentInventoryPreservesHistoricalLastSuccessfulRefresh() throws {
+        let store = try makeStore()
+        try store.commit(ImportBatch(
+            file: .fixture(fileID: "historical-success", committedOffset: 10),
+            usageEvents: [], quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: [],
+            issues: [],
+            processedFileCount: 0
+        )
+
+        XCTAssertEqual(try store.sourceFacts().lastSuccessfulRefreshMilliseconds, 3_000)
     }
 
     func testExistingVersionOneWithoutImporterColumnsRequiresRebuildAtInitialization() throws {

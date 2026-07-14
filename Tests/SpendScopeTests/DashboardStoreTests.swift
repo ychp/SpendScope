@@ -270,6 +270,7 @@ final class DashboardStoreTests: XCTestCase {
         try store.persistSourceStatus(
             indexHealth: .missing,
             discoveredFileIDs: ["current-bad"],
+            issues: [],
             processedFileCount: 1
         )
         let client = try LiveDashboardDataClient(
@@ -282,6 +283,104 @@ final class DashboardStoreTests: XCTestCase {
         do {
             _ = try await client.loadCached()
             XCTFail("Expected persisted malformed current file to block empty state")
+        } catch {
+            XCTAssertFalse(error is CancellationError)
+        }
+    }
+
+    func testCachedUsageWithPersistedDegradedIndexIsStaleButMissingIndexIsLoaded() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DashboardStoreCachedIndexHealth-\(UUID().uuidString)", isDirectory: true)
+        let codexRoot = directory.appendingPathComponent("synthetic-codex", isDirectory: true)
+        let databaseURL = directory.appendingPathComponent("synthetic-app-support/SpendScope.sqlite")
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try UsageStore(databaseURL: databaseURL)
+        try store.commit(ImportBatch(
+            file: FileCheckpoint(
+                fileID: "cached-usage", deviceID: 1, inode: 1,
+                path: "/synthetic/cached-usage.jsonl", fileSize: 10, committedOffset: 10,
+                generation: 0, threadID: "cached-thread", lastRecordAtMilliseconds: 1_000,
+                lastSuccessAtMilliseconds: 1_000, formatStatus: "supported", lastError: nil
+            ),
+            usageEvents: [StoredUsageEvent(
+                fingerprint: "cached-index-usage", observedAtMilliseconds: 1_000,
+                threadID: "cached-thread", sourceKind: .cli, model: "test-model",
+                plan: PlanResolver.resolve(rawValue: "plus"),
+                usage: TokenUsageDelta(
+                    uncachedInput: 42, cachedInput: 0, visibleOutput: 0, reasoning: 0
+                ),
+                sourceFileID: "cached-usage", sourceOffset: 10
+            )],
+            quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+        try store.persistSourceStatus(
+            indexHealth: .degraded("sensitive"),
+            discoveredFileIDs: ["cached-usage"],
+            issues: [],
+            processedFileCount: 1
+        )
+
+        let degradedClient = try LiveDashboardDataClient(
+            codexRootURL: codexRoot,
+            databaseURL: databaseURL,
+            now: { Date(timeIntervalSince1970: 1_000) },
+            calendar: .fixture
+        )
+        guard case .stale = try await degradedClient.loadCached() else {
+            return XCTFail("Expected persisted degraded index to make cached usage stale")
+        }
+
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: ["cached-usage"],
+            issues: [],
+            processedFileCount: 0
+        )
+        let missingClient = try LiveDashboardDataClient(
+            codexRootURL: codexRoot,
+            databaseURL: databaseURL,
+            now: { Date(timeIntervalSince1970: 1_000) },
+            calendar: .fixture
+        )
+        guard case .loaded = try await missingClient.loadCached() else {
+            return XCTFail("A missing index alone must not make cached usage stale")
+        }
+    }
+
+    func testCachedCurrentReadFailureWithoutCheckpointSurvivesRestartAndFailsSafely() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DashboardStoreCachedReadHealth-\(UUID().uuidString)", isDirectory: true)
+        let codexRoot = directory.appendingPathComponent("synthetic-codex", isDirectory: true)
+        let databaseURL = directory.appendingPathComponent("synthetic-app-support/SpendScope.sqlite")
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try UsageStore(databaseURL: databaseURL)
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: ["unread-current"],
+            issues: [.init(kind: .read, fileID: "unread-current", detail: "raw-sensitive")],
+            processedFileCount: 0
+        )
+        XCTAssertTrue(try UsageStore(databaseURL: databaseURL).sourceFacts().hasDegradedFiles)
+
+        let client = try LiveDashboardDataClient(
+            codexRootURL: codexRoot,
+            databaseURL: databaseURL,
+            now: { Date(timeIntervalSince1970: 1_000) },
+            calendar: .fixture
+        )
+        do {
+            _ = try await client.loadCached()
+            XCTFail("Expected persisted current read failure to block an empty dashboard")
         } catch {
             XCTAssertFalse(error is CancellationError)
         }

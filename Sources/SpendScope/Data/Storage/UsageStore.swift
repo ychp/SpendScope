@@ -365,6 +365,7 @@ final class UsageStore: @unchecked Sendable {
         try persistSourceStatus(
             indexHealth: health,
             discoveredFileIDs: nil,
+            issues: [],
             processedFileCount: processedFileCount
         )
     }
@@ -372,6 +373,7 @@ final class UsageStore: @unchecked Sendable {
     func persistSourceStatus(
         indexHealth: CodexIndexHealth,
         discoveredFileIDs: [String]?,
+        issues: [ImportIssue],
         processedFileCount: Int
     ) throws {
         try database.inTransaction {
@@ -398,25 +400,110 @@ final class UsageStore: @unchecked Sendable {
 
             guard let discoveredFileIDs else { return }
             let currentIDs = Set(discoveredFileIDs)
-            let rows = try database.query(sql: """
+            let previousAggregateRows = try database.query(
+                sql: "SELECT last_success_at_ms FROM source_status WHERE source_kind = 'files'"
+            )
+            let previousLastSuccess = try previousAggregateRows.first.map {
+                try SQLiteRow(table: "source_status", values: $0)
+                    .optionalInt64("last_success_at_ms")
+            } ?? nil
+            let checkpointRows = try database.query(sql: """
                 SELECT file_id, last_success_at_ms, format_status, last_error
                 FROM source_files
                 """)
+            var checkpoints: [String: (formatStatus: String, lastError: String?)] = [:]
+            var historicalLastSuccess: Int64?
+            for values in checkpointRows {
+                let row = SQLiteRow(table: "source_files", values: values)
+                let fileID = try row.requiredString("file_id")
+                checkpoints[fileID] = (
+                    formatStatus: try row.requiredString("format_status"),
+                    lastError: try row.optionalString("last_error")
+                )
+                if let value = try row.optionalInt64("last_success_at_ms") {
+                    historicalLastSuccess = max(historicalLastSuccess ?? value, value)
+                }
+            }
+
+            let existingFileStatusRows = try database.query(sql: """
+                SELECT source_kind, state FROM source_status
+                WHERE source_kind LIKE 'file:%'
+                """)
+            for values in existingFileStatusRows {
+                let row = SQLiteRow(table: "source_status", values: values)
+                let sourceKind = try row.requiredString("source_kind")
+                let fileID = String(sourceKind.dropFirst("file:".count))
+                if !currentIDs.contains(fileID) {
+                    try deleteSourceStatus(sourceKind: sourceKind)
+                }
+            }
+
+            var issueStates: [String: String] = [:]
+            for issue in issues {
+                guard let fileID = issue.fileID, currentIDs.contains(fileID) else { continue }
+                switch issue.kind {
+                case .unsupportedFormat:
+                    issueStates[fileID] = "unsupported"
+                case .read, .decode, .store:
+                    if issueStates[fileID] != "unsupported" {
+                        issueStates[fileID] = "degraded"
+                    }
+                case .discovery, .index:
+                    break
+                }
+            }
+
+            for fileID in currentIDs.sorted() {
+                let sourceKind = "file:\(fileID)"
+                if let issueState = issueStates[fileID] {
+                    try upsertSourceStatus(
+                        sourceKind: sourceKind,
+                        state: issueState,
+                        detail: issueState == "unsupported" ? "file-unsupported" : "file-degraded",
+                        lastSuccessAtMilliseconds: nil,
+                        processedFileCount: 0
+                    )
+                    continue
+                }
+                guard let checkpoint = checkpoints[fileID] else {
+                    continue
+                }
+                if checkpoint.lastError == "missing-thread-context" {
+                    try upsertSourceStatus(
+                        sourceKind: sourceKind,
+                        state: "unsupported",
+                        detail: "file-unsupported",
+                        lastSuccessAtMilliseconds: nil,
+                        processedFileCount: 0
+                    )
+                } else if checkpoint.formatStatus != "supported" || checkpoint.lastError != nil {
+                    try upsertSourceStatus(
+                        sourceKind: sourceKind,
+                        state: "degraded",
+                        detail: "file-degraded",
+                        lastSuccessAtMilliseconds: nil,
+                        processedFileCount: 0
+                    )
+                } else {
+                    try deleteSourceStatus(sourceKind: sourceKind)
+                }
+            }
+
+            let currentStatusRows = try database.query(sql: """
+                SELECT source_kind, state FROM source_status
+                WHERE source_kind LIKE 'file:%'
+                """)
             var hasDegraded = false
             var hasUnsupported = false
-            var lastSuccessAtMilliseconds: Int64?
-            for values in rows {
-                let row = SQLiteRow(table: "source_files", values: values)
-                guard currentIDs.contains(try row.requiredString("file_id")) else { continue }
-                let formatStatus = try row.requiredString("format_status")
-                let lastError = try row.optionalString("last_error")
-                if lastError == "missing-thread-context" {
-                    hasUnsupported = true
-                } else if formatStatus != "supported" {
-                    hasDegraded = true
-                }
-                if let value = try row.optionalInt64("last_success_at_ms") {
-                    lastSuccessAtMilliseconds = max(lastSuccessAtMilliseconds ?? value, value)
+            for values in currentStatusRows {
+                let row = SQLiteRow(table: "source_status", values: values)
+                let sourceKind = try row.requiredString("source_kind")
+                let fileID = String(sourceKind.dropFirst("file:".count))
+                guard currentIDs.contains(fileID) else { continue }
+                switch try row.requiredString("state") {
+                case "unsupported": hasUnsupported = true
+                case "degraded": hasDegraded = true
+                default: break
                 }
             }
             let fileState: String
@@ -435,7 +522,7 @@ final class UsageStore: @unchecked Sendable {
                 sourceKind: "files",
                 state: fileState,
                 detail: fileDetail,
-                lastSuccessAtMilliseconds: lastSuccessAtMilliseconds,
+                lastSuccessAtMilliseconds: historicalLastSuccess ?? previousLastSuccess,
                 processedFileCount: processedFileCount
             )
         }
@@ -791,6 +878,13 @@ final class UsageStore: @unchecked Sendable {
                 lastSuccessAtMilliseconds.sqliteValue,
                 .integer(Int64(processedFileCount))
             ]
+        )
+    }
+
+    private func deleteSourceStatus(sourceKind: String) throws {
+        try database.execute(
+            sql: "DELETE FROM source_status WHERE source_kind = ?",
+            bindings: [.text(sourceKind)]
         )
     }
 
