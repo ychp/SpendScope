@@ -20,6 +20,7 @@ final class CodexImporterTests: XCTestCase {
 
         XCTAssertTrue(first.isSuccessful)
         XCTAssertEqual(first.processedFileCount, 1)
+        XCTAssertEqual(first.discoveredFileIDs?.count, 1)
         XCTAssertEqual(second.skippedFileCount, 1)
         XCTAssertEqual(try store.totalUsage(), 1_100)
         XCTAssertEqual(try store.latestQuotas().map(\.observation.kind), [.fiveHour, .weekly])

@@ -201,6 +201,92 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertEqual(finalQueryCount, 2)
     }
 
+    func testCancellingQueuedCachedLoadFinishesBeforeForegroundHolderIsReleased() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DashboardStoreGateCancellation-\(UUID().uuidString)", isDirectory: true)
+        let codexRoot = directory.appendingPathComponent("synthetic-codex", isDirectory: true)
+        let databaseURL = directory.appendingPathComponent("synthetic-app-support/SpendScope.sqlite")
+        try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let probe = LiveSerializationProbe()
+        let client = try LiveDashboardDataClient(
+            codexRootURL: codexRoot,
+            databaseURL: databaseURL,
+            now: { Date(timeIntervalSince1970: 1_000) },
+            calendar: .fixture,
+            beforeImport: { scope in await probe.pauseForegroundImport(scope) },
+            beforeQuery: { await probe.recordQueryEntry() }
+        )
+        let holder = Task { try await client.refresh() }
+        await eventually { await probe.foregroundImportIsPaused }
+        let queued = Task { () -> Error? in
+            do {
+                _ = try await client.loadCached()
+                return nil
+            } catch {
+                return error
+            }
+        }
+        for _ in 0..<100 { await Task.yield() }
+        let queuedFinished = expectation(description: "cancelled gate waiter finishes")
+        Task {
+            _ = await queued.value
+            queuedFinished.fulfill()
+        }
+
+        queued.cancel()
+        await fulfillment(of: [queuedFinished], timeout: 0.2)
+
+        let cancellationError = await queued.value
+        XCTAssertTrue(cancellationError is CancellationError)
+        let queryEntryCount = await probe.queryEntryCount
+        XCTAssertEqual(queryEntryCount, 0)
+        await probe.resumeForegroundImport()
+        _ = try await holder.value
+    }
+
+    func testCachedZeroUsageWithPersistedCurrentMalformedFileFailsInsteadOfEmpty() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DashboardStoreCachedHealth-\(UUID().uuidString)", isDirectory: true)
+        let codexRoot = directory.appendingPathComponent("synthetic-codex", isDirectory: true)
+        let databaseURL = directory.appendingPathComponent("synthetic-app-support/SpendScope.sqlite")
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try UsageStore(databaseURL: databaseURL)
+        try store.commit(ImportBatch(
+            file: FileCheckpoint(
+                fileID: "current-bad", deviceID: 1, inode: 1,
+                path: "/synthetic/current-bad.jsonl", fileSize: 10, committedOffset: 0,
+                generation: 0, threadID: nil, lastRecordAtMilliseconds: 1_000,
+                lastSuccessAtMilliseconds: nil, formatStatus: "error",
+                lastError: "malformed-event"
+            ),
+            usageEvents: [], quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: ["current-bad"],
+            processedFileCount: 1
+        )
+        let client = try LiveDashboardDataClient(
+            codexRootURL: codexRoot,
+            databaseURL: databaseURL,
+            now: { Date(timeIntervalSince1970: 1_000) },
+            calendar: .fixture
+        )
+
+        do {
+            _ = try await client.loadCached()
+            XCTFail("Expected persisted malformed current file to block empty state")
+        } catch {
+            XCTAssertFalse(error is CancellationError)
+        }
+    }
+
     private func eventually(
         _ condition: @escaping @MainActor () async -> Bool,
         file: StaticString = #filePath,

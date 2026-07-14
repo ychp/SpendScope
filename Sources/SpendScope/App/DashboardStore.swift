@@ -46,7 +46,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
     private let beforeImport: @Sendable (ImportScope) async -> Void
     private let beforeQuery: @Sendable () async -> Void
     private var operationIsRunning = false
-    private var operationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var operationWaiters: [OperationWaiter] = []
 
     init(
         codexRootURL: URL,
@@ -76,49 +76,62 @@ actor LiveDashboardDataClient: DashboardDataClient {
     }
 
     func loadCached() async throws -> DashboardDataResult {
-        await acquireOperation()
+        try await acquireOperation()
         defer { releaseOperation() }
         try Task.checkCancellation()
         return try await makeResult(importResult: nil)
     }
 
     func refresh() async throws -> DashboardDataResult {
-        await acquireOperation()
+        try await acquireOperation()
         defer { releaseOperation() }
         try Task.checkCancellation()
         await beforeImport(.foreground)
         try Task.checkCancellation()
         let importResult = await importer.refresh(scope: .foreground)
         try Task.checkCancellation()
-        try store.recordIndexHealth(
-            importResult.indexHealth,
+        try store.persistSourceStatus(
+            indexHealth: importResult.indexHealth,
+            discoveredFileIDs: importResult.discoveredFileIDs,
             processedFileCount: importResult.processedFileCount
         )
         return try await makeResult(importResult: importResult)
     }
 
     func backfillHistory() async throws -> DashboardDataResult {
-        await acquireOperation()
+        try await acquireOperation()
         defer { releaseOperation() }
         try Task.checkCancellation()
         await beforeImport(.history)
         try Task.checkCancellation()
         let importResult = await importer.refresh(scope: .history)
         try Task.checkCancellation()
-        try store.recordIndexHealth(
-            importResult.indexHealth,
+        try store.persistSourceStatus(
+            indexHealth: importResult.indexHealth,
+            discoveredFileIDs: importResult.discoveredFileIDs,
             processedFileCount: importResult.processedFileCount
         )
         return try await makeResult(importResult: importResult)
     }
 
-    private func acquireOperation() async {
+    private func acquireOperation() async throws {
+        try Task.checkCancellation()
         guard operationIsRunning else {
             operationIsRunning = true
             return
         }
-        await withCheckedContinuation { continuation in
-            operationWaiters.append(continuation)
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, any Error>) in
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                operationWaiters.append(OperationWaiter(id: id, continuation: continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelOperationWaiter(id: id) }
         }
     }
 
@@ -127,7 +140,12 @@ actor LiveDashboardDataClient: DashboardDataClient {
             operationIsRunning = false
             return
         }
-        operationWaiters.removeFirst().resume()
+        operationWaiters.removeFirst().continuation.resume()
+    }
+
+    private func cancelOperationWaiter(id: UUID) {
+        guard let index = operationWaiters.firstIndex(where: { $0.id == id }) else { return }
+        operationWaiters.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 
     private func makeResult(importResult: ImportResult?) async throws -> DashboardDataResult {
@@ -147,7 +165,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         let hasUsage = snapshot.totalTokens > 0
 
         if hasUsage {
-            if !issues.isEmpty || facts.hasDegradedFiles {
+            if !issues.isEmpty || facts.hasDegradedFiles || facts.hasUnsupportedFiles {
                 return .stale(
                     snapshot,
                     summary,
@@ -160,6 +178,9 @@ actor LiveDashboardDataClient: DashboardDataClient {
         if issues.contains(where: { $0.kind == .unsupportedFormat })
             || facts.hasUnsupportedFiles {
             return .unsupported("Codex 数据格式暂不兼容。")
+        }
+        if facts.hasDegradedFiles {
+            throw LiveDashboardDataError.importFailed
         }
         if issues.contains(where: { issue in
             switch issue.kind {
@@ -179,6 +200,11 @@ actor LiveDashboardDataClient: DashboardDataClient {
         case .degraded: .degraded
         }
     }
+}
+
+private struct OperationWaiter {
+    let id: UUID
+    let continuation: CheckedContinuation<Void, any Error>
 }
 
 private enum LiveDashboardDataError: Error {

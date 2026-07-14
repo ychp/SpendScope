@@ -215,6 +215,54 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(facts.lastSuccessfulRefreshMilliseconds, 3_000)
     }
 
+    func testCurrentFileHealthClearsRemovedHistoricalErrorAfterSuccessfulDiscovery() throws {
+        let store = try makeStore()
+        try store.commit(ImportBatch(
+            file: .fixture(
+                fileID: "removed-bad", committedOffset: 0,
+                formatStatus: "error", lastError: "malformed-event"
+            ),
+            usageEvents: [], quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: ["removed-bad"],
+            processedFileCount: 1
+        )
+        XCTAssertTrue(try store.sourceFacts().hasDegradedFiles)
+
+        try store.persistSourceStatus(
+            indexHealth: .missing,
+            discoveredFileIDs: [],
+            processedFileCount: 0
+        )
+        let recovered = try store.sourceFacts()
+        XCTAssertFalse(recovered.hasDegradedFiles)
+        XCTAssertFalse(recovered.hasUnsupportedFiles)
+    }
+
+    func testCurrentUnsupportedFileHealthIsPersistedWithoutRawDetail() throws {
+        let store = try makeStore()
+        try store.commit(ImportBatch(
+            file: .fixture(
+                fileID: "current-unsupported", committedOffset: 0,
+                formatStatus: "error", lastError: "missing-thread-context"
+            ),
+            usageEvents: [], quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+
+        try store.persistSourceStatus(
+            indexHealth: .available,
+            discoveredFileIDs: ["current-unsupported"],
+            processedFileCount: 1
+        )
+        let facts = try store.sourceFacts()
+
+        XCTAssertTrue(facts.hasUnsupportedFiles)
+        XCTAssertFalse(facts.hasDegradedFiles)
+    }
+
     func testExistingVersionOneWithoutImporterColumnsRequiresRebuildAtInitialization() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)
@@ -493,7 +541,9 @@ private extension FileCheckpoint {
         fileID: String = "file-1",
         committedOffset: Int64,
         threadID: String? = "thread-1",
-        lastRecordAtMilliseconds: Int64? = 2_000
+        lastRecordAtMilliseconds: Int64? = 2_000,
+        formatStatus: String = "supported",
+        lastError: String? = nil
     ) -> FileCheckpoint {
         FileCheckpoint(
             fileID: fileID,
@@ -506,8 +556,8 @@ private extension FileCheckpoint {
             threadID: threadID,
             lastRecordAtMilliseconds: lastRecordAtMilliseconds,
             lastSuccessAtMilliseconds: 3_000,
-            formatStatus: "supported",
-            lastError: nil
+            formatStatus: formatStatus,
+            lastError: lastError
         )
     }
 }

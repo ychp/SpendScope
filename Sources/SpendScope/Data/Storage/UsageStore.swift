@@ -362,33 +362,83 @@ final class UsageStore: @unchecked Sendable {
     }
 
     func recordIndexHealth(_ health: CodexIndexHealth, processedFileCount: Int) throws {
-        let state: String
-        let detail: String?
-        switch health {
-        case .available:
-            state = "available"
-            detail = nil
-        case .missing:
-            state = "missing"
-            detail = nil
-        case .degraded:
-            state = "degraded"
-            detail = "index-degraded"
-        }
-        try database.execute(
-            sql: """
-            INSERT INTO source_status(source_kind, state, detail, processed_file_count)
-            VALUES ('index', ?, ?, ?)
-            ON CONFLICT(source_kind) DO UPDATE SET
-              state = excluded.state,
-              detail = excluded.detail,
-              processed_file_count = excluded.processed_file_count
-            """,
-            bindings: [
-                .text(state), detail.map(SQLiteValue.text) ?? .null,
-                .integer(Int64(processedFileCount))
-            ]
+        try persistSourceStatus(
+            indexHealth: health,
+            discoveredFileIDs: nil,
+            processedFileCount: processedFileCount
         )
+    }
+
+    func persistSourceStatus(
+        indexHealth: CodexIndexHealth,
+        discoveredFileIDs: [String]?,
+        processedFileCount: Int
+    ) throws {
+        try database.inTransaction {
+            let indexState: String
+            let indexDetail: String?
+            switch indexHealth {
+            case .available:
+                indexState = "available"
+                indexDetail = nil
+            case .missing:
+                indexState = "missing"
+                indexDetail = nil
+            case .degraded:
+                indexState = "degraded"
+                indexDetail = "index-degraded"
+            }
+            try upsertSourceStatus(
+                sourceKind: "index",
+                state: indexState,
+                detail: indexDetail,
+                lastSuccessAtMilliseconds: nil,
+                processedFileCount: processedFileCount
+            )
+
+            guard let discoveredFileIDs else { return }
+            let currentIDs = Set(discoveredFileIDs)
+            let rows = try database.query(sql: """
+                SELECT file_id, last_success_at_ms, format_status, last_error
+                FROM source_files
+                """)
+            var hasDegraded = false
+            var hasUnsupported = false
+            var lastSuccessAtMilliseconds: Int64?
+            for values in rows {
+                let row = SQLiteRow(table: "source_files", values: values)
+                guard currentIDs.contains(try row.requiredString("file_id")) else { continue }
+                let formatStatus = try row.requiredString("format_status")
+                let lastError = try row.optionalString("last_error")
+                if lastError == "missing-thread-context" {
+                    hasUnsupported = true
+                } else if formatStatus != "supported" {
+                    hasDegraded = true
+                }
+                if let value = try row.optionalInt64("last_success_at_ms") {
+                    lastSuccessAtMilliseconds = max(lastSuccessAtMilliseconds ?? value, value)
+                }
+            }
+            let fileState: String
+            let fileDetail: String?
+            if hasUnsupported {
+                fileState = "unsupported"
+                fileDetail = hasDegraded ? "also-degraded" : nil
+            } else if hasDegraded {
+                fileState = "degraded"
+                fileDetail = nil
+            } else {
+                fileState = "clean"
+                fileDetail = nil
+            }
+            try upsertSourceStatus(
+                sourceKind: "files",
+                state: fileState,
+                detail: fileDetail,
+                lastSuccessAtMilliseconds: lastSuccessAtMilliseconds,
+                processedFileCount: processedFileCount
+            )
+        }
     }
 
     func sourceFacts() throws -> StoredSourceFacts {
@@ -400,21 +450,16 @@ final class UsageStore: @unchecked Sendable {
         let sources = try Set(sourceRows.map {
             try SQLiteRow(table: "stored_sources", values: $0).requiredString("source_kind")
         })
-        let fileRows = try database.query(sql: """
-            SELECT MAX(last_success_at_ms) AS last_success_at_ms,
-                   COALESCE(SUM(CASE WHEN format_status = 'supported' THEN 0 ELSE 1 END), 0)
-                     AS degraded_count,
-                   COALESCE(SUM(CASE WHEN last_error = 'missing-thread-context' THEN 1 ELSE 0 END), 0)
-                     AS unsupported_count
-            FROM source_files
-            """)
-        let fileRow = SQLiteRow(table: "source_files", values: fileRows[0])
-        let indexRows = try database.query(
-            sql: "SELECT state FROM source_status WHERE source_kind = 'index'"
+        let statusRows = try database.query(
+            sql: "SELECT source_kind, state, detail, last_success_at_ms FROM source_status"
         )
+        let statuses = try Dictionary(uniqueKeysWithValues: statusRows.map { values in
+            let row = SQLiteRow(table: "source_status", values: values)
+            return (try row.requiredString("source_kind"), row)
+        })
         let indexHealth: CodexIndexHealth
-        if let values = indexRows.first {
-            switch try SQLiteRow(table: "source_status", values: values).requiredString("state") {
+        if let indexRow = statuses["index"] {
+            switch try indexRow.requiredString("state") {
             case "available": indexHealth = .available
             case "missing": indexHealth = .missing
             default: indexHealth = .degraded("index-degraded")
@@ -422,13 +467,37 @@ final class UsageStore: @unchecked Sendable {
         } else {
             indexHealth = .missing
         }
+        let lastSuccessfulRefreshMilliseconds: Int64?
+        let hasDegradedFiles: Bool
+        let hasUnsupportedFiles: Bool
+        if let filesRow = statuses["files"] {
+            let state = try filesRow.requiredString("state")
+            let detail = try filesRow.optionalString("detail")
+            lastSuccessfulRefreshMilliseconds = try filesRow.optionalInt64("last_success_at_ms")
+            hasDegradedFiles = state == "degraded"
+                || (state == "unsupported" && detail == "also-degraded")
+            hasUnsupportedFiles = state == "unsupported"
+        } else {
+            let fileRows = try database.query(sql: """
+                SELECT MAX(last_success_at_ms) AS last_success_at_ms,
+                       COALESCE(SUM(CASE WHEN format_status = 'supported' THEN 0 ELSE 1 END), 0)
+                         AS degraded_count,
+                       COALESCE(SUM(CASE WHEN last_error = 'missing-thread-context' THEN 1 ELSE 0 END), 0)
+                         AS unsupported_count
+                FROM source_files
+                """)
+            let fileRow = SQLiteRow(table: "source_files", values: fileRows[0])
+            lastSuccessfulRefreshMilliseconds = try fileRow.optionalInt64("last_success_at_ms")
+            hasDegradedFiles = try fileRow.requiredInt64("degraded_count") > 0
+            hasUnsupportedFiles = try fileRow.requiredInt64("unsupported_count") > 0
+        }
         return StoredSourceFacts(
             hasCLIData: sources.contains(CodexSourceKind.cli.rawValue),
             hasDesktopData: sources.contains(CodexSourceKind.desktop.rawValue),
             indexHealth: indexHealth,
-            lastSuccessfulRefreshMilliseconds: try fileRow.optionalInt64("last_success_at_ms"),
-            hasDegradedFiles: try fileRow.requiredInt64("degraded_count") > 0,
-            hasUnsupportedFiles: try fileRow.requiredInt64("unsupported_count") > 0
+            lastSuccessfulRefreshMilliseconds: lastSuccessfulRefreshMilliseconds,
+            hasDegradedFiles: hasDegradedFiles,
+            hasUnsupportedFiles: hasUnsupportedFiles
         )
     }
 
@@ -695,6 +764,32 @@ final class UsageStore: @unchecked Sendable {
                 checkpoint.lastRecordAtMilliseconds.sqliteValue,
                 checkpoint.lastSuccessAtMilliseconds.sqliteValue, .text(checkpoint.formatStatus),
                 checkpoint.lastError.sqliteValue
+            ]
+        )
+    }
+
+    private func upsertSourceStatus(
+        sourceKind: String,
+        state: String,
+        detail: String?,
+        lastSuccessAtMilliseconds: Int64?,
+        processedFileCount: Int
+    ) throws {
+        try database.execute(
+            sql: """
+            INSERT INTO source_status(
+              source_kind, state, detail, last_success_at_ms, processed_file_count
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(source_kind) DO UPDATE SET
+              state = excluded.state,
+              detail = excluded.detail,
+              last_success_at_ms = excluded.last_success_at_ms,
+              processed_file_count = excluded.processed_file_count
+            """,
+            bindings: [
+                .text(sourceKind), .text(state), detail.sqliteValue,
+                lastSuccessAtMilliseconds.sqliteValue,
+                .integer(Int64(processedFileCount))
             ]
         )
     }

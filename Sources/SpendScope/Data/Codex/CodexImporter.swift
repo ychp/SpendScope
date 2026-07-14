@@ -27,6 +27,7 @@ struct ImportResult: Sendable {
     let skippedFileCount: Int
     let issues: [ImportIssue]
     let indexHealth: CodexIndexHealth
+    let discoveredFileIDs: [String]?
 
     var isSuccessful: Bool { issues.isEmpty }
 }
@@ -65,7 +66,8 @@ actor CodexImporter {
                 processedFileCount: 0,
                 skippedFileCount: 0,
                 issues: [.init(kind: .discovery, fileID: nil, detail: "discovery-failed")],
-                indexHealth: .degraded("discovery failed")
+                indexHealth: .degraded("discovery failed"),
+                discoveredFileIDs: nil
             )
         }
 
@@ -99,7 +101,8 @@ actor CodexImporter {
             processedFileCount: processed,
             skippedFileCount: skipped,
             issues: issues,
-            indexHealth: inventory.indexHealth
+            indexHealth: inventory.indexHealth,
+            discoveredFileIDs: inventory.rollouts.map(\.fileID)
         )
     }
 
