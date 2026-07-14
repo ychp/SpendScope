@@ -16,7 +16,7 @@ SpendScope 是一款仅在本机运行的 macOS 菜单栏应用，用于查看 C
 
 SpendScope 以只读方式流式扫描 Codex rollout JSONL 并识别记录类型，同时只读访问线程索引。应用只提取、标准化和持久化统计所需的安全字段，包括会话来源、模型、套餐、Token 累计计数、额度窗口和明确的会话状态；其他记录载荷不会进入统计模型。
 
-应用不会提取、展示、保存或上传提示词、消息、标题、回复、摘要、推理正文、工具输入、文件内容或工作目录内容，也不会访问 `auth.json` 等认证文件，不需要 OpenAI 登录态。标准化统计与增量检查点仅保存在 `~/Library/Application Support/SpendScope/SpendScope.sqlite`，不会上传到网络。
+应用不会提取、展示、保存或上传提示词、消息、标题、回复、摘要、推理正文、工具输入、文件内容或工作目录内容，也不会打开或读取 `auth.json` 等认证文件的内容；根目录发现只使用文件系统元数据，不需要 OpenAI 登录态。标准化统计与增量检查点仅保存在 `~/Library/Application Support/SpendScope/SpendScope.sqlite`，不会上传到网络。
 
 ## 当前限制
 
