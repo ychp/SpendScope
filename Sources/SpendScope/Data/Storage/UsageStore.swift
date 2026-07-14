@@ -62,6 +62,7 @@ struct FileCheckpoint: Sendable {
 struct ThreadCheckpoint: Sendable {
     let threadID: String
     let currentModel: String?
+    let currentPlan: PlanResolution?
     let counters: TokenCounters?
     let counterSegment: Int64
     let lastTokenAtMilliseconds: Int64?
@@ -87,7 +88,7 @@ struct StoredHourlyUsage: Equatable, Sendable {
     let totalTokens: Int64
 }
 
-final class UsageStore {
+final class UsageStore: @unchecked Sendable {
     private let database: SQLiteDatabase
 
     init(databaseURL: URL) throws {
@@ -193,10 +194,44 @@ final class UsageStore {
         return ThreadCheckpoint(
             threadID: try row.requiredString("thread_id"),
             currentModel: try row.optionalString("current_model"),
+            currentPlan: try planResolution(from: row),
             counters: counters,
             counterSegment: try row.requiredInt64("counter_segment"),
             lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms")
         )
+    }
+
+    func latestQuotas() throws -> [StoredQuotaEvent] {
+        let rows = try database.query(
+            sql: """
+            SELECT fingerprint, observed_at_ms, thread_id, kind, window_minutes, remaining,
+                   resets_at_ms, plan, plan_raw, plan_is_inferred, source_kind
+            FROM quota_snapshots
+            ORDER BY kind, observed_at_ms DESC, fingerprint DESC
+            """
+        )
+        var seenKinds: Set<QuotaKind> = []
+        var result: [StoredQuotaEvent] = []
+        for values in rows {
+            let row = SQLiteRow(table: "quota_snapshots", values: values)
+            let kind = try row.requiredEnum("kind", as: QuotaKind.self)
+            guard seenKinds.insert(kind).inserted else { continue }
+            let plan = try SQLitePlanResolution.from(row: row)
+            result.append(StoredQuotaEvent(
+                fingerprint: try row.requiredString("fingerprint"),
+                threadID: try row.requiredString("thread_id"),
+                observation: QuotaObservation(
+                    kind: kind,
+                    observedAtMilliseconds: try row.requiredInt64("observed_at_ms"),
+                    windowMinutes: Int(try row.requiredInt64("window_minutes")),
+                    remaining: try row.requiredDouble("remaining"),
+                    resetsAtMilliseconds: try row.optionalInt64("resets_at_ms"),
+                    plan: plan
+                ),
+                sourceKind: try row.requiredEnum("source_kind", as: CodexSourceKind.self)
+            ))
+        }
+        return result
     }
 
     func hourlyUsage() throws -> [StoredHourlyUsage] {
@@ -446,17 +481,23 @@ final class UsageStore {
         try database.execute(
             sql: """
             INSERT INTO thread_checkpoints(
-              thread_id, current_model, input_tokens, cached_input_tokens, output_tokens,
+              thread_id, current_model, plan, plan_raw, plan_is_inferred,
+              input_tokens, cached_input_tokens, output_tokens,
               reasoning_tokens, counter_segment, last_token_at_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(thread_id) DO UPDATE SET
-              current_model = excluded.current_model, input_tokens = excluded.input_tokens,
+              current_model = excluded.current_model, plan = excluded.plan,
+              plan_raw = excluded.plan_raw, plan_is_inferred = excluded.plan_is_inferred,
+              input_tokens = excluded.input_tokens,
               cached_input_tokens = excluded.cached_input_tokens, output_tokens = excluded.output_tokens,
               reasoning_tokens = excluded.reasoning_tokens, counter_segment = excluded.counter_segment,
               last_token_at_ms = excluded.last_token_at_ms
             """,
             bindings: [
                 .text(checkpoint.threadID), checkpoint.currentModel.sqliteValue,
+                (checkpoint.currentPlan?.kind.rawValue).sqliteValue,
+                checkpoint.currentPlan.flatMap(\.rawValue).sqliteValue,
+                checkpoint.currentPlan.map { $0.isInferred ? Int64(1) : Int64(0) }.sqliteValue,
                 (checkpoint.counters?.input).sqliteValue, (checkpoint.counters?.cachedInput).sqliteValue,
                 (checkpoint.counters?.output).sqliteValue, (checkpoint.counters?.reasoning).sqliteValue,
                 .integer(checkpoint.counterSegment), checkpoint.lastTokenAtMilliseconds.sqliteValue
@@ -547,6 +588,7 @@ final class UsageStore {
         """
         CREATE TABLE thread_checkpoints(
           thread_id TEXT PRIMARY KEY, current_model TEXT,
+          plan TEXT, plan_raw TEXT, plan_is_inferred INTEGER,
           input_tokens INTEGER, cached_input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER,
           counter_segment INTEGER NOT NULL DEFAULT 0, last_token_at_ms INTEGER
         )
@@ -602,6 +644,10 @@ final class UsageStore {
         )
         """
     ]
+
+    private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
+        try SQLitePlanResolution.optional(from: row)
+    }
 }
 
 enum UsageStoreError: Error, Equatable {
@@ -652,6 +698,13 @@ private struct SQLiteRow {
         }
     }
 
+    func requiredDouble(_ column: String) throws -> Double {
+        guard case let .real(value)? = values[column] else {
+            throw corruptColumn(column, expected: "REAL")
+        }
+        return value
+    }
+
     func requiredString(_ column: String) throws -> String {
         guard case let .text(value)? = values[column] else {
             throw corruptColumn(column, expected: "TEXT")
@@ -694,6 +747,37 @@ private struct SQLiteRow {
             column: column,
             expected: expected,
             actual: values[column]
+        )
+    }
+}
+
+private enum SQLitePlanResolution {
+    static func from(row: SQLiteRow) throws -> PlanResolution {
+        guard let result = try optional(from: row) else {
+            throw UsageStoreError.corruptColumn(
+                table: row.table,
+                column: "plan",
+                expected: "TEXT",
+                actual: row.values["plan"]
+            )
+        }
+        return result
+    }
+
+    static func optional(from row: SQLiteRow) throws -> PlanResolution? {
+        guard let kind = try row.optionalEnum("plan", as: PlanKind.self) else { return nil }
+        guard let inferred = try row.optionalInt64("plan_is_inferred"), inferred == 0 || inferred == 1 else {
+            throw UsageStoreError.corruptColumn(
+                table: row.table,
+                column: "plan_is_inferred",
+                expected: "INTEGER boolean",
+                actual: row.values["plan_is_inferred"]
+            )
+        }
+        return PlanResolution(
+            kind: kind,
+            rawValue: try row.optionalString("plan_raw"),
+            isInferred: inferred == 1
         )
     }
 }

@@ -58,6 +58,14 @@ final class UsageStoreTests: XCTestCase {
             ])
         )
         XCTAssertEqual(
+            Set(try store.schemaColumns(table: "thread_checkpoints")),
+            Set([
+                "thread_id", "current_model", "plan", "plan_raw", "plan_is_inferred",
+                "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens",
+                "counter_segment", "last_token_at_ms"
+            ])
+        )
+        XCTAssertEqual(
             Set(try store.schemaTables()),
             Set([
                 "schema_migrations", "source_files", "thread_checkpoints", "usage_events",
@@ -83,6 +91,9 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.sessionStateEventCount(), 1)
         XCTAssertEqual(try store.sessions().first?.activeTurnID, "turn-1")
         XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.counters?.input, 100)
+        XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.currentPlan?.kind, .plus)
+        XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.currentPlan?.rawValue, "plus")
+        XCTAssertFalse(try XCTUnwrap(store.threadCheckpoint(threadID: "thread-1")?.currentPlan).isInferred)
         XCTAssertEqual(try store.fileCheckpoint(fileID: batch.file.fileID)?.committedOffset, 160)
     }
 
@@ -341,6 +352,7 @@ private extension ThreadCheckpoint {
         ThreadCheckpoint(
             threadID: "thread-1",
             currentModel: "test-model",
+            currentPlan: PlanResolver.resolve(rawValue: "plus"),
             counters: TokenCounters(input: 100, cachedInput: 40, output: 20, reasoning: 5),
             counterSegment: counterSegment,
             lastTokenAtMilliseconds: 2_000
