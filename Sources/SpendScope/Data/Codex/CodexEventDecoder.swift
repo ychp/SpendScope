@@ -2,17 +2,18 @@ import Foundation
 
 struct CodexEventDecoder {
     func decode(line: Data) throws -> CodexDecodedEvent? {
-        let envelope = try JSONDecoder().decode(Envelope.self, from: line)
+        let decoder = JSONDecoder()
+        let discriminator = try decoder.decode(TopLevelDiscriminator.self, from: line)
 
-        switch envelope.type {
+        switch discriminator.type {
         case "session_meta":
+            let envelope = try decoder.decode(SessionEnvelope.self, from: line)
             guard
                 let threadID = envelope.payload.id,
                 let formatVersion = envelope.payload.cliVersion
             else {
                 return nil
             }
-
             let source: CodexSourceKind
             if envelope.payload.originator == "Codex Desktop" {
                 source = .desktop
@@ -21,9 +22,16 @@ struct CodexEventDecoder {
             } else {
                 source = .unknown
             }
-            return .session(.init(threadID: threadID, source: source, formatVersion: formatVersion))
+            return .session(
+                .init(
+                    threadID: threadID,
+                    source: source,
+                    formatVersion: formatVersion
+                )
+            )
 
         case "turn_context":
+            let envelope = try decoder.decode(TurnEnvelope.self, from: line)
             guard
                 let turnID = envelope.payload.turnID,
                 let model = envelope.payload.model
@@ -33,20 +41,26 @@ struct CodexEventDecoder {
             return .turn(.init(turnID: turnID, model: model))
 
         case "event_msg":
-            return try decodeEventMessage(envelope)
+            let eventDiscriminator = try decoder.decode(EventDiscriminatorEnvelope.self, from: line)
+            return try decodeEventMessage(
+                line: line,
+                eventType: eventDiscriminator.payload.type,
+                decoder: decoder
+            )
 
         default:
             return nil
         }
     }
 
-    private func decodeEventMessage(_ envelope: Envelope) throws -> CodexDecodedEvent? {
-        guard let eventType = envelope.payload.type else {
-            return nil
-        }
-
+    private func decodeEventMessage(
+        line: Data,
+        eventType: String,
+        decoder: JSONDecoder
+    ) throws -> CodexDecodedEvent? {
         switch eventType {
         case "token_count":
+            let envelope = try decoder.decode(TokenEnvelope.self, from: line)
             let counters = envelope.payload.info?.totalTokenUsage.map {
                 TokenCounters(
                     input: $0.inputTokens,
@@ -75,16 +89,20 @@ struct CodexEventDecoder {
             )
 
         case "task_started":
-            return try lifecycle(.started, envelope: envelope)
+            return try lifecycle(.started, line: line, decoder: decoder)
 
         case "task_complete":
-            return try lifecycle(.completed, envelope: envelope)
+            return try lifecycle(.completed, line: line, decoder: decoder)
 
-        case "turn_aborted" where envelope.payload.reason == "interrupted":
+        case "turn_aborted":
+            let envelope = try decoder.decode(LifecycleEnvelope.self, from: line)
+            guard envelope.payload.reason == "interrupted" else {
+                return nil
+            }
             return try lifecycle(.interrupted, envelope: envelope)
 
         case "thread_rolled_back":
-            return try lifecycle(.rolledBack, envelope: envelope)
+            return try lifecycle(.rolledBack, line: line, decoder: decoder)
 
         default:
             return nil
@@ -93,7 +111,15 @@ struct CodexEventDecoder {
 
     private func lifecycle(
         _ kind: SessionLifecycleKind,
-        envelope: Envelope
+        line: Data,
+        decoder: JSONDecoder
+    ) throws -> CodexDecodedEvent {
+        try lifecycle(kind, envelope: decoder.decode(LifecycleEnvelope.self, from: line))
+    }
+
+    private func lifecycle(
+        _ kind: SessionLifecycleKind,
+        envelope: LifecycleEnvelope
     ) throws -> CodexDecodedEvent {
         .lifecycle(
             .init(
@@ -117,34 +143,76 @@ struct CodexEventDecoder {
 }
 
 private extension CodexEventDecoder {
-    struct Envelope: Decodable {
-        let timestamp: String
+    struct TopLevelDiscriminator: Decodable {
         let type: String
-        let payload: Payload
     }
 
-    struct Payload: Decodable {
+    struct EventDiscriminatorEnvelope: Decodable {
+        let payload: EventDiscriminator
+    }
+
+    struct EventDiscriminator: Decodable {
+        let type: String
+    }
+
+    struct SessionEnvelope: Decodable {
+        let payload: SessionPayload
+    }
+
+    struct SessionPayload: Decodable {
         let id: String?
         let source: String?
         let originator: String?
         let cliVersion: String?
-        let turnID: String?
-        let model: String?
-        let type: String?
-        let info: TokenInfo?
-        let rateLimits: RateLimits?
-        let reason: String?
 
         enum CodingKeys: String, CodingKey {
             case id
             case source
             case originator
             case cliVersion = "cli_version"
+        }
+    }
+
+    struct TurnEnvelope: Decodable {
+        let payload: TurnPayload
+    }
+
+    struct TurnPayload: Decodable {
+        let turnID: String?
+        let model: String?
+
+        enum CodingKeys: String, CodingKey {
             case turnID = "turn_id"
             case model
-            case type
+        }
+    }
+
+    struct TokenEnvelope: Decodable {
+        let timestamp: String
+        let payload: TokenPayload
+    }
+
+    struct TokenPayload: Decodable {
+        let info: TokenInfo?
+        let rateLimits: RateLimits?
+
+        enum CodingKeys: String, CodingKey {
             case info
             case rateLimits = "rate_limits"
+        }
+    }
+
+    struct LifecycleEnvelope: Decodable {
+        let timestamp: String
+        let payload: LifecyclePayload
+    }
+
+    struct LifecyclePayload: Decodable {
+        let turnID: String?
+        let reason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case turnID = "turn_id"
             case reason
         }
     }

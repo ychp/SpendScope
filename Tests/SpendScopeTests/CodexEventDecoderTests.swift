@@ -54,4 +54,14 @@ final class CodexEventDecoderTests: XCTestCase {
             .lifecycle(.init(kind: .rolledBack, observedAtMilliseconds: 1_784_012_107_000, turnID: nil))
         )
     }
+
+    func testUnknownEventsIgnorePayloadShapeAndConflictingFields() throws {
+        let unknownTopLevel = #"{"timestamp":"2026-07-14T06:55:08.000Z","type":"future_record","payload":"not-an-object"}"#
+        let unknownMessage = #"{"timestamp":"2026-07-14T06:55:09.000Z","type":"event_msg","payload":{"type":"future_event","turn_id":42,"info":"not-an-object","rate_limits":false}}"#
+        let message = #"{"timestamp":"2026-07-14T06:55:10.000Z","type":"event_msg","payload":{"type":"user_message","turn_id":42,"info":"not-an-object","rate_limits":false}}"#
+
+        XCTAssertNil(try decoder.decode(line: Data(unknownTopLevel.utf8)))
+        XCTAssertNil(try decoder.decode(line: Data(unknownMessage.utf8)))
+        XCTAssertNil(try decoder.decode(line: Data(message.utf8)))
+    }
 }
