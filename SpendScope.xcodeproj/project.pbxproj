@@ -31,6 +31,10 @@
 		A00000000000000000000024 /* IncrementalJSONLReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000024 /* IncrementalJSONLReader.swift */; };
 		A00000000000000000000025 /* CodexImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000025 /* CodexImporter.swift */; };
 		A00000000000000000000026 /* CodexImporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000026 /* CodexImporterTests.swift */; };
+		A00000000000000000000027 /* DashboardQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000027 /* DashboardQueryService.swift */; };
+		A00000000000000000000028 /* SessionQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000028 /* SessionQueryService.swift */; };
+		A00000000000000000000029 /* DashboardQueryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000029 /* DashboardQueryServiceTests.swift */; };
+		A00000000000000000000030 /* SessionQueryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000030 /* SessionQueryServiceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +74,10 @@
 		B00000000000000000000024 /* IncrementalJSONLReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/IncrementalJSONLReader.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000025 /* CodexImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexImporter.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000026 /* CodexImporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/CodexImporterTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000027 /* DashboardQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Dashboard/DashboardQueryService.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000028 /* SessionQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Dashboard/SessionQueryService.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000029 /* DashboardQueryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/DashboardQueryServiceTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000030 /* SessionQueryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/SessionQueryServiceTests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,6 +127,8 @@
 				B00000000000000000000023 /* CodexSourceDiscovery.swift */,
 				B00000000000000000000024 /* IncrementalJSONLReader.swift */,
 				B00000000000000000000025 /* CodexImporter.swift */,
+				B00000000000000000000027 /* DashboardQueryService.swift */,
+				B00000000000000000000028 /* SessionQueryService.swift */,
 			);
 			name = Sources;
 			sourceTree = "<group>";
@@ -133,6 +143,8 @@
 				B00000000000000000000021 /* UsageStoreTests.swift */,
 				B00000000000000000000022 /* IncrementalJSONLReaderTests.swift */,
 				B00000000000000000000026 /* CodexImporterTests.swift */,
+				B00000000000000000000029 /* DashboardQueryServiceTests.swift */,
+				B00000000000000000000030 /* SessionQueryServiceTests.swift */,
 			);
 			name = Tests;
 			sourceTree = "<group>";
@@ -262,6 +274,8 @@
 				A00000000000000000000023 /* CodexSourceDiscovery.swift in Sources */,
 				A00000000000000000000024 /* IncrementalJSONLReader.swift in Sources */,
 				A00000000000000000000025 /* CodexImporter.swift in Sources */,
+				A00000000000000000000027 /* DashboardQueryService.swift in Sources */,
+				A00000000000000000000028 /* SessionQueryService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -276,6 +290,8 @@
 				A00000000000000000000021 /* UsageStoreTests.swift in Sources */,
 				A00000000000000000000022 /* IncrementalJSONLReaderTests.swift in Sources */,
 				A00000000000000000000026 /* CodexImporterTests.swift in Sources */,
+				A00000000000000000000029 /* DashboardQueryServiceTests.swift in Sources */,
+				A00000000000000000000030 /* SessionQueryServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

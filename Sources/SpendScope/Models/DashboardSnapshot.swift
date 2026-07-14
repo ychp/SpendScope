@@ -7,11 +7,30 @@ struct DashboardSnapshot: Sendable {
     let quotas: [QuotaSnapshot]
     let models: [ModelUsage]
     let dailyUsage: [DailyUsage]
+    let issues: [DashboardIssue]
 
-    var todayTokens: Int { periods[0].total }
-    var sevenDayTokens: Int { periods[1].total }
-    var thirtyDayTokens: Int { periods[2].total }
-    var totalTokens: Int { periods[3].total }
+    init(
+        planName: String,
+        updatedText: String,
+        periods: [PeriodUsage],
+        quotas: [QuotaSnapshot],
+        models: [ModelUsage],
+        dailyUsage: [DailyUsage],
+        issues: [DashboardIssue] = []
+    ) {
+        self.planName = planName
+        self.updatedText = updatedText
+        self.periods = periods
+        self.quotas = quotas
+        self.models = models
+        self.dailyUsage = dailyUsage
+        self.issues = issues
+    }
+
+    var todayTokens: Int { period(id: "today").total }
+    var sevenDayTokens: Int { period(id: "sevenDays").total }
+    var thirtyDayTokens: Int { period(id: "thirtyDays").total }
+    var totalTokens: Int { period(id: "allTime").total }
 
     var fiveHourQuota: QuotaSnapshot? {
         quotas.first { $0.id == "5h" }
@@ -31,12 +50,39 @@ struct DashboardSnapshot: Sendable {
     }
 
     var breakdown: TokenBreakdown {
-        let today = periods[0]
+        let today = period(id: "today")
         return TokenBreakdown(
             input: today.uncachedInput,
             cachedInput: today.cachedInput,
             output: today.visibleOutput,
             reasoning: today.reasoning
+        )
+    }
+
+    static func empty(updatedText: String) -> DashboardSnapshot {
+        DashboardSnapshot(
+            planName: "Free",
+            updatedText: updatedText,
+            periods: [
+                zeroPeriod(id: "today", title: "今日"),
+                zeroPeriod(id: "sevenDays", title: "7 日"),
+                zeroPeriod(id: "thirtyDays", title: "30 日"),
+                zeroPeriod(id: "allTime", title: "累计")
+            ],
+            quotas: [],
+            models: [],
+            dailyUsage: []
+        )
+    }
+
+    private func period(id: String) -> PeriodUsage {
+        periods.first { $0.id == id } ?? Self.zeroPeriod(id: id, title: "")
+    }
+
+    private static func zeroPeriod(id: String, title: String) -> PeriodUsage {
+        PeriodUsage(
+            id: id, title: title, total: 0, uncachedInput: 0,
+            cachedInput: 0, output: 0, reasoning: 0
         )
     }
 
@@ -115,6 +161,11 @@ struct DashboardSnapshot: Sendable {
     )
 }
 
+enum DashboardIssue: Hashable, Sendable {
+    case expiredQuota(id: String)
+    case invalidQuota(id: String)
+}
+
 enum TrendRange: String, CaseIterable, Identifiable, Sendable {
     case today = "今日"
     case sevenDays = "7 天"
@@ -183,7 +234,12 @@ struct TokenBreakdown: Sendable {
     let output: Int
     let reasoning: Int
 
-    var total: Int { input + cachedInput + output + reasoning }
+    var total: Int {
+        [input, cachedInput, output, reasoning].reduce(0) { partial, value in
+            let (sum, overflow) = partial.addingReportingOverflow(value)
+            return overflow ? Int.max : sum
+        }
+    }
 }
 
 struct ModelUsage: Identifiable, Sendable {

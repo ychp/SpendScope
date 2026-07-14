@@ -138,6 +138,56 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(quotas.map(\.observation.remaining), [0.6, 0.5])
     }
 
+    func testUsageQueryUsesInclusiveStartExclusiveEndAndStableOrdering() throws {
+        let store = try makeStore()
+        try store.commit(ImportBatch(
+            file: .fixture(committedOffset: 160),
+            usageEvents: [
+                .fixture(fingerprint: "before", observedAtMilliseconds: 999, total: 1),
+                .fixture(fingerprint: "tie-z", observedAtMilliseconds: 1_000, total: 2),
+                .fixture(fingerprint: "tie-a", observedAtMilliseconds: 1_000, total: 3),
+                .fixture(fingerprint: "end", observedAtMilliseconds: 2_000, total: 4)
+            ],
+            quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+
+        let rows = try store.usageEvents(fromMilliseconds: 1_000, toMilliseconds: 2_000)
+
+        XCTAssertEqual(rows.map(\.fingerprint), ["tie-a", "tie-z"])
+        XCTAssertEqual(rows.map(\.totalTokens), [3, 2])
+    }
+
+    func testSessionQueryUsesTheSessionsExactSourceFileCheckpoint() throws {
+        let store = try makeStore()
+        try store.commit(ImportBatch(
+            file: .fixture(
+                fileID: "session-file", committedOffset: 10,
+                threadID: "precise-thread", lastRecordAtMilliseconds: 600_000
+            ),
+            usageEvents: [.fixture(
+                fingerprint: "precise-usage", threadID: "precise-thread", total: 42
+            )],
+            quotaEvents: [], stateEvents: [],
+            sessions: [.fixture(
+                threadID: "precise-thread", sourceFileID: "session-file",
+                activity: .running, archive: .active, childEdgeStatus: nil
+            )],
+            threadCheckpoints: []
+        ))
+        try store.commit(ImportBatch(
+            file: .fixture(
+                fileID: "unrelated-file", committedOffset: 10,
+                threadID: "precise-thread", lastRecordAtMilliseconds: 999_000
+            ),
+            usageEvents: [], quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+
+        let row = try XCTUnwrap(store.sessionQueryRows().first)
+
+        XCTAssertEqual(row.sourceLastRecordAtMilliseconds, 600_000)
+        XCTAssertEqual(row.totalTokens, 42)
+    }
+
     func testExistingVersionOneWithoutImporterColumnsRequiresRebuildAtInitialization() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)
@@ -305,9 +355,16 @@ final class UsageStoreTests: XCTestCase {
 }
 
 private extension StoredUsageEvent {
-    static func fixture(fingerprint: String, total: Int64) -> StoredUsageEvent {
+    static func fixture(
+        fingerprint: String,
+        observedAtMilliseconds: Int64 = 3_600_001,
+        threadID: String = "thread-1",
+        total: Int64
+    ) -> StoredUsageEvent {
         fixture(
             fingerprint: fingerprint,
+            observedAtMilliseconds: observedAtMilliseconds,
+            threadID: threadID,
             usage: TokenUsageDelta(
                 uncachedInput: total,
                 cachedInput: 0,
@@ -317,11 +374,16 @@ private extension StoredUsageEvent {
         )
     }
 
-    static func fixture(fingerprint: String, usage: TokenUsageDelta) -> StoredUsageEvent {
+    static func fixture(
+        fingerprint: String,
+        observedAtMilliseconds: Int64 = 3_600_001,
+        threadID: String = "thread-1",
+        usage: TokenUsageDelta
+    ) -> StoredUsageEvent {
         StoredUsageEvent(
             fingerprint: fingerprint,
-            observedAtMilliseconds: 3_600_001,
-            threadID: "thread-1",
+            observedAtMilliseconds: observedAtMilliseconds,
+            threadID: threadID,
             sourceKind: .cli,
             model: "test-model",
             plan: PlanResolver.resolve(rawValue: "plus"),
@@ -371,17 +433,19 @@ private extension StoredSessionStateEvent {
 
 private extension StoredSession {
     static func fixture(
+        threadID: String = "thread-1",
+        sourceFileID: String = "file-1",
         activity: SessionActivityState,
         archive: SessionArchiveState,
         childEdgeStatus: String?
     ) -> StoredSession {
         StoredSession(
-            threadID: "thread-1",
+            threadID: threadID,
             sourceKind: .cli,
             createdAtMilliseconds: 1_000,
             updatedAtMilliseconds: 2_000,
             state: SessionStateSnapshot(
-                threadID: "thread-1",
+                threadID: threadID,
                 activity: activity,
                 archive: archive,
                 childEdgeStatus: childEdgeStatus,
@@ -392,23 +456,28 @@ private extension StoredSession {
             ),
             lastModel: "test-model",
             lastPlan: .plus,
-            sourceFileID: "file-1"
+            sourceFileID: sourceFileID
         )
     }
 }
 
 private extension FileCheckpoint {
-    static func fixture(committedOffset: Int64) -> FileCheckpoint {
+    static func fixture(
+        fileID: String = "file-1",
+        committedOffset: Int64,
+        threadID: String? = "thread-1",
+        lastRecordAtMilliseconds: Int64? = 2_000
+    ) -> FileCheckpoint {
         FileCheckpoint(
-            fileID: "file-1",
+            fileID: fileID,
             deviceID: 11,
             inode: 22,
-            path: "/synthetic/not-codex.jsonl",
+            path: "/synthetic/\(fileID).jsonl",
             fileSize: 200,
             committedOffset: committedOffset,
             generation: 0,
-            threadID: "thread-1",
-            lastRecordAtMilliseconds: 2_000,
+            threadID: threadID,
+            lastRecordAtMilliseconds: lastRecordAtMilliseconds,
             lastSuccessAtMilliseconds: 3_000,
             formatStatus: "supported",
             lastError: nil

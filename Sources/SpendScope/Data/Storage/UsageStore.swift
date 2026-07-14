@@ -89,6 +89,25 @@ struct StoredHourlyUsage: Equatable, Sendable {
     let totalTokens: Int64
 }
 
+struct StoredUsageQueryRow: Sendable {
+    let fingerprint: String
+    let observedAtMilliseconds: Int64
+    let threadID: String
+    let model: String
+    let plan: PlanResolution
+    let uncachedInputTokens: Int64
+    let cachedInputTokens: Int64
+    let visibleOutputTokens: Int64
+    let reasoningTokens: Int64
+    let totalTokens: Int64
+}
+
+struct StoredSessionQueryRow: Sendable {
+    let session: StoredSession
+    let sourceLastRecordAtMilliseconds: Int64?
+    let totalTokens: Int64
+}
+
 final class UsageStore: @unchecked Sendable {
     private let database: SQLiteDatabase
 
@@ -255,29 +274,80 @@ final class UsageStore: @unchecked Sendable {
         }
     }
 
+    func usageEvents(
+        fromMilliseconds: Int64? = nil,
+        toMilliseconds: Int64? = nil
+    ) throws -> [StoredUsageQueryRow] {
+        var predicates: [String] = []
+        var bindings: [SQLiteValue] = []
+        if let fromMilliseconds {
+            predicates.append("observed_at_ms >= ?")
+            bindings.append(.integer(fromMilliseconds))
+        }
+        if let toMilliseconds {
+            predicates.append("observed_at_ms < ?")
+            bindings.append(.integer(toMilliseconds))
+        }
+        let whereClause = predicates.isEmpty ? "" : " WHERE \(predicates.joined(separator: " AND "))"
+        let rows = try database.query(
+            sql: """
+            SELECT fingerprint, observed_at_ms, thread_id, model, plan, plan_raw, plan_is_inferred,
+                   uncached_input_tokens, cached_input_tokens, visible_output_tokens,
+                   reasoning_tokens, total_tokens
+            FROM usage_events\(whereClause)
+            ORDER BY observed_at_ms, fingerprint
+            """,
+            bindings: bindings
+        )
+        return try rows.map { values in
+            let row = SQLiteRow(table: "usage_events", values: values)
+            return StoredUsageQueryRow(
+                fingerprint: try row.requiredString("fingerprint"),
+                observedAtMilliseconds: try row.requiredInt64("observed_at_ms"),
+                threadID: try row.requiredString("thread_id"),
+                model: try row.requiredString("model"),
+                plan: try SQLitePlanResolution.from(row: row),
+                uncachedInputTokens: try row.requiredInt64("uncached_input_tokens"),
+                cachedInputTokens: try row.requiredInt64("cached_input_tokens"),
+                visibleOutputTokens: try row.requiredInt64("visible_output_tokens"),
+                reasoningTokens: try row.requiredInt64("reasoning_tokens"),
+                totalTokens: try row.requiredInt64("total_tokens")
+            )
+        }
+    }
+
     func sessions() throws -> [StoredSession] {
         let rows = try database.query(sql: "SELECT * FROM sessions ORDER BY thread_id")
-        return try rows.map { values in
-            let row = SQLiteRow(table: "sessions", values: values)
+        return try rows.map { try storedSession(from: SQLiteRow(table: "sessions", values: $0)) }
+    }
+
+    func sessionQueryRows() throws -> [StoredSessionQueryRow] {
+        let sessionRows = try database.query(sql: """
+            SELECT s.*, sf.last_record_at_ms AS source_last_record_at_ms
+            FROM sessions AS s
+            LEFT JOIN source_files AS sf ON sf.file_id = s.source_file_id
+            ORDER BY s.thread_id
+            """)
+        let tokenRows = try database.query(
+            sql: "SELECT thread_id, total_tokens FROM usage_events ORDER BY thread_id, fingerprint"
+        )
+        var totals: [String: Int64] = [:]
+        for values in tokenRows {
+            let row = SQLiteRow(table: "usage_events", values: values)
             let threadID = try row.requiredString("thread_id")
-            return StoredSession(
-                threadID: threadID,
-                sourceKind: try row.requiredEnum("source_kind", as: CodexSourceKind.self),
-                createdAtMilliseconds: try row.optionalInt64("created_at_ms"),
-                updatedAtMilliseconds: try row.optionalInt64("updated_at_ms"),
-                state: SessionStateSnapshot(
-                    threadID: threadID,
-                    activity: try row.requiredEnum("activity_state", as: SessionActivityState.self),
-                    archive: try row.requiredEnum("archive_state", as: SessionArchiveState.self),
-                    childEdgeStatus: try row.optionalString("child_edge_status"),
-                    activeTurnID: try row.optionalString("active_turn_id"),
-                    lastActivityAtMilliseconds: try row.optionalInt64("last_activity_at_ms"),
-                    lastActivityEventKey: try row.optionalString("last_event_key"),
-                    archiveObservedAtMilliseconds: try row.optionalInt64("archive_observed_at_ms")
-                ),
-                lastModel: try row.optionalString("last_model"),
-                lastPlan: try row.optionalEnum("last_plan", as: PlanKind.self),
-                sourceFileID: try row.optionalString("source_file_id")
+            totals[threadID] = try checkedAdd(
+                totals[threadID, default: 0],
+                row.requiredInt64("total_tokens"),
+                context: "usage_events.thread_total_tokens"
+            )
+        }
+        return try sessionRows.map { values in
+            let row = SQLiteRow(table: "sessions", values: values)
+            let session = try storedSession(from: row)
+            return StoredSessionQueryRow(
+                session: session,
+                sourceLastRecordAtMilliseconds: try row.optionalInt64("source_last_record_at_ms"),
+                totalTokens: totals[session.threadID, default: 0]
             )
         }
     }
@@ -660,6 +730,29 @@ final class UsageStore: @unchecked Sendable {
 
     private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
         try SQLitePlanResolution.optional(from: row)
+    }
+
+    private func storedSession(from row: SQLiteRow) throws -> StoredSession {
+        let threadID = try row.requiredString("thread_id")
+        return StoredSession(
+            threadID: threadID,
+            sourceKind: try row.requiredEnum("source_kind", as: CodexSourceKind.self),
+            createdAtMilliseconds: try row.optionalInt64("created_at_ms"),
+            updatedAtMilliseconds: try row.optionalInt64("updated_at_ms"),
+            state: SessionStateSnapshot(
+                threadID: threadID,
+                activity: try row.requiredEnum("activity_state", as: SessionActivityState.self),
+                archive: try row.requiredEnum("archive_state", as: SessionArchiveState.self),
+                childEdgeStatus: try row.optionalString("child_edge_status"),
+                activeTurnID: try row.optionalString("active_turn_id"),
+                lastActivityAtMilliseconds: try row.optionalInt64("last_activity_at_ms"),
+                lastActivityEventKey: try row.optionalString("last_event_key"),
+                archiveObservedAtMilliseconds: try row.optionalInt64("archive_observed_at_ms")
+            ),
+            lastModel: try row.optionalString("last_model"),
+            lastPlan: try row.optionalEnum("last_plan", as: PlanKind.self),
+            sourceFileID: try row.optionalString("source_file_id")
+        )
     }
 
     private func validateVersionOneSchema() throws {
