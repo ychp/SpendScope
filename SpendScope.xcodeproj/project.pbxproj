@@ -19,6 +19,10 @@
 		A00000000000000000000012 /* CodexEventDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* CodexEventDecoderTests.swift */; };
 		A00000000000000000000013 /* CodexEventModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* CodexEventModels.swift */; };
 		A00000000000000000000014 /* CodexEventDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000014 /* CodexEventDecoder.swift */; };
+		A00000000000000000000015 /* UsageAccumulatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000015 /* UsageAccumulatorTests.swift */; };
+		A00000000000000000000016 /* SessionStateReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000016 /* SessionStateReducerTests.swift */; };
+		A00000000000000000000017 /* UsageAccumulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000017 /* UsageAccumulator.swift */; };
+		A00000000000000000000018 /* SessionStateReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000018 /* SessionStateReducer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,6 +50,10 @@
 		B00000000000000000000012 /* CodexEventDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/CodexEventDecoderTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000013 /* CodexEventModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexEventModels.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000014 /* CodexEventDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexEventDecoder.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000015 /* UsageAccumulatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/UsageAccumulatorTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000016 /* SessionStateReducerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/SessionStateReducerTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000017 /* UsageAccumulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/UsageAccumulator.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000018 /* SessionStateReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/SessionStateReducer.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +96,8 @@
 				B00000000000000000000011 /* SettingsView.swift */,
 				B00000000000000000000013 /* CodexEventModels.swift */,
 				B00000000000000000000014 /* CodexEventDecoder.swift */,
+				B00000000000000000000017 /* UsageAccumulator.swift */,
+				B00000000000000000000018 /* SessionStateReducer.swift */,
 			);
 			name = Sources;
 			sourceTree = "<group>";
@@ -97,6 +107,8 @@
 			children = (
 				B00000000000000000000004 /* TokenFormatterTests.swift */,
 				B00000000000000000000012 /* CodexEventDecoderTests.swift */,
+				B00000000000000000000015 /* UsageAccumulatorTests.swift */,
+				B00000000000000000000016 /* SessionStateReducerTests.swift */,
 			);
 			name = Tests;
 			sourceTree = "<group>";
@@ -219,6 +231,8 @@
 				A00000000000000000000009 /* SettingsView.swift in Sources */,
 				A00000000000000000000013 /* CodexEventModels.swift in Sources */,
 				A00000000000000000000014 /* CodexEventDecoder.swift in Sources */,
+				A00000000000000000000017 /* UsageAccumulator.swift in Sources */,
+				A00000000000000000000018 /* SessionStateReducer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,6 +242,8 @@
 			files = (
 				A00000000000000000000002 /* TokenFormatterTests.swift in Sources */,
 				A00000000000000000000012 /* CodexEventDecoderTests.swift in Sources */,
+				A00000000000000000000015 /* UsageAccumulatorTests.swift in Sources */,
+				A00000000000000000000016 /* SessionStateReducerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
