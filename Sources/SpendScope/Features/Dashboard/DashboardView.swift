@@ -36,33 +36,52 @@ struct DashboardView: View {
 
     private var currentQuotaSection: some View {
         VStack(spacing: 8) {
-            ZStack {
-                quotaRing(
-                    snapshot.quotas[0],
-                    diameter: 174,
-                    lineWidth: 11,
-                    color: SpendScopeTheme.accent
+            if snapshot.visibleQuotas.isEmpty {
+                ContentUnavailableView(
+                    "暂无额度数据",
+                    systemImage: "chart.donut"
                 )
-                quotaRing(
-                    snapshot.quotas[1],
-                    diameter: 124,
-                    lineWidth: 9,
-                    color: SpendScopeTheme.accentBlue
-                )
-                VStack(spacing: 5) {
-                    quotaCenterLabel(snapshot.quotas[0])
-                    quotaCenterLabel(snapshot.quotas[1])
+            } else {
+                ZStack {
+                    ForEach(snapshot.visibleQuotas) { quota in
+                        quotaRing(
+                            quota,
+                            diameter: quotaDiameter(for: quota),
+                            lineWidth: quotaLineWidth(for: quota),
+                            color: quotaColor(for: quota)
+                        )
+                    }
+                    VStack(spacing: 5) {
+                        ForEach(snapshot.visibleQuotas) { quota in
+                            quotaCenterLabel(quota)
+                        }
+                    }
                 }
-            }
-            .frame(width: 178, height: 178)
+                .frame(width: 178, height: 178)
 
-            VStack(alignment: .leading, spacing: 3) {
-                quotaResetRow(snapshot.quotas[0], color: SpendScopeTheme.accent)
-                quotaResetRow(snapshot.quotas[1], color: SpendScopeTheme.accentBlue)
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(snapshot.visibleQuotas) { quota in
+                        quotaResetRow(quota, color: quotaColor(for: quota))
+                    }
+                }
+                .frame(width: 178, alignment: .leading)
             }
-            .frame(width: 178, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private func quotaColor(for quota: QuotaSnapshot) -> Color {
+        quota.id == "7d" ? SpendScopeTheme.accentBlue : SpendScopeTheme.accent
+    }
+
+    private func quotaDiameter(for quota: QuotaSnapshot) -> CGFloat {
+        guard snapshot.visibleQuotas.count > 1 else { return 154 }
+        return quota.id == "5h" ? 174 : 124
+    }
+
+    private func quotaLineWidth(for quota: QuotaSnapshot) -> CGFloat {
+        guard snapshot.visibleQuotas.count > 1 else { return 11 }
+        return quota.id == "5h" ? 11 : 9
     }
 
     private func quotaCenterLabel(_ quota: QuotaSnapshot) -> some View {

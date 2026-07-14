@@ -54,11 +54,11 @@ struct MenuBarPopoverView: View {
             }
 
             HStack(spacing: 20) {
-                ForEach(snapshot.quotas) { quota in
+                ForEach(snapshot.visibleQuotas) { quota in
                     VStack(alignment: .leading, spacing: 7) {
                         Text("\(quota.title)剩余").foregroundStyle(.secondary)
                         Text("\(quota.remainingPercent)%").font(.title.bold())
-                        ProgressView(value: quota.remaining).tint(SpendScopeTheme.accent)
+                        ProgressView(value: quota.remaining).tint(quotaColor(for: quota))
                         Text(quota.resetText).font(.caption).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -107,5 +107,9 @@ struct MenuBarPopoverView: View {
             Spacer()
             Text(TokenFormatter.compact(value)).monospacedDigit()
         }
+    }
+
+    private func quotaColor(for quota: QuotaSnapshot) -> Color {
+        quota.id == "7d" ? SpendScopeTheme.accentBlue : SpendScopeTheme.accent
     }
 }

@@ -13,6 +13,23 @@ struct DashboardSnapshot: Sendable {
     var thirtyDayTokens: Int { periods[2].total }
     var totalTokens: Int { periods[3].total }
 
+    var fiveHourQuota: QuotaSnapshot? {
+        quotas.first { $0.id == "5h" }
+    }
+
+    var weeklyQuota: QuotaSnapshot? {
+        quotas.first { $0.id == "7d" }
+    }
+
+    var visibleQuotas: [QuotaSnapshot] {
+        [fiveHourQuota, weeklyQuota].compactMap { $0 }
+    }
+
+    var menuBarQuotaLabel: String {
+        let label = visibleQuotas.map(\.remainingLabel).joined(separator: " · ")
+        return label.isEmpty ? "SpendScope" : label
+    }
+
     var breakdown: TokenBreakdown {
         let today = periods[0]
         return TokenBreakdown(

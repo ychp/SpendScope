@@ -79,6 +79,26 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertFalse(quotas.contains { $0.resetText.contains("重置") })
     }
 
+    func testQuotaAccessorsDoNotDependOnArrayIndexes() {
+        let snapshot = makeSnapshot(
+            quotas: Array(DashboardSnapshot.preview.quotas.reversed())
+        )
+
+        XCTAssertEqual(snapshot.fiveHourQuota?.id, "5h")
+        XCTAssertEqual(snapshot.weeklyQuota?.id, "7d")
+        XCTAssertEqual(snapshot.visibleQuotas.map(\.id), ["5h", "7d"])
+        XCTAssertEqual(snapshot.menuBarQuotaLabel, "5H 85% · 7d 84%")
+    }
+
+    func testMissingFiveHourQuotaOnlyExposesWeeklyQuota() {
+        let weeklyQuota = DashboardSnapshot.preview.quotas.first { $0.id == "7d" }!
+        let snapshot = makeSnapshot(quotas: [weeklyQuota])
+
+        XCTAssertNil(snapshot.fiveHourQuota)
+        XCTAssertEqual(snapshot.visibleQuotas.map(\.id), ["7d"])
+        XCTAssertEqual(snapshot.menuBarQuotaLabel, "7d 84%")
+    }
+
     func testPreviewPeriodsUseConsistentTotals() {
         let periods = DashboardSnapshot.preview.periods
 
@@ -114,5 +134,17 @@ final class DashboardSnapshotTests: XCTestCase {
         (1...count).map { value in
             DailyUsage(id: "\(value)", day: "\(value)", total: value)
         }
+    }
+
+    private func makeSnapshot(quotas: [QuotaSnapshot]) -> DashboardSnapshot {
+        let preview = DashboardSnapshot.preview
+        return DashboardSnapshot(
+            planName: preview.planName,
+            updatedText: preview.updatedText,
+            periods: preview.periods,
+            quotas: quotas,
+            models: preview.models,
+            dailyUsage: preview.dailyUsage
+        )
     }
 }

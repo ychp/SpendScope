@@ -10,7 +10,7 @@ struct SpendScopeApp: App {
             MenuBarPopoverView(snapshot: snapshot)
         } label: {
             Label(
-                "5h \(snapshot.quotas[0].remainingPercent)% · 7d \(snapshot.quotas[1].remainingPercent)%",
+                snapshot.menuBarQuotaLabel,
                 systemImage: "chart.bar.fill"
             )
         }
