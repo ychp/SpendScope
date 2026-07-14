@@ -115,6 +115,15 @@ final class SQLiteDatabase {
     }
 
     private func bind(_ bindings: [SQLiteValue], to statement: OpaquePointer, sql: String) throws {
+        let expectedCount = Int(sqlite3_bind_parameter_count(statement))
+        guard expectedCount == bindings.count else {
+            throw SQLiteDatabaseError(
+                code: SQLITE_MISUSE,
+                message: "Expected \(expectedCount) bindings, received \(bindings.count)",
+                sql: sql
+            )
+        }
+
         for (offset, binding) in bindings.enumerated() {
             let index = Int32(offset + 1)
             let result: Int32

@@ -117,6 +117,109 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.fileCheckpoint(fileID: failingBatch.file.fileID)?.committedOffset, 10)
     }
 
+    func testHourlyAggregationOverflowRollsBackEventAndCheckpoint() throws {
+        let store = try makeStore()
+        try store.commit(ImportBatch(
+            file: .fixture(committedOffset: 10),
+            usageEvents: [.fixture(fingerprint: "usage-max", total: Int64.max)],
+            quotaEvents: [],
+            stateEvents: [],
+            sessions: [],
+            threadCheckpoints: []
+        ))
+
+        let overflowingBatch = ImportBatch(
+            file: .fixture(committedOffset: 20),
+            usageEvents: [.fixture(fingerprint: "usage-plus-one", total: 1)],
+            quotaEvents: [],
+            stateEvents: [],
+            sessions: [],
+            threadCheckpoints: []
+        )
+
+        XCTAssertThrowsError(try store.commit(overflowingBatch))
+        XCTAssertEqual(try store.totalUsage(), Int64.max)
+        XCTAssertEqual(try store.usageEventCount(), 1)
+        XCTAssertEqual(try store.hourlyUsage().map(\.totalTokens), [Int64.max])
+        XCTAssertEqual(try store.fileCheckpoint(fileID: overflowingBatch.file.fileID)?.committedOffset, 10)
+    }
+
+    func testUsageComponentSumOverflowIsRejectedBeforeWriting() throws {
+        let store = try makeStore()
+        let overflowingUsage = TokenUsageDelta(
+            uncachedInput: Int64.max,
+            cachedInput: 1,
+            visibleOutput: 0,
+            reasoning: 0
+        )
+        let batch = ImportBatch(
+            file: .fixture(committedOffset: 10),
+            usageEvents: [.fixture(fingerprint: "usage-component-overflow", usage: overflowingUsage)],
+            quotaEvents: [],
+            stateEvents: [],
+            sessions: [],
+            threadCheckpoints: []
+        )
+
+        XCTAssertThrowsError(try store.commit(batch))
+        XCTAssertEqual(try store.usageEventCount(), 0)
+        XCTAssertTrue(try store.hourlyUsage().isEmpty)
+        XCTAssertNil(try store.fileCheckpoint(fileID: batch.file.fileID))
+    }
+
+    func testInvalidQuotaRemainingRollsBackEarlierUsageAndCheckpoint() throws {
+        for invalidRemaining in [Double.nan, .infinity, -0.01, 1.01] {
+            let store = try makeStore()
+            let batch = ImportBatch(
+                file: .fixture(committedOffset: 10),
+                usageEvents: [.fixture(fingerprint: "usage-before-invalid-quota", total: 10)],
+                quotaEvents: [.fixture(fingerprint: "quota-invalid", remaining: invalidRemaining)],
+                stateEvents: [],
+                sessions: [],
+                threadCheckpoints: []
+            )
+
+            XCTAssertThrowsError(try store.commit(batch))
+            XCTAssertEqual(try store.usageEventCount(), 0)
+            XCTAssertEqual(try store.quotaEventCount(), 0)
+            XCTAssertTrue(try store.hourlyUsage().isEmpty)
+            XCTAssertNil(try store.fileCheckpoint(fileID: batch.file.fileID))
+        }
+    }
+
+    func testSQLiteBindingCountMustExactlyMatchParameters() throws {
+        let database = try SQLiteDatabase(url: temporaryDatabaseURL())
+
+        XCTAssertThrowsError(try database.query(sql: "SELECT ? AS value"))
+        XCTAssertThrowsError(try database.query(
+            sql: "SELECT 1 AS value",
+            bindings: [.integer(1)]
+        ))
+    }
+
+    func testCorruptRequiredColumnTypeAndEnumAreReported() throws {
+        let url = temporaryDatabaseURL()
+        let store = try UsageStore(databaseURL: url)
+        try store.commit(.fixture(session: .fixture(
+            activity: .running,
+            archive: .active,
+            childEdgeStatus: nil
+        )))
+        let database = try SQLiteDatabase(url: url)
+
+        try database.execute(
+            sql: "UPDATE source_files SET committed_offset = 'not-an-integer' WHERE file_id = ?",
+            bindings: [.text("file-1")]
+        )
+        XCTAssertThrowsError(try store.fileCheckpoint(fileID: "file-1"))
+
+        try database.execute(
+            sql: "UPDATE sessions SET activity_state = 'future-state' WHERE thread_id = ?",
+            bindings: [.text("thread-1")]
+        )
+        XCTAssertThrowsError(try store.sessions())
+    }
+
     private func makeStore() throws -> UsageStore {
         try UsageStore(databaseURL: temporaryDatabaseURL())
     }
@@ -129,6 +232,18 @@ final class UsageStoreTests: XCTestCase {
 
 private extension StoredUsageEvent {
     static func fixture(fingerprint: String, total: Int64) -> StoredUsageEvent {
+        fixture(
+            fingerprint: fingerprint,
+            usage: TokenUsageDelta(
+                uncachedInput: total,
+                cachedInput: 0,
+                visibleOutput: 0,
+                reasoning: 0
+            )
+        )
+    }
+
+    static func fixture(fingerprint: String, usage: TokenUsageDelta) -> StoredUsageEvent {
         StoredUsageEvent(
             fingerprint: fingerprint,
             observedAtMilliseconds: 3_600_001,
@@ -136,12 +251,7 @@ private extension StoredUsageEvent {
             sourceKind: .cli,
             model: "test-model",
             plan: PlanResolver.resolve(rawValue: "plus"),
-            usage: TokenUsageDelta(
-                uncachedInput: total,
-                cachedInput: 0,
-                visibleOutput: 0,
-                reasoning: 0
-            ),
+            usage: usage,
             sourceFileID: "file-1",
             sourceOffset: 64
         )

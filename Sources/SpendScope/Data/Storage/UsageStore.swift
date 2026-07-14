@@ -98,9 +98,10 @@ final class UsageStore {
     func commit(_ batch: ImportBatch) throws {
         try database.inTransaction {
             for event in batch.usageEvents {
-                let inserted = try insertUsageEvent(event)
+                let total = try validatedTotal(for: event.usage)
+                let inserted = try insertUsageEvent(event, total: total)
                 if inserted == 1 {
-                    try addToHourlyUsage(event)
+                    try addToHourlyUsage(event, total: total)
                 }
             }
 
@@ -122,8 +123,17 @@ final class UsageStore {
     }
 
     func totalUsage() throws -> Int64 {
-        let rows = try database.query(sql: "SELECT COALESCE(SUM(total_tokens), 0) AS total FROM usage_events")
-        return rows.first?["total"]?.int64 ?? 0
+        let rows = try database.query(sql: "SELECT total_tokens FROM usage_events ORDER BY fingerprint")
+        var total: Int64 = 0
+        for values in rows {
+            let row = SQLiteRow(table: "usage_events", values: values)
+            total = try checkedAdd(
+                total,
+                row.requiredInt64("total_tokens"),
+                context: "usage_events.total_tokens"
+            )
+        }
+        return total
     }
 
     func usageEventCount() throws -> Int64 {
@@ -147,19 +157,20 @@ final class UsageStore {
             """,
             bindings: [.text(fileID)]
         )
-        guard let row = rows.first else { return nil }
+        guard let values = rows.first else { return nil }
+        let row = SQLiteRow(table: "source_files", values: values)
         return FileCheckpoint(
-            fileID: row.requiredString("file_id"),
-            deviceID: row.requiredInt64("device_id"),
-            inode: row.requiredInt64("inode"),
-            path: row.requiredString("path"),
-            fileSize: row.requiredInt64("file_size"),
-            committedOffset: row.requiredInt64("committed_offset"),
-            generation: row.requiredInt64("generation"),
-            lastRecordAtMilliseconds: row.optionalInt64("last_record_at_ms"),
-            lastSuccessAtMilliseconds: row.optionalInt64("last_success_at_ms"),
-            formatStatus: row.requiredString("format_status"),
-            lastError: row.optionalString("last_error")
+            fileID: try row.requiredString("file_id"),
+            deviceID: try row.requiredInt64("device_id"),
+            inode: try row.requiredInt64("inode"),
+            path: try row.requiredString("path"),
+            fileSize: try row.requiredInt64("file_size"),
+            committedOffset: try row.requiredInt64("committed_offset"),
+            generation: try row.requiredInt64("generation"),
+            lastRecordAtMilliseconds: try row.optionalInt64("last_record_at_ms"),
+            lastSuccessAtMilliseconds: try row.optionalInt64("last_success_at_ms"),
+            formatStatus: try row.requiredString("format_status"),
+            lastError: try row.optionalString("last_error")
         )
     }
 
@@ -168,95 +179,94 @@ final class UsageStore {
             sql: "SELECT * FROM thread_checkpoints WHERE thread_id = ?",
             bindings: [.text(threadID)]
         )
-        guard let row = rows.first else { return nil }
+        guard let values = rows.first else { return nil }
+        let row = SQLiteRow(table: "thread_checkpoints", values: values)
         let counters: TokenCounters?
-        if let input = row.optionalInt64("input_tokens"),
-           let cached = row.optionalInt64("cached_input_tokens"),
-           let output = row.optionalInt64("output_tokens"),
-           let reasoning = row.optionalInt64("reasoning_tokens") {
+        if let input = try row.optionalInt64("input_tokens"),
+           let cached = try row.optionalInt64("cached_input_tokens"),
+           let output = try row.optionalInt64("output_tokens"),
+           let reasoning = try row.optionalInt64("reasoning_tokens") {
             counters = TokenCounters(input: input, cachedInput: cached, output: output, reasoning: reasoning)
         } else {
             counters = nil
         }
         return ThreadCheckpoint(
-            threadID: row.requiredString("thread_id"),
-            currentModel: row.optionalString("current_model"),
+            threadID: try row.requiredString("thread_id"),
+            currentModel: try row.optionalString("current_model"),
             counters: counters,
-            counterSegment: row.requiredInt64("counter_segment"),
-            lastTokenAtMilliseconds: row.optionalInt64("last_token_at_ms")
+            counterSegment: try row.requiredInt64("counter_segment"),
+            lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms")
         )
     }
 
     func hourlyUsage() throws -> [StoredHourlyUsage] {
-        try database.query(
+        let rows = try database.query(
             sql: "SELECT * FROM hourly_usage ORDER BY hour_start_ms, model, plan"
-        ).compactMap { row in
-            guard let plan = PlanKind(rawValue: row.requiredString("plan")) else { return nil }
+        )
+        return try rows.map { values in
+            let row = SQLiteRow(table: "hourly_usage", values: values)
             return StoredHourlyUsage(
-                hourStartMilliseconds: row.requiredInt64("hour_start_ms"),
-                model: row.requiredString("model"),
-                plan: plan,
-                uncachedInputTokens: row.requiredInt64("uncached_input_tokens"),
-                cachedInputTokens: row.requiredInt64("cached_input_tokens"),
-                visibleOutputTokens: row.requiredInt64("visible_output_tokens"),
-                reasoningTokens: row.requiredInt64("reasoning_tokens"),
-                totalTokens: row.requiredInt64("total_tokens")
+                hourStartMilliseconds: try row.requiredInt64("hour_start_ms"),
+                model: try row.requiredString("model"),
+                plan: try row.requiredEnum("plan", as: PlanKind.self),
+                uncachedInputTokens: try row.requiredInt64("uncached_input_tokens"),
+                cachedInputTokens: try row.requiredInt64("cached_input_tokens"),
+                visibleOutputTokens: try row.requiredInt64("visible_output_tokens"),
+                reasoningTokens: try row.requiredInt64("reasoning_tokens"),
+                totalTokens: try row.requiredInt64("total_tokens")
             )
         }
     }
 
     func sessions() throws -> [StoredSession] {
-        try database.query(sql: "SELECT * FROM sessions ORDER BY thread_id").compactMap { row in
-            guard let source = CodexSourceKind(rawValue: row.requiredString("source_kind")),
-                  let activity = SessionActivityState(rawValue: row.requiredString("activity_state")),
-                  let archive = SessionArchiveState(rawValue: row.requiredString("archive_state")) else {
-                return nil
-            }
-            let threadID = row.requiredString("thread_id")
+        let rows = try database.query(sql: "SELECT * FROM sessions ORDER BY thread_id")
+        return try rows.map { values in
+            let row = SQLiteRow(table: "sessions", values: values)
+            let threadID = try row.requiredString("thread_id")
             return StoredSession(
                 threadID: threadID,
-                sourceKind: source,
-                createdAtMilliseconds: row.optionalInt64("created_at_ms"),
-                updatedAtMilliseconds: row.optionalInt64("updated_at_ms"),
+                sourceKind: try row.requiredEnum("source_kind", as: CodexSourceKind.self),
+                createdAtMilliseconds: try row.optionalInt64("created_at_ms"),
+                updatedAtMilliseconds: try row.optionalInt64("updated_at_ms"),
                 state: SessionStateSnapshot(
                     threadID: threadID,
-                    activity: activity,
-                    archive: archive,
-                    childEdgeStatus: row.optionalString("child_edge_status"),
-                    activeTurnID: row.optionalString("active_turn_id"),
-                    lastActivityAtMilliseconds: row.optionalInt64("last_activity_at_ms"),
-                    lastActivityEventKey: row.optionalString("last_event_key"),
+                    activity: try row.requiredEnum("activity_state", as: SessionActivityState.self),
+                    archive: try row.requiredEnum("archive_state", as: SessionArchiveState.self),
+                    childEdgeStatus: try row.optionalString("child_edge_status"),
+                    activeTurnID: try row.optionalString("active_turn_id"),
+                    lastActivityAtMilliseconds: try row.optionalInt64("last_activity_at_ms"),
+                    lastActivityEventKey: try row.optionalString("last_event_key"),
                     archiveObservedAtMilliseconds: nil
                 ),
-                lastModel: row.optionalString("last_model"),
-                lastPlan: row.optionalString("last_plan").flatMap(PlanKind.init(rawValue:)),
-                sourceFileID: row.optionalString("source_file_id")
+                lastModel: try row.optionalString("last_model"),
+                lastPlan: try row.optionalEnum("last_plan", as: PlanKind.self),
+                sourceFileID: try row.optionalString("source_file_id")
             )
         }
     }
 
     func schemaVersions() throws -> [Int64] {
         try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
-            .compactMap { $0["version"]?.int64 }
+            .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
     }
 
     func schemaTables() throws -> [String] {
         try database.query(
             sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        ).compactMap { $0["name"]?.string }
+        ).map { try SQLiteRow(table: "sqlite_master", values: $0).requiredString("name") }
     }
 
     func schemaColumns(table: String) throws -> [String] {
         guard table.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { return [] }
         return try database.query(sql: "PRAGMA table_info(\(table))")
-            .compactMap { $0["name"]?.string }
+            .map { try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name") }
     }
 
     private func migrate() throws {
         try database.inTransaction {
             try database.execute(sql: "CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY)")
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
-                .compactMap { $0["version"]?.int64 }
+                .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
             guard versions.last ?? 0 <= 1 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
@@ -271,14 +281,15 @@ final class UsageStore {
     }
 
     @discardableResult
-    private func insertUsageEvent(_ event: StoredUsageEvent) throws -> Int32 {
+    private func insertUsageEvent(_ event: StoredUsageEvent, total: Int64) throws -> Int32 {
         try database.execute(
             sql: """
-            INSERT OR IGNORE INTO usage_events(
+            INSERT INTO usage_events(
               fingerprint, observed_at_ms, thread_id, source_kind, model, plan, plan_raw,
               plan_is_inferred, uncached_input_tokens, cached_input_tokens,
               visible_output_tokens, reasoning_tokens, total_tokens, source_file_id, source_offset
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint) DO NOTHING
             """,
             bindings: [
                 .text(event.fingerprint), .integer(event.observedAtMilliseconds), .text(event.threadID),
@@ -286,43 +297,95 @@ final class UsageStore {
                 event.plan.rawValue.sqliteValue, .integer(event.plan.isInferred ? 1 : 0),
                 .integer(event.usage.uncachedInput), .integer(event.usage.cachedInput),
                 .integer(event.usage.visibleOutput), .integer(event.usage.reasoning),
-                .integer(event.usage.total), .text(event.sourceFileID), .integer(event.sourceOffset)
+                .integer(total), .text(event.sourceFileID), .integer(event.sourceOffset)
             ]
         )
     }
 
-    private func addToHourlyUsage(_ event: StoredUsageEvent) throws {
+    private func addToHourlyUsage(_ event: StoredUsageEvent, total: Int64) throws {
         let hourStart = event.observedAtMilliseconds - event.observedAtMilliseconds % 3_600_000
+        let keyBindings: [SQLiteValue] = [
+            .integer(hourStart), .text(event.model), .text(event.plan.kind.rawValue)
+        ]
+        let rows = try database.query(
+            sql: """
+            SELECT uncached_input_tokens, cached_input_tokens, visible_output_tokens,
+                   reasoning_tokens, total_tokens
+            FROM hourly_usage
+            WHERE hour_start_ms = ? AND model = ? AND plan = ?
+            """,
+            bindings: keyBindings
+        )
+
+        guard let values = rows.first else {
+            try database.execute(
+                sql: """
+                INSERT INTO hourly_usage(
+                  hour_start_ms, model, plan, uncached_input_tokens, cached_input_tokens,
+                  visible_output_tokens, reasoning_tokens, total_tokens
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                bindings: keyBindings + [
+                    .integer(event.usage.uncachedInput), .integer(event.usage.cachedInput),
+                    .integer(event.usage.visibleOutput), .integer(event.usage.reasoning), .integer(total)
+                ]
+            )
+            return
+        }
+
+        let row = SQLiteRow(table: "hourly_usage", values: values)
+        let uncachedInput = try checkedAdd(
+            row.requiredInt64("uncached_input_tokens"),
+            event.usage.uncachedInput,
+            context: "hourly_usage.uncached_input_tokens"
+        )
+        let cachedInput = try checkedAdd(
+            row.requiredInt64("cached_input_tokens"),
+            event.usage.cachedInput,
+            context: "hourly_usage.cached_input_tokens"
+        )
+        let visibleOutput = try checkedAdd(
+            row.requiredInt64("visible_output_tokens"),
+            event.usage.visibleOutput,
+            context: "hourly_usage.visible_output_tokens"
+        )
+        let reasoning = try checkedAdd(
+            row.requiredInt64("reasoning_tokens"),
+            event.usage.reasoning,
+            context: "hourly_usage.reasoning_tokens"
+        )
+        let updatedTotal = try checkedAdd(
+            row.requiredInt64("total_tokens"),
+            total,
+            context: "hourly_usage.total_tokens"
+        )
+
         try database.execute(
             sql: """
-            INSERT INTO hourly_usage(
-              hour_start_ms, model, plan, uncached_input_tokens, cached_input_tokens,
-              visible_output_tokens, reasoning_tokens, total_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(hour_start_ms, model, plan) DO UPDATE SET
-              uncached_input_tokens = uncached_input_tokens + excluded.uncached_input_tokens,
-              cached_input_tokens = cached_input_tokens + excluded.cached_input_tokens,
-              visible_output_tokens = visible_output_tokens + excluded.visible_output_tokens,
-              reasoning_tokens = reasoning_tokens + excluded.reasoning_tokens,
-              total_tokens = total_tokens + excluded.total_tokens
+            UPDATE hourly_usage SET
+              uncached_input_tokens = ?, cached_input_tokens = ?, visible_output_tokens = ?,
+              reasoning_tokens = ?, total_tokens = ?
+            WHERE hour_start_ms = ? AND model = ? AND plan = ?
             """,
             bindings: [
-                .integer(hourStart), .text(event.model), .text(event.plan.kind.rawValue),
-                .integer(event.usage.uncachedInput), .integer(event.usage.cachedInput),
-                .integer(event.usage.visibleOutput), .integer(event.usage.reasoning),
-                .integer(event.usage.total)
-            ]
+                .integer(uncachedInput), .integer(cachedInput), .integer(visibleOutput),
+                .integer(reasoning), .integer(updatedTotal)
+            ] + keyBindings
         )
     }
 
     private func insertQuotaEvent(_ event: StoredQuotaEvent) throws {
         let observation = event.observation
+        guard observation.remaining.isFinite, (0...1).contains(observation.remaining) else {
+            throw UsageStoreError.invalidQuotaRemaining
+        }
         try database.execute(
             sql: """
-            INSERT OR IGNORE INTO quota_snapshots(
+            INSERT INTO quota_snapshots(
               fingerprint, observed_at_ms, thread_id, kind, window_minutes, remaining,
               resets_at_ms, plan, plan_raw, plan_is_inferred, source_kind
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint) DO NOTHING
             """,
             bindings: [
                 .text(event.fingerprint), .integer(observation.observedAtMilliseconds),
@@ -338,9 +401,10 @@ final class UsageStore {
     private func insertSessionStateEvent(_ event: StoredSessionStateEvent) throws {
         try database.execute(
             sql: """
-            INSERT OR IGNORE INTO session_state_events(
+            INSERT INTO session_state_events(
               fingerprint, thread_id, turn_id, observed_at_ms, kind, source_file_id, source_offset
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint) DO NOTHING
             """,
             bindings: [
                 .text(event.fingerprint), .text(event.threadID), event.turnID.sqliteValue,
@@ -432,9 +496,42 @@ final class UsageStore {
         )
     }
 
+    private func validatedTotal(for usage: TokenUsageDelta) throws -> Int64 {
+        let components = [
+            ("uncached_input_tokens", usage.uncachedInput),
+            ("cached_input_tokens", usage.cachedInput),
+            ("visible_output_tokens", usage.visibleOutput),
+            ("reasoning_tokens", usage.reasoning)
+        ]
+        var total: Int64 = 0
+        for (name, value) in components {
+            guard value >= 0 else {
+                throw UsageStoreError.invalidUsageComponent(name: name, value: value)
+            }
+            total = try checkedAdd(total, value, context: "usage_events.total_tokens")
+        }
+        return total
+    }
+
+    private func checkedAdd(_ left: Int64, _ right: Int64, context: String) throws -> Int64 {
+        let (sum, overflow) = left.addingReportingOverflow(right)
+        guard !overflow else {
+            throw UsageStoreError.tokenOverflow(context: context)
+        }
+        return sum
+    }
+
     private func count(table: String) throws -> Int64 {
         let rows = try database.query(sql: "SELECT COUNT(*) AS count FROM \(table)")
-        return rows.first?["count"]?.int64 ?? 0
+        guard let values = rows.first else {
+            throw UsageStoreError.corruptColumn(
+                table: table,
+                column: "count",
+                expected: "INTEGER",
+                actual: nil
+            )
+        }
+        return try SQLiteRow(table: table, values: values).requiredInt64("count")
     }
 
     private static let versionOneStatements = [
@@ -510,6 +607,11 @@ final class UsageStore {
 enum UsageStoreError: Error, Equatable {
     case unsupportedSchemaVersion(Int64)
     case invalidFileCheckpoint(fileSize: Int64, committedOffset: Int64)
+    case invalidUsageComponent(name: String, value: Int64)
+    case invalidQuotaRemaining
+    case tokenOverflow(context: String)
+    case corruptColumn(table: String, column: String, expected: String, actual: SQLiteValue?)
+    case corruptEnum(table: String, column: String, value: String)
 }
 
 private extension Optional where Wrapped == String {
@@ -528,9 +630,70 @@ private extension Int64 {
     var sqliteValue: SQLiteValue { .integer(self) }
 }
 
-private extension Dictionary where Key == String, Value == SQLiteValue {
-    func requiredInt64(_ key: String) -> Int64 { self[key]?.int64 ?? 0 }
-    func optionalInt64(_ key: String) -> Int64? { self[key]?.int64 }
-    func requiredString(_ key: String) -> String { self[key]?.string ?? "" }
-    func optionalString(_ key: String) -> String? { self[key]?.string }
+private struct SQLiteRow {
+    let table: String
+    let values: [String: SQLiteValue]
+
+    func requiredInt64(_ column: String) throws -> Int64 {
+        guard case let .integer(value)? = values[column] else {
+            throw corruptColumn(column, expected: "INTEGER")
+        }
+        return value
+    }
+
+    func optionalInt64(_ column: String) throws -> Int64? {
+        switch values[column] {
+        case let .integer(value):
+            return value
+        case .null:
+            return nil
+        default:
+            throw corruptColumn(column, expected: "INTEGER or NULL")
+        }
+    }
+
+    func requiredString(_ column: String) throws -> String {
+        guard case let .text(value)? = values[column] else {
+            throw corruptColumn(column, expected: "TEXT")
+        }
+        return value
+    }
+
+    func optionalString(_ column: String) throws -> String? {
+        switch values[column] {
+        case let .text(value):
+            return value
+        case .null:
+            return nil
+        default:
+            throw corruptColumn(column, expected: "TEXT or NULL")
+        }
+    }
+
+    func requiredEnum<T>(_ column: String, as type: T.Type) throws -> T
+    where T: RawRepresentable, T.RawValue == String {
+        let value = try requiredString(column)
+        guard let result = T(rawValue: value) else {
+            throw UsageStoreError.corruptEnum(table: table, column: column, value: value)
+        }
+        return result
+    }
+
+    func optionalEnum<T>(_ column: String, as type: T.Type) throws -> T?
+    where T: RawRepresentable, T.RawValue == String {
+        guard let value = try optionalString(column) else { return nil }
+        guard let result = T(rawValue: value) else {
+            throw UsageStoreError.corruptEnum(table: table, column: column, value: value)
+        }
+        return result
+    }
+
+    private func corruptColumn(_ column: String, expected: String) -> UsageStoreError {
+        UsageStoreError.corruptColumn(
+            table: table,
+            column: column,
+            expected: expected,
+            actual: values[column]
+        )
+    }
 }
