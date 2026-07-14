@@ -128,7 +128,8 @@ actor CodexImporter {
         for record in inventory.threadIndex {
             facts[record.threadID] = ThreadArchiveFact(
                 archived: record.archived,
-                observedAtMilliseconds: record.updatedAtMilliseconds
+                observedAtMilliseconds: record.updatedAtMilliseconds,
+                hasFilesystemArchive: false
             )
         }
         for rollout in inventory.rollouts {
@@ -172,12 +173,14 @@ actor CodexImporter {
         if let existing = facts[threadID] {
             facts[threadID] = ThreadArchiveFact(
                 archived: existing.archived || archived,
-                observedAtMilliseconds: max(existing.observedAtMilliseconds, observedAt)
+                observedAtMilliseconds: max(existing.observedAtMilliseconds, observedAt),
+                hasFilesystemArchive: existing.hasFilesystemArchive || rollout.isArchived
             )
         } else {
             facts[threadID] = ThreadArchiveFact(
                 archived: archived,
-                observedAtMilliseconds: observedAt
+                observedAtMilliseconds: observedAt,
+                hasFilesystemArchive: rollout.isArchived
             )
         }
     }
@@ -576,10 +579,16 @@ actor CodexImporter {
         let index = indexRecord(for: threadID, rollout: rollout, inventory: inventory)
         var state = context.state ?? storedSession?.state ?? .empty(threadID: threadID)
         if let archiveFact {
+            let observedAt = archiveFact.hasFilesystemArchive
+                ? max(
+                    archiveFact.observedAtMilliseconds,
+                    state.archiveObservedAtMilliseconds ?? archiveFact.observedAtMilliseconds
+                )
+                : archiveFact.observedAtMilliseconds
             state = SessionStateReducer.setArchived(
                 current: state,
                 archived: archiveFact.archived,
-                observedAtMilliseconds: archiveFact.observedAtMilliseconds
+                observedAtMilliseconds: observedAt
             )
         }
         if let childEdgeStatus = index?.childEdgeStatus {
@@ -704,6 +713,7 @@ private struct ImportContext {
 private struct ThreadArchiveFact {
     let archived: Bool
     let observedAtMilliseconds: Int64
+    let hasFilesystemArchive: Bool
 }
 
 private enum FileImportOutcome {

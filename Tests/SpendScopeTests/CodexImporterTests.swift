@@ -276,6 +276,39 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.sessions().first?.archive, .active)
         XCTAssertEqual(try store.sessions().first?.state.archiveObservedAtMilliseconds, 4_000_000)
     }
+
+    func testFilesystemArchiveOverridesNewerActiveWhenIndexBecomesUnavailable() async throws {
+        for degraded in [false, true] {
+            let fixture = try CodexFixture.make(events: [.sessionCLI, .turn(model: "gpt-synthetic")])
+            try fixture.setRolloutModificationDate(Date(timeIntervalSince1970: 3_000))
+            try fixture.installIndex(
+                archived: false,
+                childEdgeStatus: "open",
+                updatedAtMilliseconds: 4_000_000
+            )
+            let store = try UsageStore(databaseURL: fixture.databaseURL)
+            _ = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+            XCTAssertEqual(try store.sessions().first?.archive, .active)
+            XCTAssertEqual(try store.sessions().first?.childEdgeStatus, "open")
+            XCTAssertEqual(try store.sessions().first?.state.archiveObservedAtMilliseconds, 4_000_000)
+
+            try fixture.makeIndexUnavailable(degraded: degraded)
+            try fixture.archiveRollout()
+            let inventory = try CodexSourceDiscovery().discover(rootURL: fixture.codexRoot)
+            if degraded {
+                guard case .degraded = inventory.indexHealth else {
+                    return XCTFail("expected degraded index")
+                }
+            } else {
+                XCTAssertEqual(inventory.indexHealth, .missing)
+            }
+            _ = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+
+            XCTAssertEqual(try store.sessions().first?.archive, .archived)
+            XCTAssertEqual(try store.sessions().first?.childEdgeStatus, "open")
+            XCTAssertEqual(try store.sessions().first?.state.archiveObservedAtMilliseconds, 4_000_000)
+        }
+    }
 }
 
 private final class CodexFixture: @unchecked Sendable {
@@ -380,6 +413,20 @@ private final class CodexFixture: @unchecked Sendable {
             sql: "INSERT INTO thread_spawn_edges VALUES (?, ?)",
             bindings: [.text(Self.threadID), .text(childEdgeStatus)]
         )
+    }
+
+    func makeIndexUnavailable(degraded: Bool) throws {
+        let fileManager = FileManager.default
+        for name in ["state_1.sqlite", "state_1.sqlite-wal", "state_1.sqlite-shm"] {
+            let url = codexRoot.appending(path: name)
+            if fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+        }
+        if degraded {
+            let database = try SQLiteDatabase(url: codexRoot.appending(path: "state_2.sqlite"))
+            try database.execute(sql: "CREATE TABLE unrelated(value TEXT)")
+        }
     }
 
     func rolloutSize() throws -> Int64 {
