@@ -134,6 +134,69 @@ final class IncrementalJSONLReaderTests: XCTestCase {
         XCTAssertTrue(thread.archived)
     }
 
+    func testDiscoveryIgnoresNewerStateDirectoryAndUsesNewestRegularDatabaseFile() throws {
+        let root = try temporaryDirectory()
+        let rollout = root.appending(path: "sessions/rollout.jsonl")
+        try write("{}\n", to: rollout)
+        try makeThreadDatabase(
+            at: root.appending(path: "state_10.sqlite"),
+            threadID: "regular-file",
+            rolloutPath: rollout.path,
+            source: "cli",
+            model: nil,
+            createdAtMilliseconds: 1_000,
+            updatedAtMilliseconds: 2_000,
+            archived: false
+        )
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "state_999.sqlite", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+
+        let inventory = try CodexSourceDiscovery().discover(rootURL: root)
+
+        XCTAssertEqual(inventory.indexHealth, .available)
+        XCTAssertEqual(inventory.threadIndex.map(\.threadID), ["regular-file"])
+        XCTAssertEqual(inventory.rollouts.first?.thread?.threadID, "regular-file")
+    }
+
+    func testIndexReaderAcceptsMillisecondOnlyTimestampColumns() throws {
+        let root = try temporaryDirectory()
+        let databaseURL = root.appending(path: "state_4.sqlite")
+        let database = try SQLiteDatabase(url: databaseURL)
+        try database.execute(sql: """
+            CREATE TABLE threads(
+              id TEXT NOT NULL,
+              rollout_path TEXT NOT NULL,
+              source TEXT NOT NULL,
+              model TEXT,
+              created_at_ms INTEGER NOT NULL,
+              updated_at_ms INTEGER NOT NULL,
+              archived INTEGER NOT NULL
+            )
+            """)
+        try database.execute(
+            sql: "INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?)",
+            bindings: [.text("thread"), .text("/tmp/anonymous.jsonl"), .text("vscode"),
+                       .text("gpt-test"), .integer(1_234), .integer(5_678), .integer(1)]
+        )
+
+        let records = try CodexThreadIndexReader().read(databaseURL: databaseURL)
+
+        XCTAssertEqual(records, [
+            ThreadIndexRecord(
+                threadID: "thread",
+                rolloutPath: "/tmp/anonymous.jsonl",
+                sourceRaw: "vscode",
+                model: "gpt-test",
+                createdAtMilliseconds: 1_234,
+                updatedAtMilliseconds: 5_678,
+                archived: true,
+                childEdgeStatus: nil
+            )
+        ])
+    }
+
     func testIndexReaderFallsBackFromLegacySecondsAndAllowsMissingOptionalTablesAndColumns() throws {
         let root = try temporaryDirectory()
         let databaseURL = root.appending(path: "state_4.sqlite")

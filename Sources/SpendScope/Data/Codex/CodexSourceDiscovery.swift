@@ -101,6 +101,9 @@ struct CodexSourceDiscovery {
         }
 
         return entries.compactMap { url -> (url: URL, suffix: String)? in
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                return nil
+            }
             let name = url.lastPathComponent
             guard name.hasPrefix("state_"), name.hasSuffix(".sqlite") else { return nil }
             let start = name.index(name.startIndex, offsetBy: "state_".count)
@@ -221,10 +224,14 @@ struct CodexThreadIndexReader {
         guard !threadColumns.isEmpty else {
             throw CodexThreadIndexError.missingTable("threads")
         }
-        let requiredThreadColumns: Set<String> = [
-            "id", "rollout_path", "source", "created_at", "updated_at", "archived"
-        ]
-        let missingThreadColumns = requiredThreadColumns.subtracting(threadColumns).sorted()
+        let requiredThreadColumns: Set<String> = ["id", "rollout_path", "source", "archived"]
+        var missingThreadColumns = requiredThreadColumns.subtracting(threadColumns).sorted()
+        if threadColumns.isDisjoint(with: ["created_at_ms", "created_at"]) {
+            missingThreadColumns.append("created_at_ms|created_at")
+        }
+        if threadColumns.isDisjoint(with: ["updated_at_ms", "updated_at"]) {
+            missingThreadColumns.append("updated_at_ms|updated_at")
+        }
         guard missingThreadColumns.isEmpty else {
             throw CodexThreadIndexError.missingColumns(table: "threads", columns: missingThreadColumns)
         }
