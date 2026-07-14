@@ -26,6 +26,9 @@
 		A00000000000000000000019 /* SQLiteDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000019 /* SQLiteDatabase.swift */; };
 		A00000000000000000000020 /* UsageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000020 /* UsageStore.swift */; };
 		A00000000000000000000021 /* UsageStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000021 /* UsageStoreTests.swift */; };
+		A00000000000000000000022 /* IncrementalJSONLReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000022 /* IncrementalJSONLReaderTests.swift */; };
+		A00000000000000000000023 /* CodexSourceDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000023 /* CodexSourceDiscovery.swift */; };
+		A00000000000000000000024 /* IncrementalJSONLReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000024 /* IncrementalJSONLReader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +63,9 @@
 		B00000000000000000000019 /* SQLiteDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Storage/SQLiteDatabase.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000020 /* UsageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Storage/UsageStore.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000021 /* UsageStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/UsageStoreTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000022 /* IncrementalJSONLReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/IncrementalJSONLReaderTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000023 /* CodexSourceDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexSourceDiscovery.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000024 /* IncrementalJSONLReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/IncrementalJSONLReader.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,6 +112,8 @@
 				B00000000000000000000018 /* SessionStateReducer.swift */,
 				B00000000000000000000019 /* SQLiteDatabase.swift */,
 				B00000000000000000000020 /* UsageStore.swift */,
+				B00000000000000000000023 /* CodexSourceDiscovery.swift */,
+				B00000000000000000000024 /* IncrementalJSONLReader.swift */,
 			);
 			name = Sources;
 			sourceTree = "<group>";
@@ -118,6 +126,7 @@
 				B00000000000000000000015 /* UsageAccumulatorTests.swift */,
 				B00000000000000000000016 /* SessionStateReducerTests.swift */,
 				B00000000000000000000021 /* UsageStoreTests.swift */,
+				B00000000000000000000022 /* IncrementalJSONLReaderTests.swift */,
 			);
 			name = Tests;
 			sourceTree = "<group>";
@@ -244,6 +253,8 @@
 				A00000000000000000000018 /* SessionStateReducer.swift in Sources */,
 				A00000000000000000000019 /* SQLiteDatabase.swift in Sources */,
 				A00000000000000000000020 /* UsageStore.swift in Sources */,
+				A00000000000000000000023 /* CodexSourceDiscovery.swift in Sources */,
+				A00000000000000000000024 /* IncrementalJSONLReader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -256,6 +267,7 @@
 				A00000000000000000000015 /* UsageAccumulatorTests.swift in Sources */,
 				A00000000000000000000016 /* SessionStateReducerTests.swift in Sources */,
 				A00000000000000000000021 /* UsageStoreTests.swift in Sources */,
+				A00000000000000000000022 /* IncrementalJSONLReaderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

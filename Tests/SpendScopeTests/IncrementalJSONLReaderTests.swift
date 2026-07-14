@@ -1,0 +1,353 @@
+import Foundation
+import XCTest
+@testable import SpendScope
+
+final class IncrementalJSONLReaderTests: XCTestCase {
+    func testCommitsOnlyCompleteLinesAndContinuesAfterAppendAcrossChunkBoundaries() throws {
+        let url = try temporaryFile(contents: "{\"type\":\"one\"}\n{\"type\":\"two")
+        let reader = IncrementalJSONLReader(chunkSize: 8)
+
+        let first = try reader.read(file: url, fromOffset: 0)
+
+        XCTAssertEqual(first.lines.map { String(decoding: $0.data, as: UTF8.self) }, ["{\"type\":\"one\"}"])
+        XCTAssertEqual(first.lines.map(\.endOffset), [15])
+        XCTAssertEqual(first.committedOffset, 15)
+        XCTAssertFalse(first.wasTruncated)
+
+        try append("\"}\n", to: url)
+        let second = try reader.read(file: url, fromOffset: first.committedOffset)
+
+        XCTAssertEqual(second.lines.map { String(decoding: $0.data, as: UTF8.self) }, ["{\"type\":\"two\"}"])
+        XCTAssertEqual(second.lines.map(\.endOffset), [30])
+        XCTAssertEqual(second.committedOffset, 30)
+        XCTAssertFalse(second.wasTruncated)
+    }
+
+    func testReturnsEveryCompleteLineAndAbsoluteEndOffset() throws {
+        let url = try temporaryFile(contents: "a\n\nbb\npartial")
+
+        let batch = try IncrementalJSONLReader(chunkSize: 1).read(file: url, fromOffset: 0)
+
+        XCTAssertEqual(batch.lines.map(\.data), [Data("a".utf8), Data(), Data("bb".utf8)])
+        XCTAssertEqual(batch.lines.map(\.endOffset), [2, 3, 6])
+        XCTAssertEqual(batch.committedOffset, 6)
+        XCTAssertFalse(batch.wasTruncated)
+    }
+
+    func testTruncationDoesNotReadFromStartUntilImporterResetsGeneration() throws {
+        let url = try temporaryFile(contents: "new\n")
+
+        let truncated = try IncrementalJSONLReader(chunkSize: 2).read(file: url, fromOffset: 20)
+
+        XCTAssertEqual(truncated.lines, [])
+        XCTAssertEqual(truncated.committedOffset, 0)
+        XCTAssertTrue(truncated.wasTruncated)
+
+        let restarted = try IncrementalJSONLReader(chunkSize: 2).read(file: url, fromOffset: 0)
+        XCTAssertEqual(restarted.lines.map(\.data), [Data("new".utf8)])
+        XCTAssertEqual(restarted.committedOffset, 4)
+        XCTAssertFalse(restarted.wasTruncated)
+    }
+
+    func testRejectsInvalidConfigurationAndNegativeOffset() throws {
+        let url = try temporaryFile(contents: "line\n")
+
+        XCTAssertThrowsError(try IncrementalJSONLReader(chunkSize: 0).read(file: url, fromOffset: 0))
+        XCTAssertThrowsError(try IncrementalJSONLReader(chunkSize: 8).read(file: url, fromOffset: -1))
+    }
+
+    func testDiscoveryUsesDeviceAndInodeWhenFileMovesToArchive() throws {
+        let root = try temporaryDirectory()
+        let session = root.appending(path: "sessions/2026/07/14/rollout.jsonl")
+        try write("{}\n", to: session)
+        let modificationDate = Date(timeIntervalSince1970: 1_234_567)
+        try FileManager.default.setAttributes([.modificationDate: modificationDate], ofItemAtPath: session.path)
+
+        let first = try XCTUnwrap(CodexSourceDiscovery().discover(rootURL: root).rollouts.first)
+        let archived = root.appending(path: "archived_sessions/rollout.jsonl")
+        try FileManager.default.createDirectory(
+            at: archived.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.moveItem(at: first.url, to: archived)
+        let second = try XCTUnwrap(CodexSourceDiscovery().discover(rootURL: root).rollouts.first)
+
+        XCTAssertEqual(first.fileID, "\(first.deviceID):\(first.inode)")
+        XCTAssertEqual(first.fileID, second.fileID)
+        XCTAssertNotEqual(first.url, second.url)
+        XCTAssertFalse(first.isArchived)
+        XCTAssertTrue(second.isArchived)
+        XCTAssertEqual(second.fileSize, 3)
+        XCTAssertEqual(second.modificationTimeMilliseconds, 1_234_567_000)
+    }
+
+    func testDiscoveryScansSessionsRecursivelyAndArchiveOnlyDirectly() throws {
+        let root = try temporaryDirectory()
+        try write("{}\n", to: root.appending(path: "sessions/2026/07/14/included.jsonl"))
+        try write("{}\n", to: root.appending(path: "sessions/ignored.txt"))
+        try write("{}\n", to: root.appending(path: "archived_sessions/included.jsonl"))
+        try write("{}\n", to: root.appending(path: "archived_sessions/nested/excluded.jsonl"))
+
+        let inventory = try CodexSourceDiscovery().discover(rootURL: root)
+
+        XCTAssertEqual(inventory.rollouts.map { $0.url.lastPathComponent }.sorted(), ["included.jsonl", "included.jsonl"])
+        XCTAssertEqual(inventory.rollouts.filter(\.isArchived).count, 1)
+        XCTAssertEqual(inventory.indexHealth, .missing)
+        XCTAssertEqual(inventory.threadIndex, [])
+    }
+
+    func testDiscoveryUsesNewestNumericStateDatabaseAndMergesThreadByStandardizedPath() throws {
+        let root = try temporaryDirectory()
+        let rollout = root.appending(path: "sessions/2026/07/14/rollout.jsonl")
+        try write("{}\n", to: rollout)
+        try makeThreadDatabase(
+            at: root.appending(path: "state_2.sqlite"),
+            threadID: "old",
+            rolloutPath: rollout.path,
+            source: "cli",
+            model: nil,
+            createdAtMilliseconds: 1_000,
+            updatedAtMilliseconds: 2_000,
+            archived: false
+        )
+        try makeThreadDatabase(
+            at: root.appending(path: "state_10.sqlite"),
+            threadID: "new",
+            rolloutPath: rollout.deletingLastPathComponent().appending(path: "./rollout.jsonl").path,
+            source: "vscode",
+            model: "gpt-test",
+            createdAtMilliseconds: 3_000,
+            updatedAtMilliseconds: 4_000,
+            archived: true
+        )
+
+        let inventory = try CodexSourceDiscovery().discover(rootURL: root)
+
+        XCTAssertEqual(inventory.indexHealth, .available)
+        XCTAssertEqual(inventory.threadIndex.map(\.threadID), ["new"])
+        let thread = try XCTUnwrap(inventory.rollouts.first?.thread)
+        XCTAssertEqual(thread.threadID, "new")
+        XCTAssertEqual(thread.sourceRaw, "vscode")
+        XCTAssertEqual(thread.model, "gpt-test")
+        XCTAssertEqual(thread.createdAtMilliseconds, 3_000)
+        XCTAssertEqual(thread.updatedAtMilliseconds, 4_000)
+        XCTAssertTrue(thread.archived)
+    }
+
+    func testIndexReaderFallsBackFromLegacySecondsAndAllowsMissingOptionalTablesAndColumns() throws {
+        let root = try temporaryDirectory()
+        let databaseURL = root.appending(path: "state_4.sqlite")
+        let database = try SQLiteDatabase(url: databaseURL)
+        try database.execute(sql: """
+            CREATE TABLE threads(
+              id TEXT NOT NULL,
+              rollout_path TEXT NOT NULL,
+              source TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              archived INTEGER NOT NULL
+            )
+            """)
+        try database.execute(
+            sql: "INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?)",
+            bindings: [.text("thread"), .text("/tmp/anonymous.jsonl"), .text("cli"),
+                       .integer(12), .integer(34), .integer(0)]
+        )
+
+        let records = try CodexThreadIndexReader().read(databaseURL: databaseURL)
+
+        XCTAssertEqual(records, [
+            ThreadIndexRecord(
+                threadID: "thread",
+                rolloutPath: "/tmp/anonymous.jsonl",
+                sourceRaw: "cli",
+                model: nil,
+                createdAtMilliseconds: 12_000,
+                updatedAtMilliseconds: 34_000,
+                archived: false,
+                childEdgeStatus: nil
+            )
+        ])
+    }
+
+    func testIndexReaderUsesExplicitChildEdgeStatusAndDeduplicatesMatchingRows() throws {
+        let root = try temporaryDirectory()
+        let databaseURL = root.appending(path: "state_4.sqlite")
+        try makeThreadDatabase(
+            at: databaseURL,
+            threadID: "child",
+            rolloutPath: "/tmp/anonymous.jsonl",
+            source: "cli",
+            model: nil,
+            createdAtMilliseconds: 1_000,
+            updatedAtMilliseconds: 2_000,
+            archived: false
+        )
+        let database = try SQLiteDatabase(url: databaseURL)
+        try database.execute(sql: "CREATE TABLE thread_spawn_edges(child_thread_id TEXT, status TEXT)")
+        try database.execute(
+            sql: "INSERT INTO thread_spawn_edges VALUES (?, ?), (?, ?)",
+            bindings: [.text("child"), .text("open"), .text("child"), .text("open")]
+        )
+
+        let records = try CodexThreadIndexReader().read(databaseURL: databaseURL)
+
+        XCTAssertEqual(records.first?.childEdgeStatus, "open")
+    }
+
+    func testConflictingChildStatusesDegradeDiscoveryWithoutBlockingRollouts() throws {
+        let root = try temporaryDirectory()
+        let rollout = root.appending(path: "sessions/rollout.jsonl")
+        try write("{}\n", to: rollout)
+        let databaseURL = root.appending(path: "state_4.sqlite")
+        try makeThreadDatabase(
+            at: databaseURL,
+            threadID: "child",
+            rolloutPath: rollout.path,
+            source: "cli",
+            model: nil,
+            createdAtMilliseconds: 1_000,
+            updatedAtMilliseconds: 2_000,
+            archived: false
+        )
+        let database = try SQLiteDatabase(url: databaseURL)
+        try database.execute(sql: "CREATE TABLE thread_spawn_edges(child_thread_id TEXT, status TEXT)")
+        try database.execute(
+            sql: "INSERT INTO thread_spawn_edges VALUES (?, ?), (?, ?)",
+            bindings: [.text("child"), .text("open"), .text("child"), .text("closed")]
+        )
+
+        let inventory = try CodexSourceDiscovery().discover(rootURL: root)
+
+        XCTAssertEqual(inventory.rollouts.count, 1)
+        XCTAssertNil(inventory.rollouts.first?.thread)
+        XCTAssertEqual(inventory.threadIndex, [])
+        XCTAssertEqual(inventory.indexHealth, .degraded("conflicting child edge statuses"))
+    }
+
+    func testIndexReaderOpensReadOnlyDatabaseAndRejectsLegacyTimestampOverflow() throws {
+        let root = try temporaryDirectory()
+        let readOnlyURL = root.appending(path: "state_1.sqlite")
+        try makeThreadDatabase(
+            at: readOnlyURL,
+            threadID: "thread",
+            rolloutPath: "/tmp/anonymous.jsonl",
+            source: "cli",
+            model: nil,
+            createdAtMilliseconds: 1_000,
+            updatedAtMilliseconds: 2_000,
+            archived: false
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: readOnlyURL.path)
+
+        XCTAssertEqual(try CodexThreadIndexReader().read(databaseURL: readOnlyURL).map(\.threadID), ["thread"])
+
+        let overflowURL = root.appending(path: "state_2.sqlite")
+        let overflowDatabase = try SQLiteDatabase(url: overflowURL)
+        try overflowDatabase.execute(sql: """
+            CREATE TABLE threads(
+              id TEXT NOT NULL,
+              rollout_path TEXT NOT NULL,
+              source TEXT NOT NULL,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              archived INTEGER NOT NULL
+            )
+            """)
+        try overflowDatabase.execute(
+            sql: "INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?)",
+            bindings: [.text("thread"), .text("/tmp/anonymous.jsonl"), .text("cli"),
+                       .integer(Int64.max), .integer(1), .integer(0)]
+        )
+
+        XCTAssertThrowsError(try CodexThreadIndexReader().read(databaseURL: overflowURL)) { error in
+            XCTAssertEqual(error as? CodexThreadIndexError, .timestampOverflow)
+        }
+    }
+
+    func testMalformedNewestIndexIsDegradedButFilesystemRolloutsRemainAvailable() throws {
+        let root = try temporaryDirectory()
+        try write("{}\n", to: root.appending(path: "sessions/rollout.jsonl"))
+        let malformed = try SQLiteDatabase(url: root.appending(path: "state_99.sqlite"))
+        try malformed.execute(sql: "CREATE TABLE unrelated(value TEXT)")
+
+        let inventory = try CodexSourceDiscovery().discover(rootURL: root)
+
+        XCTAssertEqual(inventory.rollouts.count, 1)
+        XCTAssertEqual(inventory.threadIndex, [])
+        guard case let .degraded(detail) = inventory.indexHealth else {
+            return XCTFail("Expected degraded index health")
+        }
+        XCTAssertTrue(detail.contains("threads"))
+        XCTAssertFalse(detail.contains(root.path))
+    }
+}
+
+private extension IncrementalJSONLReaderTests {
+    func temporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "SpendScopeTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    func temporaryFile(contents: String) throws -> URL {
+        let directory = try temporaryDirectory()
+        let url = directory.appending(path: UUID().uuidString)
+        try Data(contents.utf8).write(to: url)
+        return url
+    }
+
+    func write(_ contents: String, to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(contents.utf8).write(to: url)
+    }
+
+    func append(_ contents: String, to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(contents.utf8))
+    }
+
+    func makeThreadDatabase(
+        at url: URL,
+        threadID: String,
+        rolloutPath: String,
+        source: String,
+        model: String?,
+        createdAtMilliseconds: Int64,
+        updatedAtMilliseconds: Int64,
+        archived: Bool
+    ) throws {
+        let database = try SQLiteDatabase(url: url)
+        try database.execute(sql: """
+            CREATE TABLE threads(
+              id TEXT NOT NULL,
+              rollout_path TEXT NOT NULL,
+              source TEXT NOT NULL,
+              model TEXT,
+              created_at_ms INTEGER NOT NULL,
+              updated_at_ms INTEGER NOT NULL,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              archived INTEGER NOT NULL
+            )
+            """)
+        try database.execute(
+            sql: """
+            INSERT INTO threads(
+              id, rollout_path, source, model, created_at_ms, updated_at_ms,
+              created_at, updated_at, archived
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            bindings: [
+                .text(threadID), .text(rolloutPath), .text(source), model.map(SQLiteValue.text) ?? .null,
+                .integer(createdAtMilliseconds), .integer(updatedAtMilliseconds),
+                .integer(createdAtMilliseconds / 1_000), .integer(updatedAtMilliseconds / 1_000),
+                .integer(archived ? 1 : 0)
+            ]
+        )
+    }
+}
