@@ -54,7 +54,8 @@ final class UsageStoreTests: XCTestCase {
             Set(try store.schemaColumns(table: "source_files")),
             Set([
                 "file_id", "device_id", "inode", "path", "file_size", "committed_offset",
-                "generation", "last_record_at_ms", "last_success_at_ms", "format_status", "last_error"
+                "generation", "thread_id", "last_record_at_ms", "last_success_at_ms",
+                "format_status", "last_error"
             ])
         )
         XCTAssertEqual(
@@ -63,6 +64,15 @@ final class UsageStoreTests: XCTestCase {
                 "thread_id", "current_model", "plan", "plan_raw", "plan_is_inferred",
                 "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens",
                 "counter_segment", "last_token_at_ms"
+            ])
+        )
+        XCTAssertEqual(
+            Set(try store.schemaColumns(table: "sessions")),
+            Set([
+                "thread_id", "source_kind", "created_at_ms", "updated_at_ms",
+                "activity_state", "archive_state", "child_edge_status", "active_turn_id",
+                "last_activity_at_ms", "last_event_key", "archive_observed_at_ms",
+                "last_model", "last_plan", "source_file_id"
             ])
         )
         XCTAssertEqual(
@@ -94,7 +104,60 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.currentPlan?.kind, .plus)
         XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.currentPlan?.rawValue, "plus")
         XCTAssertFalse(try XCTUnwrap(store.threadCheckpoint(threadID: "thread-1")?.currentPlan).isInferred)
+        XCTAssertEqual(try store.fileCheckpoint(fileID: batch.file.fileID)?.threadID, "thread-1")
+        XCTAssertEqual(try store.sessions().first?.state.archiveObservedAtMilliseconds, 2_000)
         XCTAssertEqual(try store.fileCheckpoint(fileID: batch.file.fileID)?.committedOffset, 160)
+    }
+
+    func testLatestQuotasUsesNewestTimeThenFingerprintTieBreakPerKind() throws {
+        let store = try makeStore()
+        let batch = ImportBatch(
+            file: .fixture(committedOffset: 160),
+            usageEvents: [],
+            quotaEvents: [
+                .fixture(fingerprint: "older", observedAtMilliseconds: 1_000, remaining: 0.9),
+                .fixture(fingerprint: "tie-a", observedAtMilliseconds: 2_000, remaining: 0.7),
+                .fixture(fingerprint: "tie-z", observedAtMilliseconds: 2_000, remaining: 0.6),
+                .fixture(
+                    fingerprint: "weekly",
+                    kind: .weekly,
+                    observedAtMilliseconds: 1_500,
+                    remaining: 0.5
+                )
+            ],
+            stateEvents: [],
+            sessions: [],
+            threadCheckpoints: []
+        )
+
+        try store.commit(batch)
+
+        let quotas = try store.latestQuotas()
+        XCTAssertEqual(quotas.map(\.fingerprint), ["tie-z", "weekly"])
+        XCTAssertEqual(quotas.map(\.observation.kind), [.fiveHour, .weekly])
+        XCTAssertEqual(quotas.map(\.observation.remaining), [0.6, 0.5])
+    }
+
+    func testExistingVersionOneWithoutImporterColumnsRequiresRebuildAtInitialization() throws {
+        let url = temporaryDatabaseURL()
+        let database = try SQLiteDatabase(url: url)
+        try database.execute(sql: "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)")
+        try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (1)")
+        try database.execute(sql: """
+            CREATE TABLE source_files(
+              file_id TEXT PRIMARY KEY, device_id INTEGER NOT NULL, inode INTEGER NOT NULL,
+              path TEXT NOT NULL, file_size INTEGER NOT NULL, committed_offset INTEGER NOT NULL,
+              generation INTEGER NOT NULL, last_record_at_ms INTEGER, last_success_at_ms INTEGER,
+              format_status TEXT NOT NULL, last_error TEXT
+            )
+            """)
+
+        XCTAssertThrowsError(try UsageStore(databaseURL: url)) { error in
+            XCTAssertEqual(
+                error as? UsageStoreError,
+                .rebuildRequired(table: "source_files", missingColumns: ["thread_id"])
+            )
+        }
     }
 
     func testFailureRollsBackEventsAggregateSessionsAndCheckpoints() throws {
@@ -270,14 +333,19 @@ private extension StoredUsageEvent {
 }
 
 private extension StoredQuotaEvent {
-    static func fixture(fingerprint: String = "quota-1", remaining: Double = 0.75) -> StoredQuotaEvent {
+    static func fixture(
+        fingerprint: String = "quota-1",
+        kind: QuotaKind = .fiveHour,
+        observedAtMilliseconds: Int64 = 2_000,
+        remaining: Double = 0.75
+    ) -> StoredQuotaEvent {
         StoredQuotaEvent(
             fingerprint: fingerprint,
             threadID: "thread-1",
             observation: QuotaObservation(
-                kind: .fiveHour,
-                observedAtMilliseconds: 2_000,
-                windowMinutes: 300,
+                kind: kind,
+                observedAtMilliseconds: observedAtMilliseconds,
+                windowMinutes: kind == .fiveHour ? 300 : 10_080,
                 remaining: remaining,
                 resetsAtMilliseconds: 3_000,
                 plan: PlanResolver.resolve(rawValue: "plus")
@@ -320,7 +388,7 @@ private extension StoredSession {
                 activeTurnID: activity == .running ? "turn-1" : nil,
                 lastActivityAtMilliseconds: 2_000,
                 lastActivityEventKey: "file-1:96",
-                archiveObservedAtMilliseconds: archive == .archived ? 2_000 : nil
+                archiveObservedAtMilliseconds: 2_000
             ),
             lastModel: "test-model",
             lastPlan: .plus,
@@ -339,6 +407,7 @@ private extension FileCheckpoint {
             fileSize: 200,
             committedOffset: committedOffset,
             generation: 0,
+            threadID: "thread-1",
             lastRecordAtMilliseconds: 2_000,
             lastSuccessAtMilliseconds: 3_000,
             formatStatus: "supported",

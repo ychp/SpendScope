@@ -53,6 +53,7 @@ struct FileCheckpoint: Sendable {
     let fileSize: Int64
     let committedOffset: Int64
     let generation: Int64
+    let threadID: String?
     let lastRecordAtMilliseconds: Int64?
     let lastSuccessAtMilliseconds: Int64?
     let formatStatus: String
@@ -153,7 +154,7 @@ final class UsageStore: @unchecked Sendable {
         let rows = try database.query(
             sql: """
             SELECT file_id, device_id, inode, path, file_size, committed_offset, generation,
-                   last_record_at_ms, last_success_at_ms, format_status, last_error
+                   thread_id, last_record_at_ms, last_success_at_ms, format_status, last_error
             FROM source_files WHERE file_id = ?
             """,
             bindings: [.text(fileID)]
@@ -168,6 +169,7 @@ final class UsageStore: @unchecked Sendable {
             fileSize: try row.requiredInt64("file_size"),
             committedOffset: try row.requiredInt64("committed_offset"),
             generation: try row.requiredInt64("generation"),
+            threadID: try row.optionalString("thread_id"),
             lastRecordAtMilliseconds: try row.optionalInt64("last_record_at_ms"),
             lastSuccessAtMilliseconds: try row.optionalInt64("last_success_at_ms"),
             formatStatus: try row.requiredString("format_status"),
@@ -271,7 +273,7 @@ final class UsageStore: @unchecked Sendable {
                     activeTurnID: try row.optionalString("active_turn_id"),
                     lastActivityAtMilliseconds: try row.optionalInt64("last_activity_at_ms"),
                     lastActivityEventKey: try row.optionalString("last_event_key"),
-                    archiveObservedAtMilliseconds: nil
+                    archiveObservedAtMilliseconds: try row.optionalInt64("archive_observed_at_ms")
                 ),
                 lastModel: try row.optionalString("last_model"),
                 lastPlan: try row.optionalEnum("last_plan", as: PlanKind.self),
@@ -306,12 +308,16 @@ final class UsageStore: @unchecked Sendable {
             guard versions.last ?? 0 <= 1 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            guard !versions.contains(1) else { return }
+            if versions.contains(1) {
+                try validateVersionOneSchema()
+                return
+            }
 
             for statement in Self.versionOneStatements {
                 try database.execute(sql: statement)
             }
             try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (1)")
+            try validateVersionOneSchema()
         }
     }
 
@@ -455,14 +461,16 @@ final class UsageStore: @unchecked Sendable {
             INSERT INTO sessions(
               thread_id, source_kind, created_at_ms, updated_at_ms, activity_state, archive_state,
               child_edge_status, active_turn_id, last_activity_at_ms, last_event_key,
-              last_model, last_plan, source_file_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              archive_observed_at_ms, last_model, last_plan, source_file_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(thread_id) DO UPDATE SET
               source_kind = excluded.source_kind, created_at_ms = excluded.created_at_ms,
               updated_at_ms = excluded.updated_at_ms, activity_state = excluded.activity_state,
               archive_state = excluded.archive_state, child_edge_status = excluded.child_edge_status,
               active_turn_id = excluded.active_turn_id, last_activity_at_ms = excluded.last_activity_at_ms,
-              last_event_key = excluded.last_event_key, last_model = excluded.last_model,
+              last_event_key = excluded.last_event_key,
+              archive_observed_at_ms = excluded.archive_observed_at_ms,
+              last_model = excluded.last_model,
               last_plan = excluded.last_plan, source_file_id = excluded.source_file_id
             """,
             bindings: [
@@ -471,7 +479,9 @@ final class UsageStore: @unchecked Sendable {
                 .text(session.activity.rawValue), .text(session.archive.rawValue),
                 session.childEdgeStatus.sqliteValue, session.activeTurnID.sqliteValue,
                 session.state.lastActivityAtMilliseconds.sqliteValue,
-                session.state.lastActivityEventKey.sqliteValue, session.lastModel.sqliteValue,
+                session.state.lastActivityEventKey.sqliteValue,
+                session.state.archiveObservedAtMilliseconds.sqliteValue,
+                session.lastModel.sqliteValue,
                 (session.lastPlan?.rawValue).sqliteValue, session.sourceFileID.sqliteValue
             ]
         )
@@ -518,19 +528,21 @@ final class UsageStore: @unchecked Sendable {
             sql: """
             INSERT INTO source_files(
               file_id, device_id, inode, path, file_size, committed_offset, generation,
-              last_record_at_ms, last_success_at_ms, format_status, last_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              thread_id, last_record_at_ms, last_success_at_ms, format_status, last_error
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_id) DO UPDATE SET
               device_id = excluded.device_id, inode = excluded.inode, path = excluded.path,
               file_size = excluded.file_size, committed_offset = excluded.committed_offset,
-              generation = excluded.generation, last_record_at_ms = excluded.last_record_at_ms,
+              generation = excluded.generation, thread_id = excluded.thread_id,
+              last_record_at_ms = excluded.last_record_at_ms,
               last_success_at_ms = excluded.last_success_at_ms, format_status = excluded.format_status,
               last_error = excluded.last_error
             """,
             bindings: [
                 .text(checkpoint.fileID), .integer(checkpoint.deviceID), .integer(checkpoint.inode),
                 .text(checkpoint.path), .integer(checkpoint.fileSize), .integer(checkpoint.committedOffset),
-                .integer(checkpoint.generation), checkpoint.lastRecordAtMilliseconds.sqliteValue,
+                .integer(checkpoint.generation), checkpoint.threadID.sqliteValue,
+                checkpoint.lastRecordAtMilliseconds.sqliteValue,
                 checkpoint.lastSuccessAtMilliseconds.sqliteValue, .text(checkpoint.formatStatus),
                 checkpoint.lastError.sqliteValue
             ]
@@ -581,7 +593,7 @@ final class UsageStore: @unchecked Sendable {
           file_id TEXT PRIMARY KEY, device_id INTEGER NOT NULL, inode INTEGER NOT NULL,
           path TEXT NOT NULL, file_size INTEGER NOT NULL DEFAULT 0,
           committed_offset INTEGER NOT NULL DEFAULT 0,
-          generation INTEGER NOT NULL DEFAULT 0, last_record_at_ms INTEGER,
+          generation INTEGER NOT NULL DEFAULT 0, thread_id TEXT, last_record_at_ms INTEGER,
           last_success_at_ms INTEGER, format_status TEXT NOT NULL DEFAULT 'supported', last_error TEXT
         )
         """,
@@ -634,7 +646,8 @@ final class UsageStore: @unchecked Sendable {
           thread_id TEXT PRIMARY KEY, source_kind TEXT NOT NULL, created_at_ms INTEGER,
           updated_at_ms INTEGER, activity_state TEXT NOT NULL, archive_state TEXT NOT NULL,
           child_edge_status TEXT, active_turn_id TEXT, last_activity_at_ms INTEGER,
-          last_event_key TEXT, last_model TEXT, last_plan TEXT, source_file_id TEXT
+          last_event_key TEXT, archive_observed_at_ms INTEGER,
+          last_model TEXT, last_plan TEXT, source_file_id TEXT
         )
         """,
         """
@@ -648,10 +661,32 @@ final class UsageStore: @unchecked Sendable {
     private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
         try SQLitePlanResolution.optional(from: row)
     }
+
+    private func validateVersionOneSchema() throws {
+        let requiredColumns: [(table: String, columns: [String])] = [
+            ("source_files", ["thread_id"]),
+            ("thread_checkpoints", ["plan", "plan_raw", "plan_is_inferred"]),
+            ("sessions", ["archive_observed_at_ms"])
+        ]
+        for requirement in requiredColumns {
+            let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")
+            let existing = try Set(rows.map {
+                try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+            })
+            let missing = requirement.columns.filter { !existing.contains($0) }
+            if !missing.isEmpty {
+                throw UsageStoreError.rebuildRequired(
+                    table: requirement.table,
+                    missingColumns: missing
+                )
+            }
+        }
+    }
 }
 
 enum UsageStoreError: Error, Equatable {
     case unsupportedSchemaVersion(Int64)
+    case rebuildRequired(table: String, missingColumns: [String])
     case invalidFileCheckpoint(fileSize: Int64, committedOffset: Int64)
     case invalidUsageComponent(name: String, value: Int64)
     case invalidQuotaRemaining

@@ -163,6 +163,119 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.totalUsage(), 120)
         XCTAssertEqual(try store.usageEventCount(), 1)
     }
+
+    func testExactFileThreadMappingSurvivesOtherRolloutWinningSessionThenRestart() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic"),
+            .started,
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        try fixture.setRolloutModificationDate(Date(timeIntervalSince1970: 3_000))
+        let second = try fixture.duplicateRollout(
+            named: "second.jsonl",
+            modificationDate: Date(timeIntervalSince1970: 2_000)
+        )
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        _ = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+        let secondFileID = try XCTUnwrap(
+            CodexSourceDiscovery().discover(rootURL: fixture.codexRoot).rollouts
+                .first { $0.url.lastPathComponent == second.lastPathComponent }?.fileID
+        )
+        XCTAssertEqual(try store.sessions().first?.sourceFileID, secondFileID)
+
+        try fixture.append(.token(
+            input: 200,
+            cached: 80,
+            output: 40,
+            reasoning: 10,
+            plan: nil,
+            second: 7
+        ))
+        try fixture.append(.completed)
+        let result = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+        let firstRollout = try XCTUnwrap(
+            CodexSourceDiscovery().discover(rootURL: fixture.codexRoot).rollouts
+                .first { $0.url.lastPathComponent == fixture.rolloutURL.lastPathComponent }
+        )
+
+        XCTAssertTrue(result.isSuccessful)
+        XCTAssertEqual(try store.fileCheckpoint(fileID: firstRollout.fileID)?.threadID, CodexFixture.threadID)
+        XCTAssertEqual(try store.totalUsage(), 240)
+        XCTAssertEqual(try store.usageEventCount(), 2)
+        XCTAssertEqual(try store.sessions().first?.activity, .completed)
+    }
+
+    func testArchiveFactAggregatesAcrossSameThreadFilesInEitherOrderAndRestart() async throws {
+        for archivedIsNewer in [false, true] {
+            let fixture = try CodexFixture.make(events: [.sessionCLI, .turn(model: "gpt-synthetic")])
+            try fixture.setRolloutModificationDate(Date(timeIntervalSince1970: archivedIsNewer ? 1_000 : 3_000))
+            _ = try fixture.duplicateRolloutToArchive(
+                named: "archived.jsonl",
+                modificationDate: Date(timeIntervalSince1970: archivedIsNewer ? 3_000 : 1_000)
+            )
+            let store = try UsageStore(databaseURL: fixture.databaseURL)
+
+            _ = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+            XCTAssertEqual(try store.sessions().first?.archive, .archived)
+            let observedAt = try XCTUnwrap(store.sessions().first?.state.archiveObservedAtMilliseconds)
+            XCTAssertEqual(observedAt, 3_000_000)
+
+            _ = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+            XCTAssertEqual(try store.sessions().first?.archive, .archived)
+            XCTAssertEqual(try store.sessions().first?.state.archiveObservedAtMilliseconds, observedAt)
+        }
+    }
+
+    func testIndexArchiveAndChildFactsUpdateWithoutNewJSONLLines() async throws {
+        let fixture = try CodexFixture.make(events: [.sessionCLI, .turn(model: "gpt-synthetic")])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(rootURL: fixture.codexRoot, store: store)
+        _ = await importer.refresh(scope: .history)
+        let checkpointBefore = try XCTUnwrap(
+            try store.fileCheckpoint(fileID: XCTUnwrap(store.sessions().first?.sourceFileID))
+        )
+        let rolloutModifiedAt = try XCTUnwrap(
+            CodexSourceDiscovery().discover(rootURL: fixture.codexRoot).rollouts.first
+        ).modificationTimeMilliseconds
+
+        try fixture.installIndex(archived: true, childEdgeStatus: "open", updatedAtMilliseconds: 9_000)
+        _ = await importer.refresh(scope: .history)
+
+        let session = try XCTUnwrap(store.sessions().first)
+        XCTAssertEqual(session.archive, .archived)
+        XCTAssertEqual(session.childEdgeStatus, "open")
+        XCTAssertEqual(session.state.archiveObservedAtMilliseconds, max(9_000, rolloutModifiedAt))
+        XCTAssertEqual(
+            try store.fileCheckpoint(fileID: checkpointBefore.fileID)?.committedOffset,
+            checkpointBefore.committedOffset
+        )
+    }
+
+    func testNewerExplicitActiveIndexRestoresThreadAfterArchivedFileDisappears() async throws {
+        let fixture = try CodexFixture.make(events: [.sessionCLI, .turn(model: "gpt-synthetic")])
+        try fixture.setRolloutModificationDate(Date(timeIntervalSince1970: 3_000))
+        let archived = try fixture.duplicateRolloutToArchive(
+            named: "archived.jsonl",
+            modificationDate: Date(timeIntervalSince1970: 2_000)
+        )
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(rootURL: fixture.codexRoot, store: store)
+        _ = await importer.refresh(scope: .history)
+        XCTAssertEqual(try store.sessions().first?.archive, .archived)
+        XCTAssertEqual(try store.sessions().first?.state.archiveObservedAtMilliseconds, 3_000_000)
+
+        try FileManager.default.removeItem(at: archived)
+        try fixture.installIndex(
+            archived: false,
+            childEdgeStatus: "closed",
+            updatedAtMilliseconds: 4_000_000
+        )
+        _ = await importer.refresh(scope: .history)
+
+        XCTAssertEqual(try store.sessions().first?.archive, .active)
+        XCTAssertEqual(try store.sessions().first?.state.archiveObservedAtMilliseconds, 4_000_000)
+    }
 }
 
 private final class CodexFixture: @unchecked Sendable {
@@ -230,6 +343,43 @@ private final class CodexFixture: @unchecked Sendable {
         try FileManager.default.copyItem(at: rolloutURL, to: duplicate)
         try FileManager.default.setAttributes([.modificationDate: modificationDate], ofItemAtPath: duplicate.path)
         return duplicate
+    }
+
+    func duplicateRolloutToArchive(named name: String, modificationDate: Date) throws -> URL {
+        let duplicate = codexRoot.appending(path: "archived_sessions/\(name)")
+        try FileManager.default.createDirectory(
+            at: duplicate.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.copyItem(at: rolloutURL, to: duplicate)
+        try FileManager.default.setAttributes([.modificationDate: modificationDate], ofItemAtPath: duplicate.path)
+        return duplicate
+    }
+
+    func installIndex(
+        archived: Bool,
+        childEdgeStatus: String,
+        updatedAtMilliseconds: Int64
+    ) throws {
+        let database = try SQLiteDatabase(url: codexRoot.appending(path: "state_1.sqlite"))
+        try database.execute(sql: """
+            CREATE TABLE threads(
+              id TEXT NOT NULL, rollout_path TEXT NOT NULL, source TEXT NOT NULL, model TEXT,
+              created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, archived INTEGER NOT NULL
+            )
+            """)
+        try database.execute(
+            sql: "INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?)",
+            bindings: [
+                .text(Self.threadID), .text(rolloutURL.path), .text("cli"), .text("gpt-index"),
+                .integer(1_000), .integer(updatedAtMilliseconds), .integer(archived ? 1 : 0)
+            ]
+        )
+        try database.execute(sql: "CREATE TABLE thread_spawn_edges(child_thread_id TEXT, status TEXT)")
+        try database.execute(
+            sql: "INSERT INTO thread_spawn_edges VALUES (?, ?)",
+            bindings: [.text(Self.threadID), .text(childEdgeStatus)]
+        )
     }
 
     func rolloutSize() throws -> Int64 {

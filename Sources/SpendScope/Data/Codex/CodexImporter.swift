@@ -77,8 +77,13 @@ actor CodexImporter {
         let selected = selectedRollouts(from: inventory.rollouts, scope: scope)
         var processed = 0
         var skipped = inventory.rollouts.count - selected.count
+        var archiveFacts = seedArchiveFacts(inventory: inventory, issues: &issues)
         for rollout in selected {
-            switch importRollout(rollout, inventory: inventory) {
+            switch importRollout(
+                rollout,
+                inventory: inventory,
+                archiveFacts: &archiveFacts
+            ) {
             case .processed(let issue):
                 processed += 1
                 if let issue { issues.append(issue) }
@@ -115,9 +120,81 @@ actor CodexImporter {
         }
     }
 
+    private func seedArchiveFacts(
+        inventory: CodexSourceInventory,
+        issues: inout [ImportIssue]
+    ) -> [String: ThreadArchiveFact] {
+        var facts: [String: ThreadArchiveFact] = [:]
+        for record in inventory.threadIndex {
+            facts[record.threadID] = ThreadArchiveFact(
+                archived: record.archived,
+                observedAtMilliseconds: record.updatedAtMilliseconds
+            )
+        }
+        for rollout in inventory.rollouts {
+            let threadID: String?
+            if let indexedThreadID = rollout.thread?.threadID {
+                threadID = indexedThreadID
+            } else {
+                do {
+                    threadID = try store.fileCheckpoint(fileID: rollout.fileID)?.threadID
+                } catch {
+                    issues.append(.init(
+                        kind: .store,
+                        fileID: rollout.fileID,
+                        detail: "checkpoint-read-failed"
+                    ))
+                    continue
+                }
+            }
+            guard let threadID else { continue }
+            mergeArchiveFact(
+                threadID: threadID,
+                rollout: rollout,
+                index: indexRecord(for: threadID, rollout: rollout, inventory: inventory),
+                into: &facts
+            )
+        }
+        return facts
+    }
+
+    private func mergeArchiveFact(
+        threadID: String,
+        rollout: RolloutFile,
+        index: ThreadIndexRecord?,
+        into facts: inout [String: ThreadArchiveFact]
+    ) {
+        let archived = rollout.isArchived || index?.archived == true
+        let observedAt = max(
+            rollout.modificationTimeMilliseconds,
+            index?.updatedAtMilliseconds ?? rollout.modificationTimeMilliseconds
+        )
+        if let existing = facts[threadID] {
+            facts[threadID] = ThreadArchiveFact(
+                archived: existing.archived || archived,
+                observedAtMilliseconds: max(existing.observedAtMilliseconds, observedAt)
+            )
+        } else {
+            facts[threadID] = ThreadArchiveFact(
+                archived: archived,
+                observedAtMilliseconds: observedAt
+            )
+        }
+    }
+
+    private func indexRecord(
+        for threadID: String,
+        rollout: RolloutFile,
+        inventory: CodexSourceInventory
+    ) -> ThreadIndexRecord? {
+        if rollout.thread?.threadID == threadID { return rollout.thread }
+        return inventory.threadIndex.first { $0.threadID == threadID }
+    }
+
     private func importRollout(
         _ rollout: RolloutFile,
-        inventory: CodexSourceInventory
+        inventory: CodexSourceInventory,
+        archiveFacts: inout [String: ThreadArchiveFact]
     ) -> FileImportOutcome {
         let previousFile: FileCheckpoint?
         let storedSessions: [StoredSession]
@@ -129,12 +206,15 @@ actor CodexImporter {
         }
 
         let storedByThread = Dictionary(uniqueKeysWithValues: storedSessions.map { ($0.threadID, $0) })
-        let storedForFile = storedSessions.first { $0.sourceFileID == rollout.fileID }
+        let recoveredThreadID = previousFile?.threadID ?? rollout.thread?.threadID
+        let storedForThread = recoveredThreadID.flatMap { storedByThread[$0] }
+        let archiveFact = recoveredThreadID.flatMap { archiveFacts[$0] }
         if canSkip(
             rollout,
             previousFile: previousFile,
-            storedSession: storedForFile,
-            inventory: inventory
+            storedSession: storedForThread,
+            inventory: inventory,
+            archiveFact: archiveFact
         ) {
             return .skipped
         }
@@ -151,7 +231,7 @@ actor CodexImporter {
 
         let now = currentMilliseconds()
         if readBatch.wasTruncated {
-            let threadID = storedForFile?.threadID ?? rollout.thread?.threadID
+            let threadID = recoveredThreadID
             var checkpoints: [ThreadCheckpoint] = []
             if let threadID {
                 do {
@@ -174,6 +254,7 @@ actor CodexImporter {
             }
             let file = makeFileCheckpoint(
                 rollout: rollout,
+                threadID: threadID,
                 committedOffset: 0,
                 generation: (previousFile?.generation ?? 0) + 1,
                 lastRecordAtMilliseconds: previousFile?.lastRecordAtMilliseconds,
@@ -200,7 +281,8 @@ actor CodexImporter {
         do {
             context = try makeContext(
                 rollout: rollout,
-                storedSession: storedForFile,
+                recoveredThreadID: recoveredThreadID,
+                storedSession: storedForThread,
                 storedByThread: storedByThread
             )
         } catch {
@@ -255,10 +337,19 @@ actor CodexImporter {
             }
         }
 
+        if let threadID = context.threadID {
+            mergeArchiveFact(
+                threadID: threadID,
+                rollout: rollout,
+                index: indexRecord(for: threadID, rollout: rollout, inventory: inventory),
+                into: &archiveFacts
+            )
+        }
         applyInventoryFacts(
             rollout: rollout,
             inventory: inventory,
-            storedSession: storedForFile,
+            storedSession: context.threadID.flatMap { storedByThread[$0] },
+            archiveFact: context.threadID.flatMap { archiveFacts[$0] },
             context: &context
         )
 
@@ -288,6 +379,7 @@ actor CodexImporter {
         let hadCompleteLine = !readBatch.lines.isEmpty
         let file = makeFileCheckpoint(
             rollout: rollout,
+            threadID: context.threadID ?? recoveredThreadID,
             committedOffset: committedOffset,
             generation: previousFile?.generation ?? 0,
             lastRecordAtMilliseconds: hadCompleteLine
@@ -446,10 +538,11 @@ actor CodexImporter {
 
     private func makeContext(
         rollout: RolloutFile,
+        recoveredThreadID: String?,
         storedSession: StoredSession?,
         storedByThread: [String: StoredSession]
     ) throws -> ImportContext {
-        let threadID = storedSession?.threadID ?? rollout.thread?.threadID
+        let threadID = recoveredThreadID ?? rollout.thread?.threadID
         let session = threadID.flatMap { storedByThread[$0] } ?? storedSession
         let checkpoint: ThreadCheckpoint?
         if let threadID {
@@ -476,23 +569,21 @@ actor CodexImporter {
         rollout: RolloutFile,
         inventory: CodexSourceInventory,
         storedSession: StoredSession?,
+        archiveFact: ThreadArchiveFact?,
         context: inout ImportContext
     ) {
         guard let threadID = context.threadID else { return }
-        let index = rollout.thread ?? inventory.threadIndex.first { $0.threadID == threadID }
+        let index = indexRecord(for: threadID, rollout: rollout, inventory: inventory)
         var state = context.state ?? storedSession?.state ?? .empty(threadID: threadID)
-        state = SessionStateReducer.setArchived(
-            current: state,
-            archived: rollout.isArchived || index?.archived == true,
-            observedAtMilliseconds: rollout.modificationTimeMilliseconds
-        )
-        switch inventory.indexHealth {
-        case .available:
-            state = SessionStateReducer.setChildEdgeStatus(current: state, status: index?.childEdgeStatus)
-        case .missing, .degraded:
-            if let childEdgeStatus = index?.childEdgeStatus {
-                state = SessionStateReducer.setChildEdgeStatus(current: state, status: childEdgeStatus)
-            }
+        if let archiveFact {
+            state = SessionStateReducer.setArchived(
+                current: state,
+                archived: archiveFact.archived,
+                observedAtMilliseconds: archiveFact.observedAtMilliseconds
+            )
+        }
+        if let childEdgeStatus = index?.childEdgeStatus {
+            state = SessionStateReducer.setChildEdgeStatus(current: state, status: childEdgeStatus)
         }
         context.state = state
         context.createdAtMilliseconds = index?.createdAtMilliseconds ?? context.createdAtMilliseconds
@@ -504,7 +595,8 @@ actor CodexImporter {
         _ rollout: RolloutFile,
         previousFile: FileCheckpoint?,
         storedSession: StoredSession?,
-        inventory: CodexSourceInventory
+        inventory: CodexSourceInventory,
+        archiveFact: ThreadArchiveFact?
     ) -> Bool {
         guard let previousFile,
               previousFile.fileSize == rollout.fileSize,
@@ -514,13 +606,14 @@ actor CodexImporter {
               let storedSession else {
             return false
         }
-        let index = rollout.thread ?? inventory.threadIndex.first { $0.threadID == storedSession.threadID }
-        let desiredArchive: SessionArchiveState = rollout.isArchived || index?.archived == true
-            ? .archived
-            : .active
-        guard storedSession.archive == desiredArchive else { return false }
-        if case .available = inventory.indexHealth {
-            return storedSession.childEdgeStatus == index?.childEdgeStatus
+        let index = indexRecord(for: storedSession.threadID, rollout: rollout, inventory: inventory)
+        if let archiveFact {
+            let desiredArchive: SessionArchiveState = archiveFact.archived ? .archived : .active
+            guard storedSession.archive == desiredArchive,
+                  let observed = storedSession.state.archiveObservedAtMilliseconds,
+                  observed >= archiveFact.observedAtMilliseconds else {
+                return false
+            }
         }
         if let explicitStatus = index?.childEdgeStatus {
             return storedSession.childEdgeStatus == explicitStatus
@@ -530,6 +623,7 @@ actor CodexImporter {
 
     private func makeFileCheckpoint(
         rollout: RolloutFile,
+        threadID: String?,
         committedOffset: Int64,
         generation: Int64,
         lastRecordAtMilliseconds: Int64?,
@@ -545,6 +639,7 @@ actor CodexImporter {
             fileSize: rollout.fileSize,
             committedOffset: committedOffset,
             generation: generation,
+            threadID: threadID,
             lastRecordAtMilliseconds: lastRecordAtMilliseconds,
             lastSuccessAtMilliseconds: lastSuccessAtMilliseconds,
             formatStatus: formatStatus,
@@ -604,6 +699,11 @@ private struct ImportContext {
     var state: SessionStateSnapshot?
     var createdAtMilliseconds: Int64?
     var updatedAtMilliseconds: Int64?
+}
+
+private struct ThreadArchiveFact {
+    let archived: Bool
+    let observedAtMilliseconds: Int64
 }
 
 private enum FileImportOutcome {
