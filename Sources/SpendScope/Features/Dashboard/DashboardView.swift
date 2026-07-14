@@ -2,6 +2,67 @@ import Charts
 import SwiftUI
 
 struct DashboardView: View {
+    let store: DashboardStore
+
+    var body: some View {
+        Group {
+            switch store.state {
+            case .loading:
+                unavailableView(
+                    "正在载入 Codex 数据",
+                    systemImage: "chart.bar.doc.horizontal",
+                    description: "SpendScope 正在读取已保存的本地统计。"
+                )
+            case .loaded(let snapshot, _):
+                DashboardContentView(snapshot: snapshot)
+            case .empty:
+                unavailableView(
+                    "未检测到 Codex 数据",
+                    systemImage: "tray",
+                    description: "使用 Codex 后刷新即可在这里查看 Token 用量。"
+                )
+            case .stale(let snapshot, _, let message):
+                DashboardContentView(snapshot: snapshot)
+                    .overlay(alignment: .topTrailing) {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .padding(.top, 22)
+                            .padding(.trailing, 16)
+                    }
+            case .failed(let message):
+                unavailableView(
+                    "暂时无法载入数据",
+                    systemImage: "exclamationmark.triangle",
+                    description: message
+                )
+            case .unsupported(let message):
+                unavailableView(
+                    "Codex 数据格式暂不兼容",
+                    systemImage: "doc.badge.ellipsis",
+                    description: message
+                )
+            }
+        }
+        .task { await store.start() }
+    }
+
+    private func unavailableView(
+        _ title: String,
+        systemImage: String,
+        description: String
+    ) -> some View {
+        ContentUnavailableView(
+            title,
+            systemImage: systemImage,
+            description: Text(description)
+        )
+        .frame(minWidth: 920, minHeight: 620)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
     @State private var selectedRange = TrendRange.defaultRange
 

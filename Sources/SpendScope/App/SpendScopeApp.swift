@@ -3,26 +3,26 @@ import SwiftUI
 @main
 struct SpendScopeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    private let snapshot = DashboardSnapshot.preview
+    @State private var store = DashboardStore.live()
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarPopoverView(snapshot: snapshot)
+            MenuBarPopoverView(store: store)
         } label: {
             Label(
-                snapshot.menuBarQuotaLabel,
+                store.menuBarLabel,
                 systemImage: "chart.bar.fill"
             )
         }
         .menuBarExtraStyle(.window)
 
         Window("SpendScope", id: "dashboard") {
-            DashboardView(snapshot: snapshot)
+            DashboardView(store: store)
         }
         .defaultSize(width: 920, height: 620)
 
         Settings {
-            SettingsView()
+            SettingsView(store: store)
         }
     }
 }

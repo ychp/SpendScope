@@ -188,6 +188,33 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(row.totalTokens, 42)
     }
 
+    func testSourceFactsUseOnlyStoredSafeHealthAndCheckpointData() throws {
+        let store = try makeStore()
+        let desktopSession = StoredSession(
+            threadID: "desktop-thread",
+            sourceKind: .desktop,
+            createdAtMilliseconds: 1_000,
+            updatedAtMilliseconds: 2_000,
+            state: .empty(threadID: "desktop-thread"),
+            lastModel: nil,
+            lastPlan: nil,
+            sourceFileID: "file-1"
+        )
+        try store.commit(ImportBatch(
+            file: .fixture(committedOffset: 10),
+            usageEvents: [.fixture(fingerprint: "cli-usage", total: 42)],
+            quotaEvents: [], stateEvents: [], sessions: [desktopSession], threadCheckpoints: []
+        ))
+        try store.recordIndexHealth(.degraded("sensitive internal detail"), processedFileCount: 1)
+
+        let facts = try store.sourceFacts()
+
+        XCTAssertTrue(facts.hasCLIData)
+        XCTAssertTrue(facts.hasDesktopData)
+        XCTAssertEqual(facts.indexHealth, .degraded("index-degraded"))
+        XCTAssertEqual(facts.lastSuccessfulRefreshMilliseconds, 3_000)
+    }
+
     func testExistingVersionOneWithoutImporterColumnsRequiresRebuildAtInitialization() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)

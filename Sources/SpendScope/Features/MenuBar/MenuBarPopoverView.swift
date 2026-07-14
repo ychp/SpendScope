@@ -5,7 +5,7 @@ struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
 
-    let snapshot: DashboardSnapshot
+    let store: DashboardStore
 
     var body: some View {
         VStack(spacing: 16) {
@@ -15,6 +15,7 @@ struct MenuBarPopoverView: View {
         }
         .padding(18)
         .frame(width: 420)
+        .task { await store.start() }
     }
 
     private var header: some View {
@@ -27,15 +28,22 @@ struct MenuBarPopoverView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("SpendScope").font(.title2.bold())
-                Text(snapshot.updatedText).foregroundStyle(.secondary)
+                Text(updatedText).foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            Button(action: {}) {
-                Image(systemName: "arrow.clockwise")
+            Button {
+                Task { await store.refresh() }
+            } label: {
+                if store.isRefreshing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
             }
             .buttonStyle(.plain)
+            .disabled(store.isRefreshing)
             .help("刷新")
         }
     }
@@ -43,26 +51,27 @@ struct MenuBarPopoverView: View {
     private var usageCard: some View {
         VStack(spacing: 14) {
             HStack {
-                Label("Codex · \(snapshot.planName)", systemImage: "shippingbox.fill")
+                Label("Codex · \(store.snapshot?.planName ?? "未检测到")", systemImage: "shippingbox.fill")
                     .font(.headline)
                 Spacer()
-                Text("可用")
-                    .foregroundStyle(.green)
+                Text(availabilityText)
+                    .foregroundStyle(availabilityColor)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(.green.opacity(0.12), in: Capsule())
+                    .background(availabilityColor.opacity(0.12), in: Capsule())
             }
 
             HStack(spacing: 20) {
-                ForEach(snapshot.visibleQuotas) { quota in
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("\(quota.title)剩余").foregroundStyle(.secondary)
-                        Text("\(quota.remainingPercent)%").font(.title.bold())
-                        ProgressView(value: quota.remaining).tint(quotaColor(for: quota))
-                        Text(quota.resetText).font(.caption).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                quotaColumn(
+                    store.snapshot?.fiveHourQuota,
+                    title: "5 小时",
+                    color: SpendScopeTheme.accent
+                )
+                quotaColumn(
+                    store.snapshot?.weeklyQuota,
+                    title: "7 天",
+                    color: SpendScopeTheme.accentBlue
+                )
             }
 
             Divider()
@@ -70,15 +79,15 @@ struct MenuBarPopoverView: View {
             HStack {
                 Text("今日 Token").font(.headline)
                 Spacer()
-                Text(TokenFormatter.compact(snapshot.todayTokens))
+                Text(store.snapshot.map { TokenFormatter.compact($0.todayTokens) } ?? "--")
                     .font(.title2.bold())
                     .monospacedDigit()
             }
 
-            breakdownRow("输入", snapshot.breakdown.input, SpendScopeTheme.accent)
-            breakdownRow("缓存", snapshot.breakdown.cachedInput, SpendScopeTheme.accentBlue)
-            breakdownRow("输出", snapshot.breakdown.output, SpendScopeTheme.output)
-            breakdownRow("推理", snapshot.breakdown.reasoning, SpendScopeTheme.reasoning)
+            breakdownRow("输入", store.snapshot?.breakdown.input, SpendScopeTheme.accent)
+            breakdownRow("缓存", store.snapshot?.breakdown.cachedInput, SpendScopeTheme.accentBlue)
+            breakdownRow("输出", store.snapshot?.breakdown.output, SpendScopeTheme.output)
+            breakdownRow("推理", store.snapshot?.breakdown.reasoning, SpendScopeTheme.reasoning)
         }
         .dashboardCard()
     }
@@ -100,16 +109,59 @@ struct MenuBarPopoverView: View {
         .buttonStyle(.bordered)
     }
 
-    private func breakdownRow(_ title: String, _ value: Int, _ color: Color) -> some View {
+    private func quotaColumn(
+        _ quota: QuotaSnapshot?,
+        title: String,
+        color: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("\(title)剩余").foregroundStyle(.secondary)
+            Text(quota.map { "\($0.remainingPercent)%" } ?? "--")
+                .font(.title.bold())
+                .monospacedDigit()
+            ProgressView(value: quota?.remaining ?? 0).tint(color)
+            Text(quota?.resetText ?? "暂无额度数据")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func breakdownRow(_ title: String, _ value: Int?, _ color: Color) -> some View {
         HStack {
             Circle().fill(color).frame(width: 9, height: 9)
             Text(title)
             Spacer()
-            Text(TokenFormatter.compact(value)).monospacedDigit()
+            Text(value.map(TokenFormatter.compact) ?? "--").monospacedDigit()
         }
     }
 
-    private func quotaColor(for quota: QuotaSnapshot) -> Color {
-        quota.id == "7d" ? SpendScopeTheme.accentBlue : SpendScopeTheme.accent
+    private var updatedText: String {
+        if let snapshot = store.snapshot { return snapshot.updatedText }
+        return switch store.state {
+        case .loading: "正在载入"
+        case .empty: "未检测到 Codex 数据"
+        case .failed(let message), .unsupported(let message): message
+        case .loaded, .stale: "已刷新"
+        }
+    }
+
+    private var availabilityText: String {
+        switch store.state {
+        case .loaded: "可用"
+        case .stale: "可能过期"
+        case .loading: "载入中"
+        case .empty: "暂无数据"
+        case .failed, .unsupported: "不可用"
+        }
+    }
+
+    private var availabilityColor: Color {
+        switch store.state {
+        case .loaded: .green
+        case .stale: .orange
+        case .loading, .empty: .secondary
+        case .failed, .unsupported: .red
+        }
     }
 }

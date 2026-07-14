@@ -108,6 +108,15 @@ struct StoredSessionQueryRow: Sendable {
     let totalTokens: Int64
 }
 
+struct StoredSourceFacts: Sendable {
+    let hasCLIData: Bool
+    let hasDesktopData: Bool
+    let indexHealth: CodexIndexHealth
+    let lastSuccessfulRefreshMilliseconds: Int64?
+    let hasDegradedFiles: Bool
+    let hasUnsupportedFiles: Bool
+}
+
 final class UsageStore: @unchecked Sendable {
     private let database: SQLiteDatabase
 
@@ -350,6 +359,77 @@ final class UsageStore: @unchecked Sendable {
                 totalTokens: totals[session.threadID, default: 0]
             )
         }
+    }
+
+    func recordIndexHealth(_ health: CodexIndexHealth, processedFileCount: Int) throws {
+        let state: String
+        let detail: String?
+        switch health {
+        case .available:
+            state = "available"
+            detail = nil
+        case .missing:
+            state = "missing"
+            detail = nil
+        case .degraded:
+            state = "degraded"
+            detail = "index-degraded"
+        }
+        try database.execute(
+            sql: """
+            INSERT INTO source_status(source_kind, state, detail, processed_file_count)
+            VALUES ('index', ?, ?, ?)
+            ON CONFLICT(source_kind) DO UPDATE SET
+              state = excluded.state,
+              detail = excluded.detail,
+              processed_file_count = excluded.processed_file_count
+            """,
+            bindings: [
+                .text(state), detail.map(SQLiteValue.text) ?? .null,
+                .integer(Int64(processedFileCount))
+            ]
+        )
+    }
+
+    func sourceFacts() throws -> StoredSourceFacts {
+        let sourceRows = try database.query(sql: """
+            SELECT source_kind FROM usage_events
+            UNION
+            SELECT source_kind FROM sessions
+            """)
+        let sources = try Set(sourceRows.map {
+            try SQLiteRow(table: "stored_sources", values: $0).requiredString("source_kind")
+        })
+        let fileRows = try database.query(sql: """
+            SELECT MAX(last_success_at_ms) AS last_success_at_ms,
+                   COALESCE(SUM(CASE WHEN format_status = 'supported' THEN 0 ELSE 1 END), 0)
+                     AS degraded_count,
+                   COALESCE(SUM(CASE WHEN last_error = 'missing-thread-context' THEN 1 ELSE 0 END), 0)
+                     AS unsupported_count
+            FROM source_files
+            """)
+        let fileRow = SQLiteRow(table: "source_files", values: fileRows[0])
+        let indexRows = try database.query(
+            sql: "SELECT state FROM source_status WHERE source_kind = 'index'"
+        )
+        let indexHealth: CodexIndexHealth
+        if let values = indexRows.first {
+            switch try SQLiteRow(table: "source_status", values: values).requiredString("state") {
+            case "available": indexHealth = .available
+            case "missing": indexHealth = .missing
+            default: indexHealth = .degraded("index-degraded")
+            }
+        } else {
+            indexHealth = .missing
+        }
+        return StoredSourceFacts(
+            hasCLIData: sources.contains(CodexSourceKind.cli.rawValue),
+            hasDesktopData: sources.contains(CodexSourceKind.desktop.rawValue),
+            indexHealth: indexHealth,
+            lastSuccessfulRefreshMilliseconds: try fileRow.optionalInt64("last_success_at_ms"),
+            hasDegradedFiles: try fileRow.requiredInt64("degraded_count") > 0,
+            hasUnsupportedFiles: try fileRow.requiredInt64("unsupported_count") > 0
+        )
     }
 
     func schemaVersions() throws -> [Int64] {

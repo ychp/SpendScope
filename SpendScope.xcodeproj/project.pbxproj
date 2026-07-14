@@ -35,6 +35,8 @@
 		A00000000000000000000028 /* SessionQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000028 /* SessionQueryService.swift */; };
 		A00000000000000000000029 /* DashboardQueryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000029 /* DashboardQueryServiceTests.swift */; };
 		A00000000000000000000030 /* SessionQueryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000030 /* SessionQueryServiceTests.swift */; };
+		A00000000000000000000031 /* DashboardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000031 /* DashboardStore.swift */; };
+		A00000000000000000000032 /* DashboardStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000032 /* DashboardStoreTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,6 +80,8 @@
 		B00000000000000000000028 /* SessionQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Dashboard/SessionQueryService.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000029 /* DashboardQueryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/DashboardQueryServiceTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000030 /* SessionQueryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/SessionQueryServiceTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000031 /* DashboardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/App/DashboardStore.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000032 /* DashboardStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/DashboardStoreTests.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -129,6 +133,7 @@
 				B00000000000000000000025 /* CodexImporter.swift */,
 				B00000000000000000000027 /* DashboardQueryService.swift */,
 				B00000000000000000000028 /* SessionQueryService.swift */,
+				B00000000000000000000031 /* DashboardStore.swift */,
 			);
 			name = Sources;
 			sourceTree = "<group>";
@@ -145,6 +150,7 @@
 				B00000000000000000000026 /* CodexImporterTests.swift */,
 				B00000000000000000000029 /* DashboardQueryServiceTests.swift */,
 				B00000000000000000000030 /* SessionQueryServiceTests.swift */,
+				B00000000000000000000032 /* DashboardStoreTests.swift */,
 			);
 			name = Tests;
 			sourceTree = "<group>";
@@ -276,6 +282,7 @@
 				A00000000000000000000025 /* CodexImporter.swift in Sources */,
 				A00000000000000000000027 /* DashboardQueryService.swift in Sources */,
 				A00000000000000000000028 /* SessionQueryService.swift in Sources */,
+				A00000000000000000000031 /* DashboardStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -292,6 +299,7 @@
 				A00000000000000000000026 /* CodexImporterTests.swift in Sources */,
 				A00000000000000000000029 /* DashboardQueryServiceTests.swift in Sources */,
 				A00000000000000000000030 /* SessionQueryServiceTests.swift in Sources */,
+				A00000000000000000000032 /* DashboardStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
