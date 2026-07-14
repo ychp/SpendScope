@@ -107,6 +107,36 @@ final class DashboardQueryServiceTests: XCTestCase {
         }
     }
 
+    func testLocalDayBoundariesFollowSpringAndFallDSTTransitions() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let cases = [
+            (DateComponents(year: 2026, month: 3, day: 8, hour: 12), 23.0),
+            (DateComponents(year: 2026, month: 11, day: 1, hour: 12), 25.0)
+        ]
+
+        for (components, expectedDayHours) in cases {
+            let now = try XCTUnwrap(calendar.date(from: components))
+            let start = calendar.startOfDay(for: now)
+            let nextStart = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: start))
+            XCTAssertEqual(nextStart.timeIntervalSince(start) / 3_600, expectedDayHours)
+            let store = try makeStore()
+            try store.commit(batch(
+                events: [
+                    usage("inside", at: start, total: 1),
+                    usage("outside", at: start.addingTimeInterval(-0.001), total: 9)
+                ],
+                quotas: []
+            ))
+
+            let snapshot = try DashboardQueryService(store: store).snapshot(
+                now: now, calendar: calendar
+            )
+
+            XCTAssertEqual(snapshot.todayTokens, 1)
+        }
+    }
+
     func testEmptyAndMalformedSnapshotsUseStableIDLookupWithoutCrashing() {
         let empty = DashboardSnapshot.empty(updatedText: "未刷新")
         XCTAssertEqual(empty.periods.map(\.id), ["today", "sevenDays", "thirtyDays", "allTime"])

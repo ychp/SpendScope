@@ -29,8 +29,44 @@ final class SessionQueryServiceTests: XCTestCase {
 
         XCTAssertEqual(rows.map(\.displayState), [.running])
         XCTAssertEqual(rows.map(\.freshness), [.stale])
-        XCTAssertEqual(rows.map(\.shortThreadID), ["abcdefgh"])
+        assertOpaqueDisplayID(try XCTUnwrap(rows.first?.shortThreadID), rawID: "abcdefgh-1234")
         XCTAssertEqual(rows.map(\.totalTokens), [42])
+    }
+
+    func testDisplayIdentifierIsOpaqueDeterministicAndBoundedForShortAndUUIDThreadIDs() throws {
+        let shortID = "abc123"
+        let uuidID = "550e8400-e29b-41d4-a716-446655440000"
+        let store = try makeStore()
+        try store.commit(batch(
+            fileID: "short-file", lastRecordAtMilliseconds: 100,
+            session: session(
+                threadID: shortID, sourceFileID: "short-file", activity: .completed,
+                model: "short-model"
+            ),
+            usage: nil
+        ))
+        try store.commit(batch(
+            fileID: "uuid-file", lastRecordAtMilliseconds: 100,
+            session: session(
+                threadID: uuidID, sourceFileID: "uuid-file", activity: .completed,
+                model: "uuid-model"
+            ),
+            usage: nil
+        ))
+
+        let service = SessionQueryService(store: store)
+        let first = try service.sessions(filter: .init(), now: Date(timeIntervalSince1970: 1))
+        let second = try service.sessions(filter: .init(), now: Date(timeIntervalSince1970: 1))
+        let shortDisplayID = try XCTUnwrap(first.first { $0.model == "short-model" }?.shortThreadID)
+        let uuidDisplayID = try XCTUnwrap(first.first { $0.model == "uuid-model" }?.shortThreadID)
+
+        assertOpaqueDisplayID(shortDisplayID, rawID: shortID)
+        assertOpaqueDisplayID(uuidDisplayID, rawID: uuidID)
+        XCTAssertEqual(shortDisplayID, "thread-6ca13d52")
+        XCTAssertEqual(uuidDisplayID, "thread-a3a9e1ed")
+        XCTAssertEqual(shortDisplayID, second.first { $0.model == "short-model" }?.shortThreadID)
+        XCTAssertEqual(uuidDisplayID, second.first { $0.model == "uuid-model" }?.shortThreadID)
+        XCTAssertNotEqual(shortDisplayID, uuidDisplayID)
     }
 
     func testRunningFreshnessThresholdAndMissingTimestampAreConservative() throws {
@@ -38,19 +74,25 @@ final class SessionQueryServiceTests: XCTestCase {
         let store = try makeStore()
         try store.commit(batch(
             fileID: "fresh-file", lastRecordAtMilliseconds: 700_000,
-            session: session(threadID: "fresh-thread", sourceFileID: "fresh-file", activity: .running),
+            session: session(
+                threadID: "fresh-thread", sourceFileID: "fresh-file",
+                activity: .running, model: "fresh-model"
+            ),
             usage: nil
         ))
         try store.commit(batch(
             fileID: "unknown-file", lastRecordAtMilliseconds: nil,
-            session: session(threadID: "unknown-thread", sourceFileID: "unknown-file", activity: .running),
+            session: session(
+                threadID: "unknown-thread", sourceFileID: "unknown-file",
+                activity: .running, model: "unknown-model"
+            ),
             usage: nil
         ))
 
         let rows = try SessionQueryService(store: store).sessions(filter: .init(), now: now)
 
-        XCTAssertEqual(rows.first { $0.shortThreadID == "fresh-th" }?.freshness, .fresh)
-        XCTAssertEqual(rows.first { $0.shortThreadID == "unknown-" }?.freshness, .unknown)
+        XCTAssertEqual(rows.first { $0.model == "fresh-model" }?.freshness, .fresh)
+        XCTAssertEqual(rows.first { $0.model == "unknown-model" }?.freshness, .unknown)
     }
 
     func testFiltersOrthogonalFactsAndDerivesArchivedDisplayPriority() throws {
@@ -96,6 +138,23 @@ final class SessionQueryServiceTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("SessionQueryServiceTests-\(UUID().uuidString).sqlite3")
         return try UsageStore(databaseURL: url)
+    }
+
+    private func assertOpaqueDisplayID(
+        _ displayID: String,
+        rawID: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(displayID.hasPrefix("thread-"), file: file, line: line)
+        XCTAssertEqual(displayID.count, 15, file: file, line: line)
+        XCTAssertNotEqual(displayID, rawID, file: file, line: line)
+        XCTAssertFalse(displayID.contains(rawID), file: file, line: line)
+        XCTAssertTrue(
+            displayID.dropFirst("thread-".count).allSatisfy { $0.isHexDigit },
+            file: file,
+            line: line
+        )
     }
 
     private func session(
@@ -145,7 +204,7 @@ final class SessionQueryServiceTests: XCTestCase {
     ) -> ImportBatch {
         ImportBatch(
             file: FileCheckpoint(
-                fileID: fileID, deviceID: 1, inode: Int64(fileID.hashValue),
+                fileID: fileID, deviceID: 1, inode: 1,
                 path: "/synthetic/\(fileID).jsonl", fileSize: 10, committedOffset: 10,
                 generation: 0, threadID: session?.threadID,
                 lastRecordAtMilliseconds: lastRecordAtMilliseconds,

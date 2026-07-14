@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct SessionFilter: Sendable {
@@ -70,7 +71,7 @@ final class SessionQueryService: @unchecked Sendable {
             .map { row in
                 let session = row.session
                 return SessionSummary(
-                    shortThreadID: String(session.threadID.prefix(8)),
+                    shortThreadID: ThreadDisplayIdentifier.make(from: session.threadID),
                     createdAtMilliseconds: session.createdAtMilliseconds,
                     updatedAtMilliseconds: session.updatedAtMilliseconds,
                     source: session.sourceKind,
@@ -117,5 +118,13 @@ final class SessionQueryService: @unchecked Sendable {
         guard nowMilliseconds > lastRecordAtMilliseconds else { return .fresh }
         let (age, overflow) = nowMilliseconds.subtractingReportingOverflow(lastRecordAtMilliseconds)
         return overflow || age > Self.staleIntervalMilliseconds ? .stale : .fresh
+    }
+}
+
+private enum ThreadDisplayIdentifier {
+    static func make(from threadID: String) -> String {
+        let digest = SHA256.hash(data: Data(threadID.utf8))
+        let prefix = digest.prefix(4).map { String(format: "%02x", $0) }.joined()
+        return "thread-\(prefix)"
     }
 }
