@@ -71,7 +71,7 @@ struct SettingsView: View {
             dataSettings
                 .tabItem { Label("数据", systemImage: "externaldrive.fill") }
         }
-        .frame(width: 580, height: 620)
+        .frame(width: 580, height: 660)
         .task { await store.start() }
     }
 
@@ -83,8 +83,6 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("Codex 套餐")
-            } footer: {
-                Text("Free 用于免费账户及无法确认套餐时的本地回退；其余为当前付费套餐。")
             }
 
             Section("其他计费方式") {
