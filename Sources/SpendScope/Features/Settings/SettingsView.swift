@@ -71,26 +71,12 @@ struct SettingsView: View {
             dataSettings
                 .tabItem { Label("数据", systemImage: "externaldrive.fill") }
         }
-        .frame(width: 580, height: 500)
+        .frame(width: 580, height: 620)
         .task { await store.start() }
     }
 
     private var planSettings: some View {
         Form {
-            Section {
-                Label {
-                    HStack(spacing: 6) {
-                        Text("当前使用")
-                            .foregroundStyle(.secondary)
-                        Text(currentPlanName)
-                            .fontWeight(.semibold)
-                    }
-                } icon: {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(.green)
-                }
-            }
-
             Section {
                 ForEach(CodexPlanCatalog.plans) { plan in
                     planRow(plan)
@@ -114,6 +100,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollIndicators(.hidden)
     }
 
     private var dataSettings: some View {
@@ -144,10 +131,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    private var currentPlanName: String {
-        store.snapshot?.planName ?? "Free"
     }
 
     private func planRow(_ plan: CodexPlan) -> some View {
