@@ -14,19 +14,38 @@ enum MenuBarAvailabilityText {
 }
 
 enum MenuBarUpdateText {
-    static func text(for state: DashboardLoadState) -> String {
+    static func text(
+        for state: DashboardLoadState,
+        calendar: Calendar = .current
+    ) -> String {
         switch state {
         case .loading:
             "正在载入"
-        case .loaded(let snapshot, _):
-            snapshot.updatedText
+        case .loaded(let snapshot, let summary):
+            snapshotText(snapshot, summary: summary, calendar: calendar)
         case .empty:
             "未检测到 Codex 数据"
-        case .stale(let snapshot, _, _):
-            "部分数据待更新 · \(snapshot.updatedText)"
+        case .stale(let snapshot, let summary, _):
+            "部分数据待更新 · \(snapshotText(snapshot, summary: summary, calendar: calendar))"
         case .failed(let message), .unsupported(let message):
             message
         }
+    }
+
+    private static func snapshotText(
+        _ snapshot: DashboardSnapshot,
+        summary: SourceSummary,
+        calendar: Calendar
+    ) -> String {
+        let statusText = snapshot.updatedText == "刚刚刷新" ? "刚刚更新" : snapshot.updatedText
+        guard let refreshedAt = summary.lastSuccessfulRefresh else { return statusText }
+
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "HH:mm"
+        return "\(statusText) · \(formatter.string(from: refreshedAt))"
     }
 }
 
@@ -171,8 +190,10 @@ struct MenuBarPopoverView: View {
                 )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("SpendScope").font(.title2.bold())
+                Text("SpendScope")
+                    .font(.system(size: 11, weight: .bold))
                 Text(MenuBarUpdateText.text(for: store.state))
+                    .font(.system(size: 8))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

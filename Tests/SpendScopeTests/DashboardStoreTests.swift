@@ -41,6 +41,8 @@ final class DashboardStoreTests: XCTestCase {
     }
 
     func testMenuUpdateTextCombinesStaleStateWithLastRefresh() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
         let state = DashboardLoadState.stale(
             .fixture(todayTokens: 17),
             .fixture,
@@ -48,8 +50,27 @@ final class DashboardStoreTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            MenuBarUpdateText.text(for: state),
-            "部分数据待更新 · 已刷新"
+            MenuBarUpdateText.text(for: state, calendar: calendar),
+            "部分数据待更新 · 已刷新 · 00:00"
+        )
+    }
+
+    func testMenuUpdateTextUsesUpdateCopyAndTwentyFourHourRefreshTime() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60) ?? .gmt
+        let state = DashboardLoadState.loaded(
+            .fixture(todayTokens: 17, updatedText: "刚刚刷新"),
+            SourceSummary(
+                cli: .connected,
+                desktop: .connected,
+                index: .connected,
+                lastSuccessfulRefresh: Date(timeIntervalSince1970: 3_661)
+            )
+        )
+
+        XCTAssertEqual(
+            MenuBarUpdateText.text(for: state, calendar: calendar),
+            "刚刚更新 · 09:01"
         )
     }
 
@@ -589,10 +610,10 @@ private extension SourceSummary {
 }
 
 private extension DashboardSnapshot {
-    static func fixture(todayTokens: Int) -> DashboardSnapshot {
+    static func fixture(todayTokens: Int, updatedText: String = "已刷新") -> DashboardSnapshot {
         DashboardSnapshot(
             planName: "Plus",
-            updatedText: "已刷新",
+            updatedText: updatedText,
             periods: [
                 .init(
                     id: "today", title: "今日", total: todayTokens,
