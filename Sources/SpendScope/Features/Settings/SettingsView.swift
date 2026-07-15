@@ -70,11 +70,12 @@ struct SettingsView: View {
     }
 
     let store: DashboardStore
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AppPreferenceKeys.appearance) private var appearanceRaw = AppearancePreference.system.rawValue
+    @AppStorage(AppPreferenceKeys.statusItemDisplayMode) private var statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
     @AppStorage(AppPreferenceKeys.showsFiveHour) private var showsFiveHour = true
     @AppStorage(AppPreferenceKeys.showsWeekly) private var showsWeekly = true
-    @AppStorage(AppPreferenceKeys.showsToday) private var showsToday = false
 
     var body: some View {
         TabView {
@@ -106,13 +107,25 @@ struct SettingsView: View {
             }
 
             Section("菜单栏") {
-                preferenceRow("实时预览", detail: "菜单栏中将显示的统计摘要") {
-                    Text(menuBarPreview)
-                        .font(.callout.weight(.medium).monospacedDigit())
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                preferenceRow("实时预览", detail: "与菜单栏使用同一套绘制样式") {
+                    Image(nsImage: StatusItemRenderer().render(
+                        statusItemPresentation,
+                        appearance: previewAppearance
+                    ))
+                    .interpolation(.high)
+                    .frame(maxWidth: .infinity, minHeight: 34)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                    .accessibilityLabel("SpendScope 状态栏预览")
+                    .accessibilityValue(statusItemPresentation.label)
+                }
+
+                preferenceRow("展示模式", detail: "丰富显示进度与倒计时，经典使用额度环") {
+                    Picker("", selection: $statusItemDisplayModeRaw) {
+                        Text("丰富（推荐）").tag(StatusItemDisplayMode.rich.rawValue)
+                        Text("经典").tag(StatusItemDisplayMode.classic.rawValue)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
                 }
 
                 preferenceRow("额度口径", detail: "选择菜单栏百分比的统计方式") {
@@ -124,11 +137,10 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
-                preferenceRow("显示内容", detail: "可同时展示多个统计维度") {
+                preferenceRow("显示内容", detail: "不可用额度会自动隐藏，至少保留一项") {
                     HStack(spacing: 2) {
-                        multiSelectSegment("5H", isOn: $showsFiveHour)
-                        multiSelectSegment("7d", isOn: $showsWeekly)
-                        multiSelectSegment("今日", isOn: $showsToday)
+                        multiSelectSegment("5H", isOn: fiveHourVisibilityBinding)
+                        multiSelectSegment("7d", isOn: weeklyVisibilityBinding)
                     }
                     .padding(2)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
@@ -308,13 +320,43 @@ struct SettingsView: View {
         MenuBarLabelConfiguration(
             quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining,
             showsFiveHour: showsFiveHour,
-            showsWeekly: showsWeekly,
-            showsToday: showsToday
+            showsWeekly: showsWeekly
         )
     }
 
-    private var menuBarPreview: String {
-        store.menuBarLabel(configuration: menuBarConfiguration)
+    private var statusItemPresentation: StatusItemPresentation {
+        StatusItemPresentation(
+            snapshot: store.snapshot,
+            configuration: menuBarConfiguration,
+            displayMode: StatusItemDisplayMode(rawValue: statusItemDisplayModeRaw) ?? .rich
+        )
+    }
+
+    private var previewAppearance: NSAppearance {
+        if let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua) {
+            return appearance
+        }
+        return NSAppearance(named: .aqua)!
+    }
+
+    private var fiveHourVisibilityBinding: Binding<Bool> {
+        Binding(
+            get: { showsFiveHour },
+            set: { isVisible in
+                guard isVisible || showsWeekly else { return }
+                showsFiveHour = isVisible
+            }
+        )
+    }
+
+    private var weeklyVisibilityBinding: Binding<Bool> {
+        Binding(
+            get: { showsWeekly },
+            set: { isVisible in
+                guard isVisible || showsFiveHour else { return }
+                showsWeekly = isVisible
+            }
+        )
     }
 
     private func settingLabel(_ title: String, detail: String) -> some View {
@@ -387,10 +429,10 @@ struct SettingsView: View {
 
     private func restoreDefaults() {
         appearanceRaw = AppearancePreference.system.rawValue
+        statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
         quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
         showsFiveHour = true
         showsWeekly = true
-        showsToday = false
     }
 
     private func healthRow(_ title: String, health: SourceHealth?) -> some View {

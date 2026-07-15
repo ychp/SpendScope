@@ -162,7 +162,8 @@ final class DashboardQueryService: @unchecked Sendable {
                 remaining: observation.remaining,
                 resetText: QuotaResetFormatter.string(
                     kind: kind, resetsAtMilliseconds: resetsAt, calendar: calendar
-                )
+                ),
+                resetsAt: Date(timeIntervalSince1970: TimeInterval(resetsAt) / 1_000)
             ))
         }
         return (snapshots, issues)
