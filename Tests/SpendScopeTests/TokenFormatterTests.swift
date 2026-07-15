@@ -164,6 +164,19 @@ final class StatusItemPresentationTests: XCTestCase {
         XCTAssertNil(hidden.metrics.first?.resetText)
         XCTAssertFalse(hidden.tooltip.contains("重置"))
         XCTAssertLessThan(hidden.imageSize.width, visible.imageSize.width)
+        XCTAssertEqual(
+            visible.imageSize.width,
+            StatusItemLayoutMetrics.leadingContentWidth
+                + StatusItemLayoutMetrics.richValueWidth
+                + StatusItemLayoutMetrics.richResetWidth
+                + 2
+        )
+        XCTAssertEqual(
+            hidden.imageSize.width,
+            StatusItemLayoutMetrics.leadingContentWidth
+                + StatusItemLayoutMetrics.richValueWidth
+                + 2
+        )
     }
 }
 

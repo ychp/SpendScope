@@ -13,6 +13,7 @@ enum StatusItemLayoutMetrics {
     static let iconRect = NSRect(x: 2, y: 2, width: 18, height: 18)
     static let leadingContentWidth: CGFloat = 22
     static let classicQuotaUnitWidth: CGFloat = 25
+    static let richValueWidth: CGFloat = 38
     static let richMetricWidth: CGFloat = 58
     static let richResetWidth: CGFloat = 37
     static let richMetricSpacing: CGFloat = 5
@@ -88,8 +89,11 @@ struct StatusItemPresentation: Equatable {
                 let resetWidth = metrics.reduce(CGFloat.zero) { width, metric in
                     width + (metric.resetText == nil ? 0 : StatusItemLayoutMetrics.richResetWidth)
                 }
+                let metricWidth = metrics.count == 1
+                    ? StatusItemLayoutMetrics.richValueWidth
+                    : CGFloat(metrics.count) * StatusItemLayoutMetrics.richMetricWidth
                 imageWidth = StatusItemLayoutMetrics.leadingContentWidth
-                    + CGFloat(metrics.count) * StatusItemLayoutMetrics.richMetricWidth
+                    + metricWidth
                     + CGFloat(max(0, metrics.count - 1)) * StatusItemLayoutMetrics.richMetricSpacing
                     + resetWidth
                     + 2
@@ -160,25 +164,36 @@ struct StatusItemRenderer {
 
     private func drawRich(_ metrics: [StatusItemMetricPresentation]) {
         var x = StatusItemLayoutMetrics.leadingContentWidth
+        let showsPeriodLabels = metrics.count > 1
         for (index, metric) in metrics.enumerated() {
             if index > 0 {
                 x += StatusItemLayoutMetrics.richMetricSpacing
             }
 
-            drawText(
-                metric.label,
-                in: NSRect(x: x, y: 4, width: 17, height: 14),
-                font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .semibold),
-                color: NSColor.labelColor,
-                alignment: .right
-            )
+            if showsPeriodLabels {
+                drawText(
+                    metric.label,
+                    in: NSRect(x: x, y: 4, width: 17, height: 14),
+                    font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .semibold),
+                    color: NSColor.labelColor,
+                    alignment: .right
+                )
+            }
+            let valueOffset: CGFloat = showsPeriodLabels ? 20 : 0
             drawValuePill(
                 metric.value,
                 fraction: metric.fraction,
                 paletteRole: metric.paletteRole,
-                in: NSRect(x: x + 20, y: 3, width: 38, height: 16)
+                in: NSRect(
+                    x: x + valueOffset,
+                    y: 3,
+                    width: StatusItemLayoutMetrics.richValueWidth,
+                    height: 16
+                )
             )
-            x += StatusItemLayoutMetrics.richMetricWidth
+            x += showsPeriodLabels
+                ? StatusItemLayoutMetrics.richMetricWidth
+                : StatusItemLayoutMetrics.richValueWidth
 
             if let resetText = metric.resetText {
                 drawResetCountdown(resetText, x: x)
