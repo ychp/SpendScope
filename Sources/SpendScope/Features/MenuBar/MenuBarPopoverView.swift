@@ -239,8 +239,10 @@ struct MenuBarPopoverView: View {
         VStack(spacing: 12) {
             HStack {
                 HStack(spacing: 6) {
-                    Image(systemName: "shippingbox.fill")
-                        .foregroundStyle(SpendScopeTheme.popoverPrimary)
+                    Image("CodexIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 18, height: 18)
                     Text("Codex · \(store.snapshot?.planName ?? "未检测到")")
                 }
                 .font(.headline)
