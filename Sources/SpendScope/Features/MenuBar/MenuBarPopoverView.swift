@@ -322,9 +322,9 @@ struct MenuBarPopoverView: View {
         let breakdown = store.snapshot?.breakdown
         let total = store.snapshot?.todayTokens ?? 0
         return [
-            MenuBarTokenMetric(id: "input", title: "未缓存输入", value: breakdown?.input, total: total, color: SpendScopeTheme.accent),
-            MenuBarTokenMetric(id: "cached", title: "缓存", value: breakdown?.cachedInput, total: total, color: SpendScopeTheme.accentBlue),
-            MenuBarTokenMetric(id: "output", title: "输出", value: breakdown?.output, total: total, color: SpendScopeTheme.output),
+            MenuBarTokenMetric(id: "input", title: "输入（未缓存）", value: breakdown?.input, total: total, color: SpendScopeTheme.accent),
+            MenuBarTokenMetric(id: "cached", title: "缓存输入", value: breakdown?.cachedInput, total: total, color: SpendScopeTheme.accentBlue),
+            MenuBarTokenMetric(id: "output", title: "可见输出", value: breakdown?.output, total: total, color: SpendScopeTheme.output),
             MenuBarTokenMetric(id: "reasoning", title: "推理", value: breakdown?.reasoning, total: total, color: SpendScopeTheme.reasoning)
         ]
     }
