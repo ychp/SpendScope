@@ -16,11 +16,11 @@ struct SpendScopeApp: App {
                 .preferredColorScheme(preferredColorScheme)
         } label: {
             HStack(spacing: 4) {
-                Image("MenuBarIcon")
+                Image("MenuBarStatusIcon")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 11, height: 11)
+                    .frame(width: 14, height: 14)
                 Text(store.menuBarLabel(configuration: menuBarConfiguration))
                     .monospacedDigit()
                     .lineLimit(1)
