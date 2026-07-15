@@ -101,6 +101,17 @@ final class StatusItemPresentationTests: XCTestCase {
         XCTAssertEqual(image.size, presentation.imageSize)
         XCTAssertFalse(image.isTemplate)
     }
+
+    func testSplitsMetricsAndMapsPercentagesToBluePillProgress() {
+        let presentation = StatusItemPresentation(label: "5H 85% · 7d 60% · 今日 1.5M")
+
+        XCTAssertEqual(presentation.metrics, [
+            .init(label: "5H", value: "85%", fraction: 0.85),
+            .init(label: "7d", value: "60%", fraction: 0.60),
+            .init(label: "今日", value: "1.5M", fraction: nil)
+        ])
+        XCTAssertGreaterThan(presentation.imageSize.width, StatusItemLayoutMetrics.textOriginX)
+    }
 }
 
 final class DashboardSnapshotTests: XCTestCase {
