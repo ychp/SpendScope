@@ -351,14 +351,15 @@ struct MenuBarPopoverView: View {
     }
 
     private var compactTodaySummary: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        ZStack {
+            todayTokenValue
+
             Text("今日 Token")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            todayTokenValue
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 84, height: 76, alignment: .leading)
+        .frame(width: 84, height: 76)
     }
 
     private var wideTodaySummary: some View {
@@ -428,10 +429,10 @@ struct MenuBarPopoverView: View {
                 .controlSize(.mini)
 
             Text(MenuBarQuotaTimingText.text(for: quota))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.85)
                 .allowsTightening(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
