@@ -66,13 +66,15 @@ struct MenuBarPopoverView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 10) {
             Image("MenuBarIcon")
                 .renderingMode(.template)
-                .font(.title2)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 32, height: 32)
                 .foregroundStyle(.white)
                 .padding(10)
-                .background(SpendScopeTheme.accent.gradient, in: RoundedRectangle(cornerRadius: 12))
+                .background(SpendScopeTheme.accent.gradient, in: RoundedRectangle(cornerRadius: 11))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("SpendScope").font(.title2.bold())
@@ -86,15 +88,25 @@ struct MenuBarPopoverView: View {
             Button {
                 Task { await store.refresh() }
             } label: {
-                if store.isRefreshing {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.clockwise")
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.primary.opacity(0.055))
+
+                    if store.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(SpendScopeTheme.accent)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
                 }
+                .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
             .disabled(store.isRefreshing)
-            .help("刷新")
+            .accessibilityLabel(store.isRefreshing ? "正在刷新" : "刷新")
+            .help(store.isRefreshing ? "正在刷新" : "刷新")
         }
     }
 
