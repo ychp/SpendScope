@@ -15,10 +15,14 @@ struct SpendScopeApp: App {
             MenuBarPopoverView(store: store)
                 .preferredColorScheme(preferredColorScheme)
         } label: {
-            Label(
-                store.menuBarLabel(configuration: menuBarConfiguration),
-                systemImage: "chart.bar.fill"
-            )
+            HStack(spacing: 4) {
+                Image(systemName: "chart.bar.fill")
+                Text(store.menuBarLabel(configuration: menuBarConfiguration))
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityElement(children: .combine)
         }
         .menuBarExtraStyle(.window)
 
