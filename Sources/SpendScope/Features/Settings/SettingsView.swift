@@ -125,18 +125,13 @@ struct SettingsView: View {
                 }
 
                 preferenceRow("显示内容", detail: "可同时展示多个统计维度") {
-                    HStack(spacing: 6) {
-                        Toggle("5H", isOn: $showsFiveHour)
-                            .toggleStyle(.button)
-                            .frame(maxWidth: .infinity)
-                        Toggle("7d", isOn: $showsWeekly)
-                            .toggleStyle(.button)
-                            .frame(maxWidth: .infinity)
-                        Toggle("今日", isOn: $showsToday)
-                            .toggleStyle(.button)
-                            .frame(maxWidth: .infinity)
+                    HStack(spacing: 2) {
+                        multiSelectSegment("5H", isOn: $showsFiveHour)
+                        multiSelectSegment("7d", isOn: $showsWeekly)
+                        multiSelectSegment("今日", isOn: $showsToday)
                     }
-                    .controlSize(.regular)
+                    .padding(2)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
                 }
             }
 
@@ -308,6 +303,24 @@ struct SettingsView: View {
         } control: {
             control()
         }
+    }
+
+    private func multiSelectSegment(_ title: String, isOn: Binding<Bool>) -> some View {
+        Button {
+            isOn.wrappedValue.toggle()
+        } label: {
+            Text(title)
+                .font(.callout)
+                .frame(maxWidth: .infinity, minHeight: 20)
+                .foregroundStyle(isOn.wrappedValue ? Color.white : Color.primary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isOn.wrappedValue ? Color.accentColor : Color.clear)
+        }
+        .accessibilityAddTraits(isOn.wrappedValue ? .isSelected : [])
     }
 
     private func settingsRow<Leading: View, Control: View>(
