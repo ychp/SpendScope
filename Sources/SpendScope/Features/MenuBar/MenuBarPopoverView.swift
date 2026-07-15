@@ -352,15 +352,15 @@ struct MenuBarPopoverView: View {
     }
 
     private var compactTodaySummary: some View {
-        ZStack {
-            todayTokenValue
-
+        VStack(alignment: .leading, spacing: 8) {
             Text("今日 Token")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            todayTokenValue
+                .frame(maxWidth: .infinity, alignment: .center)
         }
-        .frame(width: 84, height: 58)
+        .frame(width: 84, height: 58, alignment: .top)
     }
 
     private var wideTodaySummary: some View {
