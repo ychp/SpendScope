@@ -55,6 +55,16 @@ enum MenuBarQuotaResetText {
     }
 }
 
+enum MenuBarQuotaTimingText {
+    static func text(for quota: QuotaSnapshot, now: Date = Date()) -> String {
+        let resetText = MenuBarQuotaResetText.text(for: quota, now: now)
+        guard let observationText = quota.observationDescription(now: now) else {
+            return resetText
+        }
+        return "\(resetText) · \(observationText)"
+    }
+}
+
 struct MenuBarUnavailableContent: Equatable {
     let title: String
     let description: String
@@ -348,7 +358,7 @@ struct MenuBarPopoverView: View {
 
             todayTokenValue
         }
-        .frame(width: 84, alignment: .leading)
+        .frame(width: 84, height: 76, alignment: .leading)
     }
 
     private var wideTodaySummary: some View {
@@ -417,17 +427,12 @@ struct MenuBarPopoverView: View {
                 .tint(color)
                 .controlSize(.mini)
 
-            Text(MenuBarQuotaResetText.text(for: quota))
+            Text(MenuBarQuotaTimingText.text(for: quota))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-
-            if let observationText = quota.observationDescription() {
-                Text(observationText)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-            }
+                .minimumScaleFactor(0.75)
+                .allowsTightening(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .help("额度信息来自最近一次 Codex 本地观测")

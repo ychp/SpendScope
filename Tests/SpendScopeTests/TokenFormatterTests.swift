@@ -111,6 +111,10 @@ final class TokenFormatterTests: XCTestCase {
         )
 
         XCTAssertEqual(quota.observationDescription(now: now), "2 分钟前观测")
+        XCTAssertEqual(
+            MenuBarQuotaTimingText.text(for: quota, now: now),
+            "2026-07-22 10:08 重置 · 2 分钟前观测"
+        )
     }
 
     func testFormatsCompactValues() {
