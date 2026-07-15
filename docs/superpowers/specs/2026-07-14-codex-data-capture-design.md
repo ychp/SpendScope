@@ -193,7 +193,8 @@ delta_reasoning = current.reasoning - previous.reasoning
 
 - 优先使用同一 `token_count` 中明确的 `rate_limits.plan_type`。
 - 原始字符串原样保存，同时保存标准化展示值。
-- 已识别值包括 `free`、`plus` 和 `prolite`，分别展示为 Free、Plus 和 Pro Lite。
+- 已识别值包括 `free`、`plus`、`prolite` 和 `pro`，分别展示为 Free、Plus、Pro 5x 和 Pro 20x。
+- Pro 档位按本地事件原始值区分：`prolite` 对应 Pro 5x，`pro` 对应 Pro 20x；读取旧版已聚合记录时使用保留的 `plan_raw` 恢复正确档位。
 - 后续只有明确匹配的套餐值才增加映射；无法确认的值按产品规则归为 Free，并将 `plan_is_inferred` 标记为 true。
 - 用量归属到事件产生时的套餐，当前套餐改变不重写历史数据。
 

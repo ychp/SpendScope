@@ -1162,7 +1162,7 @@ private enum SQLitePlanResolution {
     }
 
     static func optional(from row: SQLiteRow) throws -> PlanResolution? {
-        guard let kind = try row.optionalEnum("plan", as: PlanKind.self) else { return nil }
+        guard let storedKind = try row.optionalEnum("plan", as: PlanKind.self) else { return nil }
         guard let inferred = try row.optionalInt64("plan_is_inferred"), inferred == 0 || inferred == 1 else {
             throw UsageStoreError.corruptColumn(
                 table: row.table,
@@ -1171,9 +1171,12 @@ private enum SQLitePlanResolution {
                 actual: row.values["plan_is_inferred"]
             )
         }
+        let rawValue = try row.optionalString("plan_raw")
+        let resolvedRaw = PlanResolver.resolve(rawValue: rawValue)
+        let kind = resolvedRaw.isInferred ? storedKind : resolvedRaw.kind
         return PlanResolution(
             kind: kind,
-            rawValue: try row.optionalString("plan_raw"),
+            rawValue: rawValue,
             isInferred: inferred == 1
         )
     }

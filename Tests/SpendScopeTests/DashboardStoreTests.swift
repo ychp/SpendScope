@@ -7,16 +7,16 @@ final class DashboardStoreTests: XCTestCase {
     func testCodexPlanCatalogIncludesCurrentOfficialPlansAndMarksProCurrent() {
         XCTAssertEqual(
             CodexPlanCatalog.plans.map(\.name),
-            ["Free", "Go", "Plus", "Pro", "Business", "Enterprise / Edu"]
+            ["Free", "Go", "Plus", "Pro 5x", "Pro 20x", "Business", "Enterprise / Edu"]
         )
         XCTAssertFalse(CodexPlanCatalog.plans[0].isPaid)
         XCTAssertTrue(CodexPlanCatalog.plans.dropFirst().allSatisfy(\.isPaid))
 
         let currentPlans = CodexPlanCatalog.plans.filter {
-            CodexPlanCatalog.isCurrent($0, currentPlanName: "Pro")
+            CodexPlanCatalog.isCurrent($0, currentPlanName: "Pro 5x")
         }
 
-        XCTAssertEqual(currentPlans.map(\.name), ["Pro"])
+        XCTAssertEqual(currentPlans.map(\.name), ["Pro 5x"])
     }
 
     func testCodexPlanCatalogFallsBackToFreeWhenCurrentPlanIsUnavailable() {

@@ -88,11 +88,14 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.planName, "Free")
     }
 
-    func testDisplaysProLiteStorageKindAsProPlanName() throws {
+    func testDisplaysProLiteAsPro5xAndProAsPro20x() throws {
         let now = Date(timeIntervalSince1970: 10_000)
         let store = try makeStore()
         try store.commit(batch(
-            events: [usage("pro-plan", at: now, total: 1, planRaw: "prolite")],
+            events: [
+                usage("pro-5x", at: now.addingTimeInterval(-1), total: 1, planRaw: "prolite"),
+                usage("pro-20x", at: now, total: 1, planRaw: "pro")
+            ],
             quotas: []
         ))
 
@@ -101,7 +104,31 @@ final class DashboardQueryServiceTests: XCTestCase {
             calendar: .current
         )
 
-        XCTAssertEqual(snapshot.planName, "Pro")
+        XCTAssertEqual(snapshot.planName, "Pro 20x")
+    }
+
+    func testLegacyProStorageKindUsesRawPlanToRecoverPro20x() throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let store = try makeStore()
+        let legacyEvent = StoredUsageEvent(
+            fingerprint: "legacy-pro-20x",
+            observedAtMilliseconds: 10_000_000,
+            threadID: "thread-1",
+            sourceKind: .desktop,
+            model: "test-model",
+            plan: PlanResolution(kind: .proLite, rawValue: "pro", isInferred: false),
+            usage: .init(uncachedInput: 1, cachedInput: 0, visibleOutput: 0, reasoning: 0),
+            sourceFileID: "file-1",
+            sourceOffset: 1
+        )
+        try store.commit(batch(events: [legacyEvent], quotas: []))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(
+            now: now,
+            calendar: .current
+        )
+
+        XCTAssertEqual(snapshot.planName, "Pro 20x")
     }
 
     func testAggregateOverflowThrowsInsteadOfWrapping() throws {

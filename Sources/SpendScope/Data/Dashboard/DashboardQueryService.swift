@@ -241,7 +241,8 @@ private extension PlanKind {
         switch self {
         case .free: "Free"
         case .plus: "Plus"
-        case .proLite: "Pro"
+        case .proLite: "Pro 5x"
+        case .pro20x: "Pro 20x"
         }
     }
 }

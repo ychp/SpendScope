@@ -10,6 +10,7 @@ enum PlanKind: String, Codable, Sendable {
     case free
     case plus
     case proLite
+    case pro20x
 }
 
 struct SessionMetadata: Equatable, Sendable {

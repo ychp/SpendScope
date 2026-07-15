@@ -30,9 +30,15 @@ enum CodexPlanCatalog {
             isPaid: true
         ),
         .init(
-            name: "Pro",
-            summary: "提供比 Plus 更高的 Codex 使用额度",
+            name: "Pro 5x",
+            summary: "标准使用额度为 Plus 的 5 倍",
             symbol: "bolt.fill",
+            isPaid: true
+        ),
+        .init(
+            name: "Pro 20x",
+            summary: "最高用量档位，标准使用额度为 Plus 的 20 倍",
+            symbol: "bolt.horizontal.circle.fill",
             isPaid: true
         ),
         .init(
