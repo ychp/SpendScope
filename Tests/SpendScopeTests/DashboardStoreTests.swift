@@ -40,6 +40,19 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertFalse(text.contains("过期"))
     }
 
+    func testMenuUpdateTextCombinesStaleStateWithLastRefresh() {
+        let state = DashboardLoadState.stale(
+            .fixture(todayTokens: 17),
+            .fixture,
+            "部分数据暂不可用，正在显示已成功读取的数据。"
+        )
+
+        XCTAssertEqual(
+            MenuBarUpdateText.text(for: state),
+            "部分数据待更新 · 已刷新"
+        )
+    }
+
     func testRefreshPublishesRealSnapshotAndCoalescesConcurrentCalls() async {
         let client = FakeDashboardDataClient(
             loadResult: .empty(.fixture),

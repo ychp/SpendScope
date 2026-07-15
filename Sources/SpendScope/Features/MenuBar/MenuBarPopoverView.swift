@@ -13,6 +13,23 @@ enum MenuBarAvailabilityText {
     }
 }
 
+enum MenuBarUpdateText {
+    static func text(for state: DashboardLoadState) -> String {
+        switch state {
+        case .loading:
+            "正在载入"
+        case .loaded(let snapshot, _):
+            snapshot.updatedText
+        case .empty:
+            "未检测到 Codex 数据"
+        case .stale(let snapshot, _, _):
+            "部分数据待更新 · \(snapshot.updatedText)"
+        case .failed(let message), .unsupported(let message):
+            message
+        }
+    }
+}
+
 struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
@@ -53,7 +70,9 @@ struct MenuBarPopoverView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("SpendScope").font(.title2.bold())
-                Text(updatedText).foregroundStyle(.secondary)
+                Text(MenuBarUpdateText.text(for: store.state))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Spacer()
@@ -270,16 +289,6 @@ struct MenuBarPopoverView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 9)
                 .stroke(Color.primary.opacity(0.06))
-        }
-    }
-
-    private var updatedText: String {
-        if let snapshot = store.snapshot { return snapshot.updatedText }
-        return switch store.state {
-        case .loading: "正在载入"
-        case .empty: "未检测到 Codex 数据"
-        case .failed(let message), .unsupported(let message): message
-        case .loaded, .stale: "已刷新"
         }
     }
 
