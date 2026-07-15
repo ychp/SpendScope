@@ -100,6 +100,19 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(MenuBarSummaryLayout.layout(forQuotaCount: 2), .stacked)
     }
 
+    func testQuotaObservationDescriptionUsesActualObservationAge() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let quota = QuotaSnapshot(
+            id: "7d",
+            title: "7 天",
+            remaining: 0.52,
+            resetText: "2026-07-22 10:08",
+            observedAt: now.addingTimeInterval(-125)
+        )
+
+        XCTAssertEqual(quota.observationDescription(now: now), "2 分钟前观测")
+    }
+
     func testFormatsCompactValues() {
         XCTAssertEqual(TokenFormatter.compact(999), "999")
         XCTAssertEqual(TokenFormatter.compact(1_500), "1.5K")

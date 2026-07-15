@@ -289,7 +289,7 @@ struct MenuBarPopoverView: View {
 
                     Rectangle()
                         .fill(Color.primary.opacity(0.08))
-                        .frame(width: 1, height: 62)
+                        .frame(width: 1, height: 76)
 
                     compactTodaySummary
                 }
@@ -390,6 +390,13 @@ struct MenuBarPopoverView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+
+            if let observationText = quota.observationDescription() {
+                Text(observationText)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .help("额度信息来自最近一次 Codex 本地观测")
