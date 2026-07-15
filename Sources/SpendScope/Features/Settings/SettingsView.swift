@@ -70,11 +70,11 @@ struct SettingsView: View {
     }
 
     let store: DashboardStore
-    @AppStorage(AppPreferenceKeys.appearance) private var appearanceRaw = AppearancePreference.system.rawValue
+    @AppStorage(AppPreferenceKeys.statusItemDisplayMode) private var statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
+    @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
     @AppStorage(AppPreferenceKeys.showsFiveHour) private var showsFiveHour = true
     @AppStorage(AppPreferenceKeys.showsWeekly) private var showsWeekly = true
-    @AppStorage(AppPreferenceKeys.showsToday) private var showsToday = false
 
     var body: some View {
         TabView {
@@ -93,29 +93,29 @@ struct SettingsView: View {
 
     private var generalSettings: some View {
         Form {
-            Section("界面") {
-                preferenceRow("外观", detail: "默认跟随 macOS 系统外观") {
-                    Picker("", selection: $appearanceRaw) {
-                        Text("自动").tag(AppearancePreference.system.rawValue)
-                        Text("浅色").tag(AppearancePreference.light.rawValue)
-                        Text("深色").tag(AppearancePreference.dark.rawValue)
+            Section("状态栏") {
+                preferenceRow("实时预览", detail: "与状态栏使用同一套绘制样式") {
+                    Image(nsImage: StatusItemRenderer().render(
+                        statusItemPresentation,
+                        appearance: previewAppearance
+                    ))
+                    .interpolation(.high)
+                    .frame(maxWidth: .infinity, minHeight: 34)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                    .accessibilityLabel("SpendScope 状态栏预览")
+                    .accessibilityValue(statusItemPresentation.label)
+                }
+
+                preferenceRow("展示模式", detail: "丰富显示进度与倒计时，经典使用额度环") {
+                    Picker("", selection: $statusItemDisplayModeRaw) {
+                        Text("丰富（推荐）").tag(StatusItemDisplayMode.rich.rawValue)
+                        Text("经典").tag(StatusItemDisplayMode.classic.rawValue)
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
                 }
-            }
 
-            Section("菜单栏") {
-                preferenceRow("实时预览", detail: "菜单栏中将显示的统计摘要") {
-                    Text(menuBarPreview)
-                        .font(.callout.weight(.medium).monospacedDigit())
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-                }
-
-                preferenceRow("额度口径", detail: "选择菜单栏百分比的统计方式") {
+                preferenceRow("额度口径", detail: "选择状态栏百分比的统计方式") {
                     Picker("", selection: $quotaDisplayRaw) {
                         Text("已用量").tag(QuotaDisplayPreference.used.rawValue)
                         Text("剩余量").tag(QuotaDisplayPreference.remaining.rawValue)
@@ -124,25 +124,22 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
-                preferenceRow("显示内容", detail: "可同时展示多个统计维度") {
+                preferenceRow("显示内容", detail: "不可用额度会自动隐藏，至少保留一项") {
                     HStack(spacing: 2) {
-                        multiSelectSegment("5H", isOn: $showsFiveHour)
-                        multiSelectSegment("7d", isOn: $showsWeekly)
-                        multiSelectSegment("今日", isOn: $showsToday)
+                        multiSelectSegment("5H", isOn: fiveHourVisibilityBinding)
+                        multiSelectSegment("7d", isOn: weeklyVisibilityBinding)
                     }
                     .padding(2)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
                 }
-            }
 
-            Section {
-                preferenceRow("恢复默认", detail: "恢复外观与菜单栏显示设置") {
-                    Button("恢复默认设置", systemImage: "arrow.counterclockwise") {
-                        restoreDefaults()
-                    }
-                    .buttonStyle(.bordered)
+                preferenceRow("重置倒计时", detail: "控制状态栏及悬浮提示中的倒计时") {
+                    Toggle("", isOn: $showsResetCountdown)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
                 }
             }
+
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
@@ -309,12 +306,40 @@ struct SettingsView: View {
             quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining,
             showsFiveHour: showsFiveHour,
             showsWeekly: showsWeekly,
-            showsToday: showsToday
+            showsResetCountdown: showsResetCountdown
         )
     }
 
-    private var menuBarPreview: String {
-        store.menuBarLabel(configuration: menuBarConfiguration)
+    private var statusItemPresentation: StatusItemPresentation {
+        StatusItemPresentation(
+            snapshot: store.snapshot,
+            configuration: menuBarConfiguration,
+            displayMode: StatusItemDisplayMode(rawValue: statusItemDisplayModeRaw) ?? .rich
+        )
+    }
+
+    private var previewAppearance: NSAppearance {
+        return NSAppearance(named: .aqua)!
+    }
+
+    private var fiveHourVisibilityBinding: Binding<Bool> {
+        Binding(
+            get: { showsFiveHour },
+            set: { isVisible in
+                guard isVisible || showsWeekly else { return }
+                showsFiveHour = isVisible
+            }
+        )
+    }
+
+    private var weeklyVisibilityBinding: Binding<Bool> {
+        Binding(
+            get: { showsWeekly },
+            set: { isVisible in
+                guard isVisible || showsFiveHour else { return }
+                showsWeekly = isVisible
+            }
+        )
     }
 
     private func settingLabel(_ title: String, detail: String) -> some View {
@@ -383,14 +408,6 @@ struct SettingsView: View {
                 .frame(width: Layout.controlWidth, alignment: .trailing)
         }
         .frame(minHeight: Layout.rowHeight)
-    }
-
-    private func restoreDefaults() {
-        appearanceRaw = AppearancePreference.system.rawValue
-        quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
-        showsFiveHour = true
-        showsWeekly = true
-        showsToday = false
     }
 
     private func healthRow(_ title: String, health: SourceHealth?) -> some View {

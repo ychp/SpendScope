@@ -18,21 +18,34 @@ struct MenuBarPopoverView: View {
     @Environment(\.openSettings) private var openSettings
 
     let store: DashboardStore
+    private let onOpenDashboard: (() -> Void)?
+    private let onOpenSettings: (() -> Void)?
+
+    init(
+        store: DashboardStore,
+        onOpenDashboard: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil
+    ) {
+        self.store = store
+        self.onOpenDashboard = onOpenDashboard
+        self.onOpenSettings = onOpenSettings
+    }
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             header
             usageCard
             footerActions
         }
-        .padding(18)
-        .frame(width: 420)
+        .padding(14)
+        .frame(width: 390)
         .task { await store.start() }
     }
 
     private var header: some View {
         HStack {
-            Image(systemName: "chart.bar.fill")
+            Image("MenuBarIcon")
+                .renderingMode(.template)
                 .font(.title2)
                 .foregroundStyle(.white)
                 .padding(10)
@@ -61,7 +74,7 @@ struct MenuBarPopoverView: View {
     }
 
     private var usageCard: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             HStack {
                 Label("Codex · \(store.snapshot?.planName ?? "未检测到")", systemImage: "shippingbox.fill")
                     .font(.headline)
@@ -73,34 +86,33 @@ struct MenuBarPopoverView: View {
                     .background(availabilityColor.opacity(0.12), in: Capsule())
             }
 
-            quotaSection
+            quotaAndTodaySummary
 
-            Divider()
-
-            HStack {
-                Text("今日 Token").font(.headline)
-                Spacer()
-                Text(store.snapshot.map { TokenFormatter.compact($0.todayTokens) } ?? "--")
-                    .font(.title2.bold())
-                    .monospacedDigit()
+            LazyVGrid(columns: tokenMetricColumns, spacing: 8) {
+                ForEach(tokenMetrics) { metric in
+                    tokenMetricCard(metric)
+                }
             }
-
-            breakdownRow("输入", store.snapshot?.breakdown.input, SpendScopeTheme.accent)
-            breakdownRow("缓存", store.snapshot?.breakdown.cachedInput, SpendScopeTheme.accentBlue)
-            breakdownRow("输出", store.snapshot?.breakdown.output, SpendScopeTheme.output)
-            breakdownRow("推理", store.snapshot?.breakdown.reasoning, SpendScopeTheme.reasoning)
         }
-        .dashboardCard()
+        .dashboardCard(padding: 14)
     }
 
     private var footerActions: some View {
         HStack(spacing: 10) {
             Button("打开看板", systemImage: "square.grid.2x2") {
-                openWindow(id: "dashboard")
+                if let onOpenDashboard {
+                    onOpenDashboard()
+                } else {
+                    openWindow(id: "dashboard")
+                }
                 NSApp.activate(ignoringOtherApps: true)
             }
             Button("设置", systemImage: "gearshape") {
-                openSettings()
+                if let onOpenSettings {
+                    onOpenSettings()
+                } else {
+                    openSettings()
+                }
                 NSApp.activate(ignoringOtherApps: true)
             }
             Button("退出", systemImage: "power") {
@@ -110,77 +122,83 @@ struct MenuBarPopoverView: View {
         .buttonStyle(.bordered)
     }
 
+    private var quotaAndTodaySummary: some View {
+        HStack(alignment: .top, spacing: 10) {
+            quotaSection
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 1, height: 62)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("今日 Token")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text(store.snapshot.map { TokenFormatter.compact($0.todayTokens) } ?? "--")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(width: 84, alignment: .leading)
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.primary.opacity(0.07))
+        }
+    }
+
     @ViewBuilder
     private var quotaSection: some View {
         let quotas = store.snapshot?.visibleQuotas ?? []
 
         if quotas.isEmpty {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: "gauge.with.dots.needle.33percent")
-                    .font(.title2)
+                    .font(.headline)
                     .foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("暂无可用额度数据")
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                     Text("等待 Codex 返回额度信息")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-        } else if quotas.count == 1, let quota = quotas.first {
-            wideQuotaRow(quota, color: quotaColor(for: quota))
+            .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
         } else {
-            HStack(spacing: 20) {
+            HStack(spacing: 12) {
                 ForEach(quotas) { quota in
                     quotaColumn(quota, color: quotaColor(for: quota))
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func wideQuotaRow(_ quota: QuotaSnapshot, color: Color) -> some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Text("\(quota.title)额度")
-                    .font(.headline)
-
-                Text("\(quota.remainingPercent)% 剩余")
-                    .font(.headline.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(color)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(color.opacity(0.12), in: Capsule())
-
-                Spacer(minLength: 8)
-
-                Label("\(quota.resetText) 重置", systemImage: "clock")
+    private func quotaColumn(_ quota: QuotaSnapshot, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(quota.title)剩余")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Text("\(quota.remainingPercent)%")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(color)
             }
 
             ProgressView(value: quota.remaining)
                 .tint(color)
-        }
-        .frame(maxWidth: .infinity)
-    }
+                .controlSize(.mini)
 
-    private func quotaColumn(_ quota: QuotaSnapshot, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("\(quota.title)额度")
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 6)
-                Text("\(quota.remainingPercent)%")
-                    .font(.title2.bold())
-                    .monospacedDigit()
-            }
-            ProgressView(value: quota.remaining).tint(color)
-            Label("\(quota.resetText) 重置", systemImage: "clock")
-                .font(.caption)
+            Text(quota.resetText)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -191,12 +209,67 @@ struct MenuBarPopoverView: View {
         quota.id == "7d" ? SpendScopeTheme.accentBlue : SpendScopeTheme.accent
     }
 
-    private func breakdownRow(_ title: String, _ value: Int?, _ color: Color) -> some View {
-        HStack {
-            Circle().fill(color).frame(width: 9, height: 9)
-            Text(title)
-            Spacer()
-            Text(value.map(TokenFormatter.compact) ?? "--").monospacedDigit()
+    private var tokenMetricColumns: [GridItem] {
+        [
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8)
+        ]
+    }
+
+    private var tokenMetrics: [MenuBarTokenMetric] {
+        let breakdown = store.snapshot?.breakdown
+        let total = store.snapshot?.todayTokens ?? 0
+        return [
+            MenuBarTokenMetric(id: "input", title: "未缓存输入", value: breakdown?.input, total: total, color: SpendScopeTheme.accent),
+            MenuBarTokenMetric(id: "cached", title: "缓存", value: breakdown?.cachedInput, total: total, color: SpendScopeTheme.accentBlue),
+            MenuBarTokenMetric(id: "output", title: "输出", value: breakdown?.output, total: total, color: SpendScopeTheme.output),
+            MenuBarTokenMetric(id: "reasoning", title: "推理", value: breakdown?.reasoning, total: total, color: SpendScopeTheme.reasoning)
+        ]
+    }
+
+    private func tokenMetricCard(_ metric: MenuBarTokenMetric) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(metric.color)
+                    .frame(width: 7, height: 7)
+
+                Text(metric.title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 4)
+
+                Text(metric.shareText)
+                    .font(.caption2.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(metric.color)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(metric.color.opacity(0.1), in: Capsule())
+            }
+
+            HStack(alignment: .lastTextBaseline) {
+                Text(metric.valueText)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+
+                Spacer(minLength: 8)
+
+                Text("占今日")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            ProgressView(value: metric.share)
+                .tint(metric.color)
+                .controlSize(.mini)
+        }
+        .padding(9)
+        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 9))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9)
+                .stroke(Color.primary.opacity(0.06))
         }
     }
 
@@ -221,5 +294,26 @@ struct MenuBarPopoverView: View {
         case .loading, .empty: .secondary
         case .failed, .unsupported: .red
         }
+    }
+}
+
+private struct MenuBarTokenMetric: Identifiable {
+    let id: String
+    let title: String
+    let value: Int?
+    let total: Int
+    let color: Color
+
+    var share: Double {
+        guard let value, total > 0 else { return 0 }
+        return min(max(Double(value) / Double(total), 0), 1)
+    }
+
+    var valueText: String {
+        value.map(TokenFormatter.compact) ?? "--"
+    }
+
+    var shareText: String {
+        value == nil ? "--" : TokenFormatter.percentage(share)
     }
 }

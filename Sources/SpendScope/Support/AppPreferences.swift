@@ -1,27 +1,11 @@
 import SwiftUI
 
 enum AppPreferenceKeys {
-    static let appearance = "appearance"
+    static let statusItemDisplayMode = "menuBar.displayMode"
+    static let showsResetCountdown = "menuBar.showsResetCountdown"
     static let quotaDisplay = "menuBar.quotaDisplay"
     static let showsFiveHour = "menuBar.showsFiveHour"
     static let showsWeekly = "menuBar.showsWeekly"
-    static let showsToday = "menuBar.showsToday"
-}
-
-enum AppearancePreference: String, CaseIterable, Identifiable, Sendable {
-    case system
-    case light
-    case dark
-
-    var id: Self { self }
-
-    var colorScheme: ColorScheme? {
-        switch self {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
-        }
-    }
 }
 
 enum QuotaDisplayPreference: String, CaseIterable, Identifiable, Sendable {
@@ -31,16 +15,23 @@ enum QuotaDisplayPreference: String, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
+enum StatusItemDisplayMode: String, CaseIterable, Identifiable, Sendable {
+    case rich
+    case classic
+
+    var id: Self { self }
+}
+
 struct MenuBarLabelConfiguration: Equatable, Sendable {
     let quotaDisplay: QuotaDisplayPreference
     let showsFiveHour: Bool
     let showsWeekly: Bool
-    let showsToday: Bool
+    let showsResetCountdown: Bool
 
     static let standard = MenuBarLabelConfiguration(
         quotaDisplay: .remaining,
         showsFiveHour: true,
         showsWeekly: true,
-        showsToday: false
+        showsResetCountdown: true
     )
 }
