@@ -14,7 +14,7 @@ enum StatusItemLayoutMetrics {
     static let leadingContentWidth: CGFloat = 22
     static let classicQuotaUnitWidth: CGFloat = 25
     static let richMetricWidth: CGFloat = 58
-    static let richResetWidth: CGFloat = 25
+    static let richResetWidth: CGFloat = 37
     static let richMetricSpacing: CGFloat = 5
     static let emptyImageWidth: CGFloat = 24
 }
@@ -291,18 +291,27 @@ struct StatusItemRenderer {
     }
 
     private func drawResetCountdown(_ value: String, x: CGFloat) {
-        let iconRect = NSRect(x: x + 1, y: 7, width: 7, height: 7)
+        let color = NSColor.systemBlue
+        let backgroundRect = NSRect(x: x + 2, y: 3, width: 33, height: 16)
+        color.withAlphaComponent(0.14).setFill()
+        NSBezierPath(
+            roundedRect: backgroundRect,
+            xRadius: backgroundRect.height / 2,
+            yRadius: backgroundRect.height / 2
+        ).fill()
+
+        let iconRect = NSRect(x: x + 5, y: 7, width: 8, height: 8)
         if let symbol = NSImage(
             systemSymbolName: "arrow.clockwise",
             accessibilityDescription: nil
-        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 7, weight: .semibold)) {
-            drawTintedImage(symbol, color: NSColor.secondaryLabelColor, in: iconRect)
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 8, weight: .bold)) {
+            drawTintedImage(symbol, color: color, in: iconRect)
         }
         drawText(
             value,
-            in: NSRect(x: x + 9, y: 4, width: 15, height: 13),
-            font: .monospacedDigitSystemFont(ofSize: 8.5, weight: .medium),
-            color: NSColor.secondaryLabelColor,
+            in: NSRect(x: x + 14, y: 4, width: 18, height: 13),
+            font: .monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold),
+            color: color,
             alignment: .left
         )
     }
