@@ -530,6 +530,7 @@ final class StatusItemController: NSObject {
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
 
         let content = MenuBarPopoverView(
             store: store,
@@ -548,7 +549,14 @@ final class StatusItemController: NSObject {
         hostingController.view.layoutSubtreeIfNeeded()
         popover.contentSize = hostingController.view.fittingSize
         self.popover = popover
+        NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        focusPopoverWindow(popover)
+    }
+
+    private func focusPopoverWindow(_ popover: NSPopover) {
+        guard popover.isShown else { return }
+        popover.contentViewController?.view.window?.makeKey()
     }
 
     private func updateStatusItem() {
@@ -586,4 +594,14 @@ final class StatusItemController: NSObject {
         ) ?? .rich
     }
 
+}
+
+extension StatusItemController: NSPopoverDelegate {
+    func popoverDidShow(_ notification: Notification) {
+        guard let shownPopover = notification.object as? NSPopover,
+              shownPopover === popover else {
+            return
+        }
+        focusPopoverWindow(shownPopover)
+    }
 }
