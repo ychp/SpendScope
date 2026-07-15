@@ -301,16 +301,6 @@ struct MenuBarPopoverView: View {
                 Text(metric.title)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
-
-                Spacer(minLength: 4)
-
-                Text(metric.shareText)
-                    .font(.caption2.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(metric.color)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(metric.color.opacity(0.1), in: Capsule())
             }
 
             HStack(alignment: .lastTextBaseline) {
@@ -320,9 +310,15 @@ struct MenuBarPopoverView: View {
 
                 Spacer(minLength: 8)
 
-                Text("占今日")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 3) {
+                    Text("占今日")
+                        .foregroundStyle(.tertiary)
+                    Text(metric.shareText)
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(metric.color)
+                }
+                .font(.caption2)
             }
 
         }
@@ -332,6 +328,8 @@ struct MenuBarPopoverView: View {
             RoundedRectangle(cornerRadius: 9)
                 .stroke(Color.primary.opacity(0.06))
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(metric.accessibilityText)
     }
 
     private var availabilityText: String {
