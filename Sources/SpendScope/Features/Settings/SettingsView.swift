@@ -150,30 +150,43 @@ struct SettingsView: View {
     }
 
     private var planSettings: some View {
-        Form {
-            Section {
-                ForEach(CodexPlanCatalog.plans) { plan in
-                    planRow(plan)
+        VStack(alignment: .leading, spacing: 16) {
+            settingsSection("Codex 套餐") {
+                VStack(spacing: 0) {
+                    ForEach(CodexPlanCatalog.plans) { plan in
+                        planRow(plan)
+                            .padding(.horizontal, 12)
+
+                        if plan.id != CodexPlanCatalog.plans.last?.id {
+                            Divider()
+                                .padding(.leading, 48)
+                        }
+                    }
                 }
-            } header: {
-                Text("Codex 套餐")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .settingsCard()
             }
 
-            Section("其他计费方式") {
-                settingsRow {
-                    Label("API Key", systemImage: "key.fill")
-                } control: {
-                    Text("按 Token 用量计费")
-                        .foregroundStyle(.secondary)
+            settingsSection("其他计费方式") {
+                VStack(spacing: 0) {
+                    settingsRow {
+                        settingLabel("API Key", detail: "独立按量计费，不属于 ChatGPT 订阅套餐")
+                    } control: {
+                        Text("按 Token 用量计费")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12)
                 }
-                Text("API Key 是独立的按量计费方式，不属于 ChatGPT 订阅套餐。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .settingsCard()
             }
+
+            Spacer(minLength: 0)
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .scrollIndicators(.hidden)
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var dataSettings: some View {
@@ -303,6 +316,19 @@ struct SettingsView: View {
         }
     }
 
+    private func settingsSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .padding(.leading, 4)
+
+            content()
+        }
+    }
+
     private func multiSelectSegment(_ title: String, isOn: Binding<Bool>) -> some View {
         Button {
             isOn.wrappedValue.toggle()
@@ -384,6 +410,19 @@ struct SettingsView: View {
         case .missing, nil: .secondary
         case .degraded: .orange
         case .unsupported: .red
+        }
+    }
+}
+
+private extension View {
+    func settingsCard() -> some View {
+        background(
+            Color(nsColor: .controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
         }
     }
 }
