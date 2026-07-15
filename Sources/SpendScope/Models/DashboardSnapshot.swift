@@ -45,8 +45,21 @@ struct DashboardSnapshot: Sendable {
     }
 
     var menuBarQuotaLabel: String {
-        let label = visibleQuotas.map(\.remainingLabel).joined(separator: " · ")
-        return label.isEmpty ? "SpendScope" : label
+        menuBarLabel(configuration: .standard)
+    }
+
+    func menuBarLabel(configuration: MenuBarLabelConfiguration) -> String {
+        var components: [String] = []
+        if configuration.showsFiveHour, let fiveHourQuota {
+            components.append(fiveHourQuota.label(for: configuration.quotaDisplay))
+        }
+        if configuration.showsWeekly, let weeklyQuota {
+            components.append(weeklyQuota.label(for: configuration.quotaDisplay))
+        }
+        if configuration.showsToday {
+            components.append("今日 \(TokenFormatter.compact(todayTokens))")
+        }
+        return components.isEmpty ? "SpendScope" : components.joined(separator: " · ")
     }
 
     var breakdown: TokenBreakdown {
@@ -152,6 +165,17 @@ struct QuotaSnapshot: Identifiable, Sendable {
 
     var remainingLabel: String {
         "\(compactTitle) \(remainingPercent)%"
+    }
+
+    func label(for preference: QuotaDisplayPreference) -> String {
+        let percent: Int
+        switch preference {
+        case .used:
+            percent = Int(((1 - remaining) * 100).rounded())
+        case .remaining:
+            percent = remainingPercent
+        }
+        return "\(compactTitle) \(percent)%"
     }
 }
 

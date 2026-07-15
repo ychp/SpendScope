@@ -167,6 +167,44 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.menuBarQuotaLabel, "7d 84%")
     }
 
+    func testMenuBarConfigurationControlsMetricAndVisibleContent() {
+        let usedWithToday = MenuBarLabelConfiguration(
+            quotaDisplay: .used,
+            showsFiveHour: true,
+            showsWeekly: false,
+            showsToday: true
+        )
+        let remainingWeekly = MenuBarLabelConfiguration(
+            quotaDisplay: .remaining,
+            showsFiveHour: false,
+            showsWeekly: true,
+            showsToday: false
+        )
+
+        XCTAssertEqual(
+            DashboardSnapshot.preview.menuBarLabel(configuration: usedWithToday),
+            "5H 15% · 今日 17.0M"
+        )
+        XCTAssertEqual(
+            DashboardSnapshot.preview.menuBarLabel(configuration: remainingWeekly),
+            "7d 84%"
+        )
+    }
+
+    func testMenuBarConfigurationFallsBackWhenEveryItemIsHidden() {
+        let hidden = MenuBarLabelConfiguration(
+            quotaDisplay: .remaining,
+            showsFiveHour: false,
+            showsWeekly: false,
+            showsToday: false
+        )
+
+        XCTAssertEqual(
+            DashboardSnapshot.preview.menuBarLabel(configuration: hidden),
+            "SpendScope"
+        )
+    }
+
     func testPreviewPeriodsUseConsistentTotals() {
         let periods = DashboardSnapshot.preview.periods
 

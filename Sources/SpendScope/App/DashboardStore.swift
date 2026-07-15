@@ -297,8 +297,8 @@ final class DashboardStore {
         }
     }
 
-    var menuBarLabel: String {
-        snapshot?.menuBarQuotaLabel ?? "SpendScope"
+    func menuBarLabel(configuration: MenuBarLabelConfiguration) -> String {
+        snapshot?.menuBarLabel(configuration: configuration) ?? "SpendScope"
     }
 
     func start() async {
