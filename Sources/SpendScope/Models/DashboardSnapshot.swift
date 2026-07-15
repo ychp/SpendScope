@@ -191,17 +191,25 @@ struct QuotaSnapshot: Identifiable, Sendable {
     }
 
     func resetCountdown(now: Date = Date()) -> String? {
+        resetInterval(now: now).map { "\($0.amount)\($0.compactUnit)" }
+    }
+
+    func resetDescription(now: Date = Date()) -> String? {
+        resetInterval(now: now).map { "\($0.amount) \($0.chineseUnit)后重置" }
+    }
+
+    private func resetInterval(now: Date) -> (amount: Int, compactUnit: String, chineseUnit: String)? {
         guard let resetsAt else { return nil }
         let seconds = resetsAt.timeIntervalSince(now)
         guard seconds > 0 else { return nil }
 
         if seconds < 3_600 {
-            return "\(max(1, Int(ceil(seconds / 60))))m"
+            return (max(1, Int(ceil(seconds / 60))), "m", "分钟")
         }
         if seconds < 86_400 {
-            return "\(max(1, Int(ceil(seconds / 3_600))))h"
+            return (max(1, Int(ceil(seconds / 3_600))), "h", "小时")
         }
-        return "\(max(1, Int(ceil(seconds / 86_400))))d"
+        return (max(1, Int(ceil(seconds / 86_400))), "d", "天")
     }
 }
 

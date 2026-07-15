@@ -73,6 +73,7 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AppPreferenceKeys.appearance) private var appearanceRaw = AppearancePreference.system.rawValue
     @AppStorage(AppPreferenceKeys.statusItemDisplayMode) private var statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
+    @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
     @AppStorage(AppPreferenceKeys.showsFiveHour) private var showsFiveHour = true
     @AppStorage(AppPreferenceKeys.showsWeekly) private var showsWeekly = true
@@ -144,6 +145,12 @@ struct SettingsView: View {
                     }
                     .padding(2)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                }
+
+                preferenceRow("重置倒计时", detail: "控制状态栏及悬浮提示中的倒计时") {
+                    Toggle("", isOn: $showsResetCountdown)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
                 }
             }
 
@@ -320,7 +327,8 @@ struct SettingsView: View {
         MenuBarLabelConfiguration(
             quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining,
             showsFiveHour: showsFiveHour,
-            showsWeekly: showsWeekly
+            showsWeekly: showsWeekly,
+            showsResetCountdown: showsResetCountdown
         )
     }
 
@@ -430,6 +438,7 @@ struct SettingsView: View {
     private func restoreDefaults() {
         appearanceRaw = AppearancePreference.system.rawValue
         statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
+        showsResetCountdown = true
         quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
         showsFiveHour = true
         showsWeekly = true

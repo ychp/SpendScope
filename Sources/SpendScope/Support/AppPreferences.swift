@@ -3,6 +3,7 @@ import SwiftUI
 enum AppPreferenceKeys {
     static let appearance = "appearance"
     static let statusItemDisplayMode = "menuBar.displayMode"
+    static let showsResetCountdown = "menuBar.showsResetCountdown"
     static let quotaDisplay = "menuBar.quotaDisplay"
     static let showsFiveHour = "menuBar.showsFiveHour"
     static let showsWeekly = "menuBar.showsWeekly"
@@ -42,10 +43,12 @@ struct MenuBarLabelConfiguration: Equatable, Sendable {
     let quotaDisplay: QuotaDisplayPreference
     let showsFiveHour: Bool
     let showsWeekly: Bool
+    let showsResetCountdown: Bool
 
     static let standard = MenuBarLabelConfiguration(
         quotaDisplay: .remaining,
         showsFiveHour: true,
-        showsWeekly: true
+        showsWeekly: true,
+        showsResetCountdown: true
     )
 }

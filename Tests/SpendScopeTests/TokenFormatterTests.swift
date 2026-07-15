@@ -124,6 +124,47 @@ final class StatusItemPresentationTests: XCTestCase {
         XCTAssertFalse(rich.label.contains("今日"))
         XCTAssertLessThan(classic.imageSize.width, rich.imageSize.width)
     }
+
+    func testCountdownPreferenceControlsInlineResetAndCodexStyleTooltip() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let snapshot = DashboardSnapshot(
+            planName: "Pro 20x",
+            updatedText: "刚刚",
+            periods: DashboardSnapshot.preview.periods,
+            quotas: [
+                QuotaSnapshot(
+                    id: "7d", title: "7 天", remaining: 0.57, resetText: "",
+                    resetsAt: now.addingTimeInterval(6 * 86_400)
+                )
+            ],
+            models: [],
+            dailyUsage: []
+        )
+        let visible = StatusItemPresentation(
+            snapshot: snapshot,
+            configuration: .standard,
+            displayMode: .rich,
+            now: now
+        )
+        let hidden = StatusItemPresentation(
+            snapshot: snapshot,
+            configuration: MenuBarLabelConfiguration(
+                quotaDisplay: .remaining,
+                showsFiveHour: true,
+                showsWeekly: true,
+                showsResetCountdown: false
+            ),
+            displayMode: .rich,
+            now: now
+        )
+
+        XCTAssertEqual(visible.metrics.first?.resetText, "6d")
+        XCTAssertTrue(visible.tooltip.contains("7 天额度 剩余 57%，6 天后重置"))
+        XCTAssertTrue(visible.tooltip.contains("点击查看 Codex 用量菜单"))
+        XCTAssertNil(hidden.metrics.first?.resetText)
+        XCTAssertFalse(hidden.tooltip.contains("重置"))
+        XCTAssertLessThan(hidden.imageSize.width, visible.imageSize.width)
+    }
 }
 
 final class DashboardSnapshotTests: XCTestCase {
@@ -213,12 +254,14 @@ final class DashboardSnapshotTests: XCTestCase {
         let usedFiveHour = MenuBarLabelConfiguration(
             quotaDisplay: .used,
             showsFiveHour: true,
-            showsWeekly: false
+            showsWeekly: false,
+            showsResetCountdown: true
         )
         let remainingWeekly = MenuBarLabelConfiguration(
             quotaDisplay: .remaining,
             showsFiveHour: false,
-            showsWeekly: true
+            showsWeekly: true,
+            showsResetCountdown: true
         )
 
         XCTAssertEqual(
@@ -235,7 +278,8 @@ final class DashboardSnapshotTests: XCTestCase {
         let hidden = MenuBarLabelConfiguration(
             quotaDisplay: .remaining,
             showsFiveHour: false,
-            showsWeekly: false
+            showsWeekly: false,
+            showsResetCountdown: true
         )
 
         XCTAssertEqual(

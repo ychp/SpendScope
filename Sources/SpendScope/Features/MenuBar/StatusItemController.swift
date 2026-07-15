@@ -13,7 +13,9 @@ enum StatusItemLayoutMetrics {
     static let iconRect = NSRect(x: 2, y: 2, width: 18, height: 18)
     static let leadingContentWidth: CGFloat = 22
     static let classicQuotaUnitWidth: CGFloat = 25
-    static let richImageWidth: CGFloat = 126
+    static let richMetricWidth: CGFloat = 58
+    static let richResetWidth: CGFloat = 25
+    static let richMetricSpacing: CGFloat = 5
     static let emptyImageWidth: CGFloat = 24
 }
 
@@ -23,6 +25,7 @@ struct StatusItemMetricPresentation: Equatable, Identifiable {
     let value: String
     let fraction: CGFloat
     let resetText: String?
+    let resetDescription: String?
     let paletteRole: StatusItemQuotaPaletteRole
 }
 
@@ -32,6 +35,7 @@ struct StatusItemPresentation: Equatable {
     let imageSize: NSSize
     let itemLength: CGFloat
     let label: String
+    let tooltip: String
 
     init(
         snapshot: DashboardSnapshot?,
@@ -65,7 +69,12 @@ struct StatusItemPresentation: Equatable {
                 label: quota.compactTitle,
                 value: "\(Int((normalized * 100).rounded()))%",
                 fraction: CGFloat(normalized),
-                resetText: quota.resetCountdown(now: now),
+                resetText: configuration.showsResetCountdown
+                    ? quota.resetCountdown(now: now)
+                    : nil,
+                resetDescription: configuration.showsResetCountdown
+                    ? quota.resetDescription(now: now)
+                    : nil,
                 paletteRole: quota.id == "7d" ? .weekly : .fiveHour
             )
         }
@@ -73,9 +82,18 @@ struct StatusItemPresentation: Equatable {
         let imageWidth: CGFloat
         switch displayMode {
         case .rich:
-            imageWidth = metrics.isEmpty
-                ? StatusItemLayoutMetrics.emptyImageWidth
-                : StatusItemLayoutMetrics.richImageWidth
+            if metrics.isEmpty {
+                imageWidth = StatusItemLayoutMetrics.emptyImageWidth
+            } else {
+                let resetWidth = metrics.reduce(CGFloat.zero) { width, metric in
+                    width + (metric.resetText == nil ? 0 : StatusItemLayoutMetrics.richResetWidth)
+                }
+                imageWidth = StatusItemLayoutMetrics.leadingContentWidth
+                    + CGFloat(metrics.count) * StatusItemLayoutMetrics.richMetricWidth
+                    + CGFloat(max(0, metrics.count - 1)) * StatusItemLayoutMetrics.richMetricSpacing
+                    + resetWidth
+                    + 2
+            }
         case .classic:
             imageWidth = StatusItemLayoutMetrics.leadingContentWidth
                 + CGFloat(metrics.count) * StatusItemLayoutMetrics.classicQuotaUnitWidth
@@ -90,6 +108,18 @@ struct StatusItemPresentation: Equatable {
                     .compactMap { $0 }
                     .joined(separator: " ")
             }.joined(separator: " · ")
+        let quotaTerm = configuration.quotaDisplay == .remaining ? "剩余" : "已用"
+        let quotaDescription = metrics.map { metric in
+            let quotaName = metric.id == "5h" ? "5 小时额度" : "7 天额度"
+            var description = "\(quotaName) \(quotaTerm) \(metric.value)"
+            if let resetDescription = metric.resetDescription {
+                description += "，\(resetDescription)"
+            }
+            return description
+        }.joined(separator: "；")
+        tooltip = metrics.isEmpty
+            ? "SpendScope · Codex · 暂无可用额度 · 点击查看 Codex 用量菜单"
+            : "SpendScope · Codex · \(quotaDescription) · 点击查看 Codex 用量菜单"
     }
 }
 
@@ -129,43 +159,32 @@ struct StatusItemRenderer {
     }
 
     private func drawRich(_ metrics: [StatusItemMetricPresentation]) {
-        guard !metrics.isEmpty else { return }
+        var x = StatusItemLayoutMetrics.leadingContentWidth
+        for (index, metric) in metrics.enumerated() {
+            if index > 0 {
+                x += StatusItemLayoutMetrics.richMetricSpacing
+            }
 
-        if metrics.count >= 2 {
-            drawRichRow(metrics[0], y: 11.2)
-            drawRichRow(metrics[1], y: 1.1)
-        } else if let metric = metrics.first {
-            drawRichRow(metric, y: 6.2)
+            drawText(
+                metric.label,
+                in: NSRect(x: x, y: 4, width: 17, height: 14),
+                font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .semibold),
+                color: NSColor.labelColor,
+                alignment: .right
+            )
+            drawValuePill(
+                metric.value,
+                fraction: metric.fraction,
+                paletteRole: metric.paletteRole,
+                in: NSRect(x: x + 20, y: 3, width: 38, height: 16)
+            )
+            x += StatusItemLayoutMetrics.richMetricWidth
+
+            if let resetText = metric.resetText {
+                drawResetCountdown(resetText, x: x)
+                x += StatusItemLayoutMetrics.richResetWidth
+            }
         }
-    }
-
-    private func drawRichRow(_ metric: StatusItemMetricPresentation, y: CGFloat) {
-        drawText(
-            metric.label,
-            in: NSRect(x: 23, y: y - 1, width: 18, height: 10),
-            font: .monospacedDigitSystemFont(ofSize: 8.2, weight: .semibold),
-            color: NSColor.labelColor,
-            alignment: .right
-        )
-        drawLinearProgress(
-            in: NSRect(x: 45, y: y + 2.1, width: 23, height: 4),
-            fraction: metric.fraction,
-            paletteRole: metric.paletteRole
-        )
-        drawText(
-            metric.value,
-            in: NSRect(x: 70, y: y - 1, width: 25, height: 10),
-            font: .monospacedDigitSystemFont(ofSize: 8.4, weight: .bold),
-            color: NSColor.labelColor,
-            alignment: .right
-        )
-        drawText(
-            metric.resetText ?? "--",
-            in: NSRect(x: 98, y: y - 1, width: 26, height: 10),
-            font: .monospacedDigitSystemFont(ofSize: 8.0, weight: .medium),
-            color: NSColor.secondaryLabelColor,
-            alignment: .center
-        )
     }
 
     private func drawClassic(_ metrics: [StatusItemMetricPresentation]) {
@@ -181,14 +200,14 @@ struct StatusItemRenderer {
             drawText(
                 metric.label,
                 in: NSRect(x: x + 3, y: 11.1, width: 18, height: 7),
-                font: .monospacedDigitSystemFont(ofSize: 5.7, weight: .semibold),
+                font: .monospacedDigitSystemFont(ofSize: 6.2, weight: .semibold),
                 color: NSColor.secondaryLabelColor,
                 alignment: .center
             )
             drawText(
                 metric.value,
                 in: NSRect(x: x + 2, y: 3.5, width: 20, height: 8),
-                font: .monospacedDigitSystemFont(ofSize: 7.1, weight: .bold),
+                font: .monospacedDigitSystemFont(ofSize: 7.8, weight: .bold),
                 color: NSColor.labelColor,
                 alignment: .center
             )
@@ -196,17 +215,51 @@ struct StatusItemRenderer {
         }
     }
 
+    private func drawValuePill(
+        _ value: String,
+        fraction: CGFloat,
+        paletteRole: StatusItemQuotaPaletteRole,
+        in rect: NSRect
+    ) {
+        let fillRect = drawLinearProgress(
+            in: rect,
+            fraction: fraction,
+            paletteRole: paletteRole
+        )
+        drawText(
+            value,
+            in: NSRect(x: rect.minX, y: rect.minY + 2, width: rect.width, height: 12),
+            font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .bold),
+            color: NSColor.labelColor,
+            alignment: .center
+        )
+
+        if let fillRect {
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: fillRect).addClip()
+            drawText(
+                value,
+                in: NSRect(x: rect.minX, y: rect.minY + 2, width: rect.width, height: 12),
+                font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .bold),
+                color: NSColor.white,
+                alignment: .center
+            )
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    @discardableResult
     private func drawLinearProgress(
         in rect: NSRect,
         fraction: CGFloat,
         paletteRole: StatusItemQuotaPaletteRole
-    ) {
+    ) -> NSRect? {
         let palette = palette(for: paletteRole)
         palette.track.setFill()
         NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
 
         let normalized = min(max(fraction, 0), 1)
-        guard normalized > 0 else { return }
+        guard normalized > 0 else { return nil }
         let fillWidth = max(0.8, rect.width * normalized)
         let fillRect = NSRect(x: rect.minX, y: rect.minY, width: fillWidth, height: rect.height)
         let fillPath = NSBezierPath(
@@ -223,7 +276,7 @@ struct StatusItemRenderer {
         else {
             palette.end.setFill()
             fillPath.fill()
-            return
+            return fillRect
         }
         context.saveGState()
         fillPath.addClip()
@@ -234,6 +287,24 @@ struct StatusItemRenderer {
             options: []
         )
         context.restoreGState()
+        return fillRect
+    }
+
+    private func drawResetCountdown(_ value: String, x: CGFloat) {
+        let iconRect = NSRect(x: x + 1, y: 7, width: 7, height: 7)
+        if let symbol = NSImage(
+            systemSymbolName: "arrow.clockwise",
+            accessibilityDescription: nil
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 7, weight: .semibold)) {
+            drawTintedImage(symbol, color: NSColor.secondaryLabelColor, in: iconRect)
+        }
+        drawText(
+            value,
+            in: NSRect(x: x + 9, y: 4, width: 15, height: 13),
+            font: .monospacedDigitSystemFont(ofSize: 8.5, weight: .medium),
+            color: NSColor.secondaryLabelColor,
+            alignment: .left
+        )
     }
 
     private func drawCircularProgress(
@@ -314,6 +385,10 @@ struct StatusItemRenderer {
 
     private func drawIcon(in rect: NSRect) {
         guard let source = NSImage(named: "MenuBarIcon") else { return }
+        drawTintedImage(source, color: NSColor.labelColor, in: rect)
+    }
+
+    private func drawTintedImage(_ source: NSImage, color: NSColor, in rect: NSRect) {
         let image = NSImage(size: rect.size)
         image.lockFocus()
         source.draw(
@@ -322,7 +397,7 @@ struct StatusItemRenderer {
             operation: .sourceOver,
             fraction: 1
         )
-        NSColor.labelColor.setFill()
+        color.setFill()
         NSRect(origin: .zero, size: rect.size).fill(using: .sourceIn)
         image.unlockFocus()
         image.isTemplate = false
@@ -464,7 +539,7 @@ final class StatusItemController: NSObject {
         lastAppearanceName = appearance.name
         statusItem.length = presentation.itemLength
         button.image = renderer.render(presentation, appearance: appearance)
-        button.toolTip = "SpendScope · \(presentation.label)"
+        button.toolTip = presentation.tooltip
         button.setAccessibilityValue(presentation.label)
     }
 
@@ -474,7 +549,8 @@ final class StatusItemController: NSObject {
                 rawValue: defaults.string(forKey: AppPreferenceKeys.quotaDisplay) ?? ""
             ) ?? .remaining,
             showsFiveHour: defaults.object(forKey: AppPreferenceKeys.showsFiveHour) as? Bool ?? true,
-            showsWeekly: defaults.object(forKey: AppPreferenceKeys.showsWeekly) as? Bool ?? true
+            showsWeekly: defaults.object(forKey: AppPreferenceKeys.showsWeekly) as? Bool ?? true,
+            showsResetCountdown: defaults.object(forKey: AppPreferenceKeys.showsResetCountdown) as? Bool ?? true
         )
     }
 
