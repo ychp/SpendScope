@@ -140,14 +140,6 @@ struct SettingsView: View {
                 }
             }
 
-            Section {
-                preferenceRow("恢复默认", detail: "恢复状态栏显示设置") {
-                    Button("恢复默认设置", systemImage: "arrow.counterclockwise") {
-                        restoreDefaults()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
@@ -416,14 +408,6 @@ struct SettingsView: View {
                 .frame(width: Layout.controlWidth, alignment: .trailing)
         }
         .frame(minHeight: Layout.rowHeight)
-    }
-
-    private func restoreDefaults() {
-        statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
-        showsResetCountdown = true
-        quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
-        showsFiveHour = true
-        showsWeekly = true
     }
 
     private func healthRow(_ title: String, health: SourceHealth?) -> some View {
