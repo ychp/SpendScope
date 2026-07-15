@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import SpendScope
@@ -81,6 +82,24 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(TokenFormatter.percentage(0.48235), "48.2%")
         XCTAssertEqual(TokenFormatter.percentage(0), "0.0%")
         XCTAssertEqual(TokenFormatter.percentage(1), "100.0%")
+    }
+}
+
+@MainActor
+final class StatusItemPresentationTests: XCTestCase {
+    func testUsesCodexUCompatibleCanvasAndIconMetrics() {
+        let presentation = StatusItemPresentation(label: "7d 100%")
+
+        XCTAssertEqual(presentation.imageSize.height, 22)
+        XCTAssertEqual(StatusItemLayoutMetrics.iconRect, NSRect(x: 2, y: 2, width: 18, height: 18))
+        XCTAssertEqual(presentation.itemLength, presentation.imageSize.width + 8)
+
+        guard let appearance = NSAppearance(named: .aqua) else {
+            return XCTFail("Expected the standard Aqua appearance to be available")
+        }
+        let image = StatusItemRenderer().render(presentation, appearance: appearance)
+        XCTAssertEqual(image.size, presentation.imageSize)
+        XCTAssertFalse(image.isTemplate)
     }
 }
 

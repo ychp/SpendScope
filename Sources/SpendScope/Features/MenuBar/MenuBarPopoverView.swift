@@ -18,6 +18,18 @@ struct MenuBarPopoverView: View {
     @Environment(\.openSettings) private var openSettings
 
     let store: DashboardStore
+    private let onOpenDashboard: (() -> Void)?
+    private let onOpenSettings: (() -> Void)?
+
+    init(
+        store: DashboardStore,
+        onOpenDashboard: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil
+    ) {
+        self.store = store
+        self.onOpenDashboard = onOpenDashboard
+        self.onOpenSettings = onOpenSettings
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -97,11 +109,19 @@ struct MenuBarPopoverView: View {
     private var footerActions: some View {
         HStack(spacing: 10) {
             Button("打开看板", systemImage: "square.grid.2x2") {
-                openWindow(id: "dashboard")
+                if let onOpenDashboard {
+                    onOpenDashboard()
+                } else {
+                    openWindow(id: "dashboard")
+                }
                 NSApp.activate(ignoringOtherApps: true)
             }
             Button("设置", systemImage: "gearshape") {
-                openSettings()
+                if let onOpenSettings {
+                    onOpenSettings()
+                } else {
+                    openSettings()
+                }
                 NSApp.activate(ignoringOtherApps: true)
             }
             Button("退出", systemImage: "power") {

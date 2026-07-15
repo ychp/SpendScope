@@ -3,41 +3,18 @@ import SwiftUI
 @main
 struct SpendScopeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var store = DashboardStore.live()
     @AppStorage(AppPreferenceKeys.appearance) private var appearanceRaw = AppearancePreference.system.rawValue
-    @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
-    @AppStorage(AppPreferenceKeys.showsFiveHour) private var showsFiveHour = true
-    @AppStorage(AppPreferenceKeys.showsWeekly) private var showsWeekly = true
-    @AppStorage(AppPreferenceKeys.showsToday) private var showsToday = false
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuBarPopoverView(store: store)
-                .preferredColorScheme(preferredColorScheme)
-        } label: {
-            HStack(spacing: 4) {
-                Image("MenuBarStatusIcon")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 14, height: 14)
-                Text(store.menuBarLabel(configuration: menuBarConfiguration))
-                    .monospacedDigit()
-                    .lineLimit(1)
-            }
-            .fixedSize(horizontal: true, vertical: false)
-            .accessibilityElement(children: .combine)
-        }
-        .menuBarExtraStyle(.window)
-
         Window("SpendScope", id: "dashboard") {
-            DashboardView(store: store)
+            DashboardView(store: appDelegate.store)
                 .preferredColorScheme(preferredColorScheme)
+                .background(StatusItemSceneBridge(appDelegate: appDelegate))
         }
         .defaultSize(width: 920, height: 620)
 
         Settings {
-            SettingsView(store: store)
+            SettingsView(store: appDelegate.store)
                 .preferredColorScheme(preferredColorScheme)
         }
     }
@@ -46,12 +23,28 @@ struct SpendScopeApp: App {
         AppearancePreference(rawValue: appearanceRaw)?.colorScheme
     }
 
-    private var menuBarConfiguration: MenuBarLabelConfiguration {
-        MenuBarLabelConfiguration(
-            quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining,
-            showsFiveHour: showsFiveHour,
-            showsWeekly: showsWeekly,
-            showsToday: showsToday
-        )
+}
+
+private struct StatusItemSceneBridge: View {
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+
+    let appDelegate: AppDelegate
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                appDelegate.updateSceneActions(
+                    openDashboard: {
+                        openWindow(id: "dashboard")
+                        NSApp.activate(ignoringOtherApps: true)
+                    },
+                    openSettings: {
+                        openSettings()
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
+                )
+            }
     }
 }
