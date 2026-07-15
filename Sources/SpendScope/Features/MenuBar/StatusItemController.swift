@@ -122,8 +122,8 @@ struct StatusItemPresentation: Equatable {
             return description
         }.joined(separator: "；")
         tooltip = metrics.isEmpty
-            ? "SpendScope · Codex · 暂无可用额度 · 点击查看 Codex 用量菜单"
-            : "SpendScope · Codex · \(quotaDescription) · 点击查看 Codex 用量菜单"
+            ? "SpendScope · Codex · 暂无可用额度 · 点击查看用量"
+            : "SpendScope · Codex · \(quotaDescription) · 点击查看用量"
     }
 }
 

@@ -160,7 +160,8 @@ final class StatusItemPresentationTests: XCTestCase {
 
         XCTAssertEqual(visible.metrics.first?.resetText, "6d")
         XCTAssertTrue(visible.tooltip.contains("7 天额度 剩余 57%，6 天后重置"))
-        XCTAssertTrue(visible.tooltip.contains("点击查看 Codex 用量菜单"))
+        XCTAssertTrue(visible.tooltip.contains("点击查看用量"))
+        XCTAssertFalse(visible.tooltip.contains("Codex 用量菜单"))
         XCTAssertNil(hidden.metrics.first?.resetText)
         XCTAssertFalse(hidden.tooltip.contains("重置"))
         XCTAssertLessThan(hidden.imageSize.width, visible.imageSize.width)
