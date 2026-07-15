@@ -18,6 +18,9 @@ struct SpendScopeApp: App {
             HStack(spacing: 4) {
                 Image("MenuBarIcon")
                     .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 14, height: 14)
                 Text(store.menuBarLabel(configuration: menuBarConfiguration))
                     .monospacedDigit()
                     .lineLimit(1)
