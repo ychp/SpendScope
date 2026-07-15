@@ -495,6 +495,12 @@ final class StatusItemController: NSObject {
             name: UserDefaults.didChangeNotification,
             object: defaults
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: NSApp
+        )
         observeStore()
         updateStatusItem()
     }
@@ -515,6 +521,11 @@ final class StatusItemController: NSObject {
         DispatchQueue.main.async { [weak self] in
             self?.updateStatusItem()
         }
+    }
+
+    @objc private func applicationDidBecomeActive(_ notification: Notification) {
+        guard let popover else { return }
+        focusPopoverWindow(popover)
     }
 
     @objc private func statusItemClicked() {
@@ -549,14 +560,14 @@ final class StatusItemController: NSObject {
         hostingController.view.layoutSubtreeIfNeeded()
         popover.contentSize = hostingController.view.fittingSize
         self.popover = popover
-        NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         focusPopoverWindow(popover)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func focusPopoverWindow(_ popover: NSPopover) {
         guard popover.isShown else { return }
-        popover.contentViewController?.view.window?.makeKey()
+        popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
     }
 
     private func updateStatusItem() {
