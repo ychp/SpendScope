@@ -88,7 +88,7 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.usageEventCount(), 1)
     }
 
-    func testTruncationResetsGenerationBeforeReadingReplacement() async throws {
+    func testTruncationRebuildsDerivedUsageFromReplacement() async throws {
         let fixture = try CodexFixture.make(events: [
             .sessionCLI,
             .turn(model: "gpt-synthetic"),
@@ -107,14 +107,14 @@ final class CodexImporterTests: XCTestCase {
         _ = await importer.refresh(scope: .history)
 
         let reset = try XCTUnwrap(try store.fileCheckpoint(fileID: fileID))
-        XCTAssertEqual(reset.generation, 1)
-        XCTAssertEqual(reset.committedOffset, 0)
-        XCTAssertNil(try store.threadCheckpoint(threadID: CodexFixture.threadID)?.counters)
-        XCTAssertEqual(try store.totalUsage(), 1_100)
+        XCTAssertEqual(reset.generation, 0)
+        XCTAssertEqual(reset.committedOffset, try fixture.rolloutSize())
+        XCTAssertEqual(reset.counters?.input, 10)
+        XCTAssertEqual(try store.totalUsage(), 12)
 
         _ = await importer.refresh(scope: .history)
-        XCTAssertEqual(try store.totalUsage(), 1_112)
-        XCTAssertEqual(try store.fileCheckpoint(fileID: fileID)?.generation, 1)
+        XCTAssertEqual(try store.totalUsage(), 12)
+        XCTAssertEqual(try store.fileCheckpoint(fileID: fileID)?.generation, 0)
     }
 
     func testExplicitPlanSurvivesImporterRestartWhenLaterSnapshotOmitsPlan() async throws {
@@ -205,6 +205,46 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.totalUsage(), 240)
         XCTAssertEqual(try store.usageEventCount(), 2)
         XCTAssertEqual(try store.sessions().first?.activity, .completed)
+    }
+
+    func testTokenCheckpointsRemainIsolatedAcrossFilesForSameThread() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic"),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        let second = try fixture.duplicateRollout(
+            named: "second.jsonl",
+            modificationDate: Date(timeIntervalSince1970: 2_000)
+        )
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(rootURL: fixture.codexRoot, store: store)
+        _ = await importer.refresh(scope: .history)
+
+        try fixture.append(.token(
+            input: 200,
+            cached: 80,
+            output: 40,
+            reasoning: 10,
+            plan: nil,
+            second: 7
+        ))
+        _ = await importer.refresh(scope: .history)
+
+        try fixture.append(.token(
+            input: 150,
+            cached: 60,
+            output: 30,
+            reasoning: 8,
+            plan: nil,
+            second: 8
+        ), to: second)
+        _ = await importer.refresh(scope: .history)
+
+        XCTAssertEqual(try store.totalUsage(), 300)
+        let checkpoints = try CodexSourceDiscovery().discover(rootURL: fixture.codexRoot).rollouts
+            .compactMap { try store.fileCheckpoint(fileID: $0.fileID) }
+        XCTAssertEqual(Set(checkpoints.compactMap { $0.counters?.input }), [150, 200])
     }
 
     func testArchiveFactAggregatesAcrossSameThreadFilesInEitherOrderAndRestart() async throws {
@@ -344,6 +384,13 @@ private final class CodexFixture: @unchecked Sendable {
 
     func append(_ event: Event) throws {
         try appendRaw(event.line + "\n")
+    }
+
+    func append(_ event: Event, to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((event.line + "\n").utf8))
     }
 
     func appendRaw(_ value: String) throws {

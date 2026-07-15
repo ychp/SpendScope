@@ -56,7 +56,7 @@ final class IncrementalJSONLReaderTests: XCTestCase {
         XCTAssertThrowsError(try IncrementalJSONLReader(chunkSize: 8).read(file: url, fromOffset: -1))
     }
 
-    func testDiscoveryUsesDeviceAndInodeWhenFileMovesToArchive() throws {
+    func testDiscoveryUsesPathScopedIdentityWhenFileMovesToArchive() throws {
         let root = try temporaryDirectory()
         let session = root.appending(path: "sessions/2026/07/14/rollout.jsonl")
         try write("{}\n", to: session)
@@ -72,8 +72,9 @@ final class IncrementalJSONLReaderTests: XCTestCase {
         try FileManager.default.moveItem(at: first.url, to: archived)
         let second = try XCTUnwrap(CodexSourceDiscovery().discover(rootURL: root).rollouts.first)
 
-        XCTAssertEqual(first.fileID, "\(first.deviceID):\(first.inode)")
-        XCTAssertEqual(first.fileID, second.fileID)
+        XCTAssertNotEqual(first.fileID, second.fileID)
+        XCTAssertEqual(first.deviceID, second.deviceID)
+        XCTAssertEqual(first.inode, second.inode)
         XCTAssertNotEqual(first.url, second.url)
         XCTAssertFalse(first.isArchived)
         XCTAssertTrue(second.isArchived)

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import SQLite3
 
@@ -177,15 +178,21 @@ struct CodexSourceDiscovery {
 
         let deviceID = device.uint64Value
         let inodeValue = inode.uint64Value
+        let path = canonicalPath(url.path)
+        let thread = recordsByPath[path]
+        let identity = "\(path)|\(thread?.threadID ?? "unindexed")"
+        let fileID = SHA256.hash(data: Data(identity.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
         return RolloutFile(
-            fileID: "\(deviceID):\(inodeValue)",
+            fileID: fileID,
             deviceID: deviceID,
             inode: inodeValue,
             url: url,
             fileSize: size.int64Value,
             modificationTimeMilliseconds: Int64(milliseconds.rounded()),
             isArchived: isArchived,
-            thread: recordsByPath[canonicalPath(url.path)]
+            thread: thread
         )
     }
 

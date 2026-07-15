@@ -76,7 +76,24 @@ actor CodexImporter {
             issues.append(.init(kind: .index, fileID: nil, detail: "index-degraded"))
         }
 
-        let selected = selectedRollouts(from: inventory.rollouts, scope: scope)
+        let selected: [RolloutFile]
+        do {
+            if try importedDataRequiresRebuild(for: inventory.rollouts) {
+                try store.resetImportedData()
+                selected = selectedRollouts(from: inventory.rollouts, scope: .history)
+            } else {
+                selected = selectedRollouts(from: inventory.rollouts, scope: scope)
+            }
+        } catch {
+            return ImportResult(
+                scope: scope,
+                processedFileCount: 0,
+                skippedFileCount: 0,
+                issues: [.init(kind: .store, fileID: nil, detail: "checkpoint-reset-failed")],
+                indexHealth: inventory.indexHealth,
+                discoveredFileIDs: inventory.rollouts.map(\.fileID)
+            )
+        }
         var processed = 0
         var skipped = inventory.rollouts.count - selected.count
         var archiveFacts = seedArchiveFacts(inventory: inventory, issues: &issues)
@@ -121,6 +138,24 @@ actor CodexImporter {
         return sorted.filter {
             $0.modificationTimeMilliseconds >= startMilliseconds || $0.fileID == newestFileID
         }
+    }
+
+    private func importedDataRequiresRebuild(for rollouts: [RolloutFile]) throws -> Bool {
+        for rollout in rollouts {
+            guard let checkpoint = try store.fileCheckpoint(fileID: rollout.fileID) else { continue }
+            if checkpoint.path != rollout.url.path
+                || UInt64(bitPattern: checkpoint.deviceID) != rollout.deviceID
+                || UInt64(bitPattern: checkpoint.inode) != rollout.inode
+                || checkpoint.committedOffset > rollout.fileSize {
+                return true
+            }
+            if let indexedThreadID = rollout.thread?.threadID,
+               let checkpointThreadID = checkpoint.threadID,
+               indexedThreadID != checkpointThreadID {
+                return true
+            }
+        }
+        return false
     }
 
     private func seedArchiveFacts(
@@ -212,7 +247,7 @@ actor CodexImporter {
         }
 
         let storedByThread = Dictionary(uniqueKeysWithValues: storedSessions.map { ($0.threadID, $0) })
-        let recoveredThreadID = previousFile?.threadID ?? rollout.thread?.threadID
+        let recoveredThreadID = rollout.thread?.threadID ?? previousFile?.threadID
         let storedForThread = recoveredThreadID.flatMap { storedByThread[$0] }
         let archiveFact = recoveredThreadID.flatMap { archiveFacts[$0] }
         if canSkip(
@@ -287,6 +322,7 @@ actor CodexImporter {
         do {
             context = try makeContext(
                 rollout: rollout,
+                previousFile: previousFile,
                 recoveredThreadID: recoveredThreadID,
                 storedSession: storedForThread,
                 storedByThread: storedByThread
@@ -393,7 +429,8 @@ actor CodexImporter {
                 : previousFile?.lastRecordAtMilliseconds,
             lastSuccessAtMilliseconds: lineIssue == nil ? now : previousFile?.lastSuccessAtMilliseconds,
             formatStatus: lineIssue == nil ? "supported" : "error",
-            lastError: lineIssue?.detail
+            lastError: lineIssue?.detail,
+            context: context
         )
 
         do {
@@ -423,8 +460,12 @@ actor CodexImporter {
     ) throws {
         switch event {
         case .session(let metadata):
+            if let indexedThreadID = rollout.thread?.threadID,
+               indexedThreadID != metadata.threadID {
+                throw ImportContextIssue.threadMismatch
+            }
             if context.threadID != metadata.threadID {
-                context = try contextForSession(
+                context = contextForSession(
                     metadata,
                     rollout: rollout,
                     storedSession: storedByThread[metadata.threadID]
@@ -524,18 +565,17 @@ actor CodexImporter {
         _ metadata: SessionMetadata,
         rollout: RolloutFile,
         storedSession: StoredSession?
-    ) throws -> ImportContext {
-        let checkpoint = try store.threadCheckpoint(threadID: metadata.threadID)
+    ) -> ImportContext {
         let matchingIndex = rollout.thread?.threadID == metadata.threadID ? rollout.thread : nil
         return ImportContext(
             threadID: metadata.threadID,
             source: metadata.source,
-            model: checkpoint?.currentModel ?? matchingIndex?.model,
-            currentPlan: checkpoint?.currentPlan,
-            lastPlan: checkpoint?.currentPlan?.kind ?? storedSession?.lastPlan,
-            counters: checkpoint?.counters,
-            counterSegment: checkpoint?.counterSegment ?? 0,
-            lastTokenAtMilliseconds: checkpoint?.lastTokenAtMilliseconds,
+            model: matchingIndex?.model ?? storedSession?.lastModel,
+            currentPlan: nil,
+            lastPlan: storedSession?.lastPlan,
+            counters: nil,
+            counterSegment: 0,
+            lastTokenAtMilliseconds: nil,
             state: storedSession?.state ?? .empty(threadID: metadata.threadID),
             createdAtMilliseconds: matchingIndex?.createdAtMilliseconds ?? storedSession?.createdAtMilliseconds,
             updatedAtMilliseconds: matchingIndex?.updatedAtMilliseconds ?? storedSession?.updatedAtMilliseconds
@@ -544,27 +584,22 @@ actor CodexImporter {
 
     private func makeContext(
         rollout: RolloutFile,
+        previousFile: FileCheckpoint?,
         recoveredThreadID: String?,
         storedSession: StoredSession?,
         storedByThread: [String: StoredSession]
     ) throws -> ImportContext {
         let threadID = recoveredThreadID ?? rollout.thread?.threadID
         let session = threadID.flatMap { storedByThread[$0] } ?? storedSession
-        let checkpoint: ThreadCheckpoint?
-        if let threadID {
-            checkpoint = try store.threadCheckpoint(threadID: threadID)
-        } else {
-            checkpoint = nil
-        }
         return ImportContext(
             threadID: threadID,
             source: session?.sourceKind ?? sourceKind(from: rollout.thread?.sourceRaw),
-            model: checkpoint?.currentModel ?? session?.lastModel ?? rollout.thread?.model,
-            currentPlan: checkpoint?.currentPlan,
-            lastPlan: checkpoint?.currentPlan?.kind ?? session?.lastPlan,
-            counters: checkpoint?.counters,
-            counterSegment: checkpoint?.counterSegment ?? 0,
-            lastTokenAtMilliseconds: checkpoint?.lastTokenAtMilliseconds,
+            model: previousFile?.currentModel ?? session?.lastModel ?? rollout.thread?.model,
+            currentPlan: previousFile?.currentPlan,
+            lastPlan: previousFile?.currentPlan?.kind ?? session?.lastPlan,
+            counters: previousFile?.counters,
+            counterSegment: previousFile?.counterSegment ?? 0,
+            lastTokenAtMilliseconds: previousFile?.lastTokenAtMilliseconds,
             state: session?.state ?? threadID.map(SessionStateSnapshot.empty(threadID:)),
             createdAtMilliseconds: rollout.thread?.createdAtMilliseconds ?? session?.createdAtMilliseconds,
             updatedAtMilliseconds: rollout.thread?.updatedAtMilliseconds ?? session?.updatedAtMilliseconds
@@ -641,7 +676,8 @@ actor CodexImporter {
         lastRecordAtMilliseconds: Int64?,
         lastSuccessAtMilliseconds: Int64?,
         formatStatus: String,
-        lastError: String?
+        lastError: String?,
+        context: ImportContext? = nil
     ) -> FileCheckpoint {
         FileCheckpoint(
             fileID: rollout.fileID,
@@ -655,7 +691,12 @@ actor CodexImporter {
             lastRecordAtMilliseconds: lastRecordAtMilliseconds,
             lastSuccessAtMilliseconds: lastSuccessAtMilliseconds,
             formatStatus: formatStatus,
-            lastError: lastError
+            lastError: lastError,
+            currentModel: context?.model,
+            currentPlan: context?.currentPlan,
+            counters: context?.counters,
+            counterSegment: context?.counterSegment ?? 0,
+            lastTokenAtMilliseconds: context?.lastTokenAtMilliseconds
         )
     }
 
@@ -727,6 +768,12 @@ private enum FileImportOutcome {
 
 private enum ImportContextIssue: Error {
     case missingThread
+    case threadMismatch
 
-    var detail: String { "missing-thread-context" }
+    var detail: String {
+        switch self {
+        case .missingThread: "missing-thread-context"
+        case .threadMismatch: "thread-index-mismatch"
+        }
+    }
 }

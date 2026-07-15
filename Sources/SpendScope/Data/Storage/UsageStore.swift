@@ -58,6 +58,50 @@ struct FileCheckpoint: Sendable {
     let lastSuccessAtMilliseconds: Int64?
     let formatStatus: String
     let lastError: String?
+
+    let currentModel: String?
+    let currentPlan: PlanResolution?
+    let counters: TokenCounters?
+    let counterSegment: Int64
+    let lastTokenAtMilliseconds: Int64?
+
+    init(
+        fileID: String,
+        deviceID: Int64,
+        inode: Int64,
+        path: String,
+        fileSize: Int64,
+        committedOffset: Int64,
+        generation: Int64,
+        threadID: String?,
+        lastRecordAtMilliseconds: Int64?,
+        lastSuccessAtMilliseconds: Int64?,
+        formatStatus: String,
+        lastError: String?,
+        currentModel: String? = nil,
+        currentPlan: PlanResolution? = nil,
+        counters: TokenCounters? = nil,
+        counterSegment: Int64 = 0,
+        lastTokenAtMilliseconds: Int64? = nil
+    ) {
+        self.fileID = fileID
+        self.deviceID = deviceID
+        self.inode = inode
+        self.path = path
+        self.fileSize = fileSize
+        self.committedOffset = committedOffset
+        self.generation = generation
+        self.threadID = threadID
+        self.lastRecordAtMilliseconds = lastRecordAtMilliseconds
+        self.lastSuccessAtMilliseconds = lastSuccessAtMilliseconds
+        self.formatStatus = formatStatus
+        self.lastError = lastError
+        self.currentModel = currentModel
+        self.currentPlan = currentPlan
+        self.counters = counters
+        self.counterSegment = counterSegment
+        self.lastTokenAtMilliseconds = lastTokenAtMilliseconds
+    }
 }
 
 struct ThreadCheckpoint: Sendable {
@@ -180,15 +224,25 @@ final class UsageStore: @unchecked Sendable {
 
     func fileCheckpoint(fileID: String) throws -> FileCheckpoint? {
         let rows = try database.query(
-            sql: """
-            SELECT file_id, device_id, inode, path, file_size, committed_offset, generation,
-                   thread_id, last_record_at_ms, last_success_at_ms, format_status, last_error
-            FROM source_files WHERE file_id = ?
-            """,
+            sql: "SELECT * FROM source_files WHERE file_id = ?",
             bindings: [.text(fileID)]
         )
         guard let values = rows.first else { return nil }
         let row = SQLiteRow(table: "source_files", values: values)
+        let counters: TokenCounters?
+        if let input = try row.optionalInt64("input_tokens"),
+           let cached = try row.optionalInt64("cached_input_tokens"),
+           let output = try row.optionalInt64("output_tokens"),
+           let reasoning = try row.optionalInt64("reasoning_tokens") {
+            counters = TokenCounters(
+                input: input,
+                cachedInput: cached,
+                output: output,
+                reasoning: reasoning
+            )
+        } else {
+            counters = nil
+        }
         return FileCheckpoint(
             fileID: try row.requiredString("file_id"),
             deviceID: try row.requiredInt64("device_id"),
@@ -201,8 +255,19 @@ final class UsageStore: @unchecked Sendable {
             lastRecordAtMilliseconds: try row.optionalInt64("last_record_at_ms"),
             lastSuccessAtMilliseconds: try row.optionalInt64("last_success_at_ms"),
             formatStatus: try row.requiredString("format_status"),
-            lastError: try row.optionalString("last_error")
+            lastError: try row.optionalString("last_error"),
+            currentModel: try row.optionalString("current_model"),
+            currentPlan: try planResolution(from: row),
+            counters: counters,
+            counterSegment: try row.requiredInt64("counter_segment"),
+            lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms")
         )
+    }
+
+    func resetImportedData() throws {
+        try database.inTransaction {
+            try resetImportedDataInCurrentTransaction()
+        }
     }
 
     func threadCheckpoint(threadID: String) throws -> ThreadCheckpoint? {
@@ -611,19 +676,41 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 1 else {
+            guard versions.last ?? 0 <= 2 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(1) {
-                try validateVersionOneSchema()
+            if versions.contains(2) {
+                try validateVersionTwoSchema()
                 return
             }
 
-            for statement in Self.versionOneStatements {
+            if versions.contains(1) {
+                try dropVersionOneStorage()
+            }
+            for statement in Self.versionTwoStatements {
                 try database.execute(sql: statement)
             }
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (1)")
-            try validateVersionOneSchema()
+            try database.execute(sql: "INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)")
+            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (2)")
+            try validateVersionTwoSchema()
+        }
+    }
+
+    private func dropVersionOneStorage() throws {
+        for table in [
+            "source_status", "sessions", "session_state_events", "quota_snapshots",
+            "hourly_usage", "usage_events", "thread_checkpoints", "source_files"
+        ] {
+            try database.execute(sql: "DROP TABLE IF EXISTS \(table)")
+        }
+    }
+
+    private func resetImportedDataInCurrentTransaction() throws {
+        for table in [
+            "source_status", "sessions", "session_state_events", "quota_snapshots",
+            "hourly_usage", "usage_events", "thread_checkpoints", "source_files"
+        ] {
+            try database.execute(sql: "DELETE FROM \(table)")
         }
     }
 
@@ -834,15 +921,26 @@ final class UsageStore: @unchecked Sendable {
             sql: """
             INSERT INTO source_files(
               file_id, device_id, inode, path, file_size, committed_offset, generation,
-              thread_id, last_record_at_ms, last_success_at_ms, format_status, last_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              thread_id, last_record_at_ms, last_success_at_ms, format_status, last_error,
+              current_model, plan, plan_raw, plan_is_inferred,
+              input_tokens, cached_input_tokens, output_tokens, reasoning_tokens,
+              counter_segment, last_token_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_id) DO UPDATE SET
               device_id = excluded.device_id, inode = excluded.inode, path = excluded.path,
               file_size = excluded.file_size, committed_offset = excluded.committed_offset,
               generation = excluded.generation, thread_id = excluded.thread_id,
               last_record_at_ms = excluded.last_record_at_ms,
               last_success_at_ms = excluded.last_success_at_ms, format_status = excluded.format_status,
-              last_error = excluded.last_error
+              last_error = excluded.last_error, current_model = excluded.current_model,
+              plan = excluded.plan, plan_raw = excluded.plan_raw,
+              plan_is_inferred = excluded.plan_is_inferred,
+              input_tokens = excluded.input_tokens,
+              cached_input_tokens = excluded.cached_input_tokens,
+              output_tokens = excluded.output_tokens,
+              reasoning_tokens = excluded.reasoning_tokens,
+              counter_segment = excluded.counter_segment,
+              last_token_at_ms = excluded.last_token_at_ms
             """,
             bindings: [
                 .text(checkpoint.fileID), .integer(checkpoint.deviceID), .integer(checkpoint.inode),
@@ -850,7 +948,16 @@ final class UsageStore: @unchecked Sendable {
                 .integer(checkpoint.generation), checkpoint.threadID.sqliteValue,
                 checkpoint.lastRecordAtMilliseconds.sqliteValue,
                 checkpoint.lastSuccessAtMilliseconds.sqliteValue, .text(checkpoint.formatStatus),
-                checkpoint.lastError.sqliteValue
+                checkpoint.lastError.sqliteValue, checkpoint.currentModel.sqliteValue,
+                (checkpoint.currentPlan?.kind.rawValue).sqliteValue,
+                checkpoint.currentPlan.flatMap(\.rawValue).sqliteValue,
+                checkpoint.currentPlan.map { $0.isInferred ? Int64(1) : Int64(0) }.sqliteValue,
+                (checkpoint.counters?.input).sqliteValue,
+                (checkpoint.counters?.cachedInput).sqliteValue,
+                (checkpoint.counters?.output).sqliteValue,
+                (checkpoint.counters?.reasoning).sqliteValue,
+                .integer(checkpoint.counterSegment),
+                checkpoint.lastTokenAtMilliseconds.sqliteValue
             ]
         )
     }
@@ -926,14 +1033,18 @@ final class UsageStore: @unchecked Sendable {
         return try SQLiteRow(table: table, values: values).requiredInt64("count")
     }
 
-    private static let versionOneStatements = [
+    private static let versionTwoStatements = [
         """
         CREATE TABLE source_files(
           file_id TEXT PRIMARY KEY, device_id INTEGER NOT NULL, inode INTEGER NOT NULL,
           path TEXT NOT NULL, file_size INTEGER NOT NULL DEFAULT 0,
           committed_offset INTEGER NOT NULL DEFAULT 0,
           generation INTEGER NOT NULL DEFAULT 0, thread_id TEXT, last_record_at_ms INTEGER,
-          last_success_at_ms INTEGER, format_status TEXT NOT NULL DEFAULT 'supported', last_error TEXT
+          last_success_at_ms INTEGER, format_status TEXT NOT NULL DEFAULT 'supported', last_error TEXT,
+          current_model TEXT, plan TEXT, plan_raw TEXT, plan_is_inferred INTEGER,
+          input_tokens INTEGER, cached_input_tokens INTEGER, output_tokens INTEGER,
+          reasoning_tokens INTEGER, counter_segment INTEGER NOT NULL DEFAULT 0,
+          last_token_at_ms INTEGER
         )
         """,
         """
@@ -1024,9 +1135,16 @@ final class UsageStore: @unchecked Sendable {
         )
     }
 
-    private func validateVersionOneSchema() throws {
+    private func validateVersionTwoSchema() throws {
         let requiredColumns: [(table: String, columns: [String])] = [
-            ("source_files", ["thread_id"]),
+            (
+                "source_files",
+                [
+                    "thread_id", "current_model", "plan", "plan_raw", "plan_is_inferred",
+                    "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens",
+                    "counter_segment", "last_token_at_ms"
+                ]
+            ),
             ("thread_checkpoints", ["plan", "plan_raw", "plan_is_inferred"]),
             ("sessions", ["archive_observed_at_ms"])
         ]

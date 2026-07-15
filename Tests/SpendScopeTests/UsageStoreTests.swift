@@ -44,18 +44,20 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertFalse(columns.contains("response"))
     }
 
-    func testMigrationCreatesExactVersionOneStorageSurface() throws {
+    func testMigrationCreatesExactVersionTwoStorageSurface() throws {
         let url = temporaryDatabaseURL()
         _ = try UsageStore(databaseURL: url)
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2])
         XCTAssertEqual(
             Set(try store.schemaColumns(table: "source_files")),
             Set([
                 "file_id", "device_id", "inode", "path", "file_size", "committed_offset",
                 "generation", "thread_id", "last_record_at_ms", "last_success_at_ms",
-                "format_status", "last_error"
+                "format_status", "last_error", "current_model", "plan", "plan_raw",
+                "plan_is_inferred", "input_tokens", "cached_input_tokens", "output_tokens",
+                "reasoning_tokens", "counter_segment", "last_token_at_ms"
             ])
         )
         XCTAssertEqual(
@@ -317,7 +319,7 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.sourceFacts().lastSuccessfulRefreshMilliseconds, 3_000)
     }
 
-    func testExistingVersionOneWithoutImporterColumnsRequiresRebuildAtInitialization() throws {
+    func testExistingVersionOneIsRebuiltIntoVersionTwoStorage() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)")
@@ -330,13 +332,18 @@ final class UsageStoreTests: XCTestCase {
               format_status TEXT NOT NULL, last_error TEXT
             )
             """)
+        try database.execute(sql: """
+            INSERT INTO source_files(
+              file_id, device_id, inode, path, file_size, committed_offset, generation,
+              format_status
+            ) VALUES ('legacy', 1, 1, '/legacy.jsonl', 10, 10, 0, 'supported')
+            """)
 
-        XCTAssertThrowsError(try UsageStore(databaseURL: url)) { error in
-            XCTAssertEqual(
-                error as? UsageStoreError,
-                .rebuildRequired(table: "source_files", missingColumns: ["thread_id"])
-            )
-        }
+        let store = try UsageStore(databaseURL: url)
+
+        XCTAssertEqual(try store.schemaVersions(), [1, 2])
+        XCTAssertNil(try store.fileCheckpoint(fileID: "legacy"))
+        XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("input_tokens"))
     }
 
     func testFailureRollsBackEventsAggregateSessionsAndCheckpoints() throws {
