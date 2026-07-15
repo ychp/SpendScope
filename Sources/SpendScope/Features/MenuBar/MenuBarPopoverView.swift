@@ -172,28 +172,28 @@ struct MenuBarPopoverView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 13) {
             Image("MenuBarIcon")
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
+                .frame(width: 21.5, height: 21.5)
                 .foregroundStyle(.white)
-                .padding(5)
+                .padding(6.5)
                 .background(
                     LinearGradient(
                         colors: [SpendScopeTheme.popoverSecondary, SpendScopeTheme.popoverPrimary],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    in: RoundedRectangle(cornerRadius: 6)
+                    in: RoundedRectangle(cornerRadius: 8)
                 )
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("SpendScope")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 14.5, weight: .bold))
                 Text(MenuBarUpdateText.text(for: store.state))
-                    .font(.system(size: 8))
+                    .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
