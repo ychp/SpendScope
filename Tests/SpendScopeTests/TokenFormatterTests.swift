@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import SpendScope
@@ -70,6 +71,52 @@ private extension DashboardSnapshot {
 }
 
 final class TokenFormatterTests: XCTestCase {
+    func testMenuQuotaResetTextUsesRelativeDescriptionAndLabeledFallback() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let relativeQuota = QuotaSnapshot(
+            id: "7d",
+            title: "7 天",
+            remaining: 0.52,
+            resetText: "2026-07-22 10:08",
+            resetsAt: now.addingTimeInterval(6 * 86_400)
+        )
+        let fallbackQuota = QuotaSnapshot(
+            id: "7d",
+            title: "7 天",
+            remaining: 0.52,
+            resetText: "2026-07-22 10:08"
+        )
+
+        XCTAssertEqual(MenuBarQuotaResetText.text(for: relativeQuota, now: now), "6 天后重置")
+        XCTAssertEqual(
+            MenuBarQuotaResetText.text(for: fallbackQuota, now: now),
+            "2026-07-22 10:08 重置"
+        )
+    }
+
+    func testMenuSummaryLayoutStacksOnlyWhenBothQuotasAreVisible() {
+        XCTAssertEqual(MenuBarSummaryLayout.layout(forQuotaCount: 0), .sideBySide)
+        XCTAssertEqual(MenuBarSummaryLayout.layout(forQuotaCount: 1), .sideBySide)
+        XCTAssertEqual(MenuBarSummaryLayout.layout(forQuotaCount: 2), .stacked)
+    }
+
+    func testQuotaObservationDescriptionUsesActualObservationAge() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let quota = QuotaSnapshot(
+            id: "7d",
+            title: "7 天",
+            remaining: 0.52,
+            resetText: "2026-07-22 10:08",
+            observedAt: now.addingTimeInterval(-125)
+        )
+
+        XCTAssertEqual(quota.observationDescription(now: now), "2 分钟前观测")
+        XCTAssertEqual(
+            MenuBarQuotaTimingText.text(for: quota, now: now),
+            "2026-07-22 10:08 重置 · 2 分钟前观测"
+        )
+    }
+
     func testFormatsCompactValues() {
         XCTAssertEqual(TokenFormatter.compact(999), "999")
         XCTAssertEqual(TokenFormatter.compact(1_500), "1.5K")
@@ -81,6 +128,102 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(TokenFormatter.percentage(0.48235), "48.2%")
         XCTAssertEqual(TokenFormatter.percentage(0), "0.0%")
         XCTAssertEqual(TokenFormatter.percentage(1), "100.0%")
+    }
+}
+
+@MainActor
+final class StatusItemPresentationTests: XCTestCase {
+    func testUsesCodexUCompatibleCanvasAndIconMetrics() {
+        let presentation = StatusItemPresentation(
+            snapshot: .preview,
+            configuration: .standard,
+            displayMode: .rich
+        )
+
+        XCTAssertEqual(presentation.imageSize.height, 22)
+        XCTAssertEqual(StatusItemLayoutMetrics.iconRect, NSRect(x: 2, y: 2, width: 18, height: 18))
+        XCTAssertEqual(presentation.itemLength, presentation.imageSize.width + 8)
+
+        guard let appearance = NSAppearance(named: .aqua) else {
+            return XCTFail("Expected the standard Aqua appearance to be available")
+        }
+        let image = StatusItemRenderer().render(presentation, appearance: appearance)
+        XCTAssertEqual(image.size, presentation.imageSize)
+        XCTAssertFalse(image.isTemplate)
+    }
+
+    func testBuildsOnlyQuotaMetricsAndClassicUsesCompactWidth() {
+        let rich = StatusItemPresentation(
+            snapshot: .preview,
+            configuration: .standard,
+            displayMode: .rich
+        )
+        let classic = StatusItemPresentation(
+            snapshot: .preview,
+            configuration: .standard,
+            displayMode: .classic
+        )
+
+        XCTAssertEqual(rich.metrics.map(\.label), ["5H", "7d"])
+        XCTAssertEqual(rich.metrics.map(\.value), ["85%", "84%"])
+        XCTAssertEqual(rich.metrics.map(\.paletteRole), [.fiveHour, .weekly])
+        XCTAssertFalse(rich.label.contains("今日"))
+        XCTAssertLessThan(classic.imageSize.width, rich.imageSize.width)
+    }
+
+    func testCountdownPreferenceControlsInlineResetAndCodexStyleTooltip() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let snapshot = DashboardSnapshot(
+            planName: "Pro 20x",
+            updatedText: "刚刚",
+            periods: DashboardSnapshot.preview.periods,
+            quotas: [
+                QuotaSnapshot(
+                    id: "7d", title: "7 天", remaining: 0.57, resetText: "",
+                    resetsAt: now.addingTimeInterval(6 * 86_400)
+                )
+            ],
+            models: [],
+            dailyUsage: []
+        )
+        let visible = StatusItemPresentation(
+            snapshot: snapshot,
+            configuration: .standard,
+            displayMode: .rich,
+            now: now
+        )
+        let hidden = StatusItemPresentation(
+            snapshot: snapshot,
+            configuration: MenuBarLabelConfiguration(
+                quotaDisplay: .remaining,
+                showsFiveHour: true,
+                showsWeekly: true,
+                showsResetCountdown: false
+            ),
+            displayMode: .rich,
+            now: now
+        )
+
+        XCTAssertEqual(visible.metrics.first?.resetText, "6d")
+        XCTAssertTrue(visible.tooltip.contains("7 天额度 剩余 57%，6 天后重置"))
+        XCTAssertTrue(visible.tooltip.contains("点击查看用量"))
+        XCTAssertFalse(visible.tooltip.contains("Codex 用量菜单"))
+        XCTAssertNil(hidden.metrics.first?.resetText)
+        XCTAssertFalse(hidden.tooltip.contains("重置"))
+        XCTAssertLessThan(hidden.imageSize.width, visible.imageSize.width)
+        XCTAssertEqual(
+            visible.imageSize.width,
+            StatusItemLayoutMetrics.leadingContentWidth
+                + StatusItemLayoutMetrics.richValueWidth
+                + StatusItemLayoutMetrics.richResetWidth
+                + 2
+        )
+        XCTAssertEqual(
+            hidden.imageSize.width,
+            StatusItemLayoutMetrics.leadingContentWidth
+                + StatusItemLayoutMetrics.richValueWidth
+                + 2
+        )
     }
 }
 
@@ -183,22 +326,22 @@ final class DashboardSnapshotTests: XCTestCase {
     }
 
     func testMenuBarConfigurationControlsMetricAndVisibleContent() {
-        let usedWithToday = MenuBarLabelConfiguration(
+        let usedFiveHour = MenuBarLabelConfiguration(
             quotaDisplay: .used,
             showsFiveHour: true,
             showsWeekly: false,
-            showsToday: true
+            showsResetCountdown: true
         )
         let remainingWeekly = MenuBarLabelConfiguration(
             quotaDisplay: .remaining,
             showsFiveHour: false,
             showsWeekly: true,
-            showsToday: false
+            showsResetCountdown: true
         )
 
         XCTAssertEqual(
-            DashboardSnapshot.preview.menuBarLabel(configuration: usedWithToday),
-            "5H 15% · 今日 17.0M"
+            DashboardSnapshot.preview.menuBarLabel(configuration: usedFiveHour),
+            "5H 15%"
         )
         XCTAssertEqual(
             DashboardSnapshot.preview.menuBarLabel(configuration: remainingWeekly),
@@ -211,12 +354,38 @@ final class DashboardSnapshotTests: XCTestCase {
             quotaDisplay: .remaining,
             showsFiveHour: false,
             showsWeekly: false,
-            showsToday: false
+            showsResetCountdown: true
         )
 
         XCTAssertEqual(
             DashboardSnapshot.preview.menuBarLabel(configuration: hidden),
             "SpendScope"
+        )
+    }
+
+    func testQuotaResetCountdownUsesCompactMinuteHourAndDayUnits() {
+        let now = Date(timeIntervalSince1970: 1_000)
+
+        XCTAssertEqual(
+            QuotaSnapshot(
+                id: "5h", title: "5 小时", remaining: 0.8, resetText: "",
+                resetsAt: now.addingTimeInterval(30 * 60)
+            ).resetCountdown(now: now),
+            "30m"
+        )
+        XCTAssertEqual(
+            QuotaSnapshot(
+                id: "5h", title: "5 小时", remaining: 0.8, resetText: "",
+                resetsAt: now.addingTimeInterval(2 * 3_600)
+            ).resetCountdown(now: now),
+            "2h"
+        )
+        XCTAssertEqual(
+            QuotaSnapshot(
+                id: "7d", title: "7 天", remaining: 0.8, resetText: "",
+                resetsAt: now.addingTimeInterval(6 * 86_400 + 23 * 3_600)
+            ).resetCountdown(now: now),
+            "6d"
         )
     }
 

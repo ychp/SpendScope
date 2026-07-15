@@ -56,9 +56,6 @@ struct DashboardSnapshot: Sendable {
         if configuration.showsWeekly, let weeklyQuota {
             components.append(weeklyQuota.label(for: configuration.quotaDisplay))
         }
-        if configuration.showsToday {
-            components.append("今日 \(TokenFormatter.compact(todayTokens))")
-        }
         return components.isEmpty ? "SpendScope" : components.joined(separator: " · ")
     }
 
@@ -152,6 +149,24 @@ struct QuotaSnapshot: Identifiable, Sendable {
     let title: String
     let remaining: Double
     let resetText: String
+    let resetsAt: Date?
+    let observedAt: Date?
+
+    init(
+        id: String,
+        title: String,
+        remaining: Double,
+        resetText: String,
+        resetsAt: Date? = nil,
+        observedAt: Date? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.remaining = remaining
+        self.resetText = resetText
+        self.resetsAt = resetsAt
+        self.observedAt = observedAt
+    }
 
     var remainingPercent: Int { Int((remaining * 100).rounded()) }
 
@@ -176,6 +191,37 @@ struct QuotaSnapshot: Identifiable, Sendable {
             percent = remainingPercent
         }
         return "\(compactTitle) \(percent)%"
+    }
+
+    func resetCountdown(now: Date = Date()) -> String? {
+        resetInterval(now: now).map { "\($0.amount)\($0.compactUnit)" }
+    }
+
+    func resetDescription(now: Date = Date()) -> String? {
+        resetInterval(now: now).map { "\($0.amount) \($0.chineseUnit)后重置" }
+    }
+
+    func observationDescription(now: Date = Date()) -> String? {
+        guard let observedAt else { return nil }
+        let seconds = max(now.timeIntervalSince(observedAt), 0)
+        if seconds < 60 { return "刚刚观测" }
+        if seconds < 3_600 { return "\(max(1, Int(seconds / 60))) 分钟前观测" }
+        if seconds < 86_400 { return "\(max(1, Int(seconds / 3_600))) 小时前观测" }
+        return "\(max(1, Int(seconds / 86_400))) 天前观测"
+    }
+
+    private func resetInterval(now: Date) -> (amount: Int, compactUnit: String, chineseUnit: String)? {
+        guard let resetsAt else { return nil }
+        let seconds = resetsAt.timeIntervalSince(now)
+        guard seconds > 0 else { return nil }
+
+        if seconds < 3_600 {
+            return (max(1, Int(ceil(seconds / 60))), "m", "分钟")
+        }
+        if seconds < 86_400 {
+            return (max(1, Int(ceil(seconds / 3_600))), "h", "小时")
+        }
+        return (max(1, Int(floor(seconds / 86_400))), "d", "天")
     }
 }
 

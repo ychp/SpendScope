@@ -40,6 +40,54 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertFalse(text.contains("过期"))
     }
 
+    func testMenuUpdateTextCombinesStaleStateWithLastRefresh() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let state = DashboardLoadState.stale(
+            .fixture(todayTokens: 17),
+            .fixture,
+            "部分数据暂不可用，正在显示已成功读取的数据。"
+        )
+
+        XCTAssertEqual(
+            MenuBarUpdateText.text(for: state, calendar: calendar),
+            "部分数据待更新 · 已刷新 · 00:00"
+        )
+    }
+
+    func testMenuUpdateTextUsesUpdateCopyAndTwentyFourHourRefreshTime() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60) ?? .gmt
+        let state = DashboardLoadState.loaded(
+            .fixture(todayTokens: 17, updatedText: "刚刚刷新"),
+            SourceSummary(
+                cli: .connected,
+                desktop: .connected,
+                index: .connected,
+                lastSuccessfulRefresh: Date(timeIntervalSince1970: 3_661)
+            )
+        )
+
+        XCTAssertEqual(
+            MenuBarUpdateText.text(for: state, calendar: calendar),
+            "刚刚更新 · 09:01"
+        )
+    }
+
+    func testMenuUnavailableContentReplacesMetricsForNonUsableStates() throws {
+        let failed = try XCTUnwrap(MenuBarUnavailableContent.content(for: .failed("读取失败")))
+
+        XCTAssertEqual(failed.title, "暂时无法读取数据")
+        XCTAssertEqual(failed.description, "读取失败")
+        XCTAssertTrue(failed.showsRefresh)
+        XCTAssertNil(MenuBarUnavailableContent.content(for: .loaded(.fixture(todayTokens: 1), .fixture)))
+        XCTAssertNil(MenuBarUnavailableContent.content(for: .stale(
+            .fixture(todayTokens: 1),
+            .fixture,
+            "部分数据待更新"
+        )))
+    }
+
     func testRefreshPublishesRealSnapshotAndCoalescesConcurrentCalls() async {
         let client = FakeDashboardDataClient(
             loadResult: .empty(.fixture),
@@ -562,10 +610,10 @@ private extension SourceSummary {
 }
 
 private extension DashboardSnapshot {
-    static func fixture(todayTokens: Int) -> DashboardSnapshot {
+    static func fixture(todayTokens: Int, updatedText: String = "已刷新") -> DashboardSnapshot {
         DashboardSnapshot(
             planName: "Plus",
-            updatedText: "已刷新",
+            updatedText: updatedText,
             periods: [
                 .init(
                     id: "today", title: "今日", total: todayTokens,
