@@ -61,6 +61,14 @@ enum CodexPlanCatalog {
 }
 
 struct SettingsView: View {
+    private enum Layout {
+        static let labelWidth: CGFloat = 205
+        static let controlWidth: CGFloat = 248
+        static let columnSpacing: CGFloat = 20
+        static let rowHeight: CGFloat = 48
+        static let planBadgeWidth: CGFloat = 148
+    }
+
     let store: DashboardStore
     @AppStorage(AppPreferenceKeys.appearance) private var appearanceRaw = AppearancePreference.system.rawValue
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
@@ -86,7 +94,7 @@ struct SettingsView: View {
     private var generalSettings: some View {
         Form {
             Section("界面") {
-                LabeledContent {
+                preferenceRow("外观", detail: "默认跟随 macOS 系统外观") {
                     Picker("", selection: $appearanceRaw) {
                         Text("自动").tag(AppearancePreference.system.rawValue)
                         Text("浅色").tag(AppearancePreference.light.rawValue)
@@ -94,53 +102,52 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 240)
-                } label: {
-                    settingLabel("外观", detail: "默认跟随 macOS 系统外观")
                 }
             }
 
             Section("菜单栏") {
-                LabeledContent {
+                preferenceRow("实时预览", detail: "菜单栏中将显示的统计摘要") {
                     Text(menuBarPreview)
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                } label: {
-                    settingLabel("实时预览", detail: "菜单栏中将显示的统计摘要")
+                        .font(.callout.weight(.medium).monospacedDigit())
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
                 }
 
-                LabeledContent {
+                preferenceRow("额度口径", detail: "选择菜单栏百分比的统计方式") {
                     Picker("", selection: $quotaDisplayRaw) {
                         Text("已用量").tag(QuotaDisplayPreference.used.rawValue)
                         Text("剩余量").tag(QuotaDisplayPreference.remaining.rawValue)
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 240)
-                } label: {
-                    settingLabel("额度口径", detail: "选择菜单栏百分比的统计方式")
                 }
 
-                LabeledContent {
-                    HStack(spacing: 8) {
+                preferenceRow("显示内容", detail: "可同时展示多个统计维度") {
+                    HStack(spacing: 6) {
                         Toggle("5H", isOn: $showsFiveHour)
                             .toggleStyle(.button)
+                            .frame(maxWidth: .infinity)
                         Toggle("7d", isOn: $showsWeekly)
                             .toggleStyle(.button)
+                            .frame(maxWidth: .infinity)
                         Toggle("今日", isOn: $showsToday)
                             .toggleStyle(.button)
+                            .frame(maxWidth: .infinity)
                     }
                     .controlSize(.regular)
-                } label: {
-                    settingLabel("显示内容", detail: "可同时展示多个统计维度")
                 }
             }
 
-            Section("默认设置") {
-                Button("恢复默认", systemImage: "arrow.counterclockwise") {
-                    restoreDefaults()
+            Section {
+                preferenceRow("恢复默认", detail: "恢复外观与菜单栏显示设置") {
+                    Button("恢复默认设置", systemImage: "arrow.counterclockwise") {
+                        restoreDefaults()
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
             }
         }
         .formStyle(.grouped)
@@ -159,11 +166,11 @@ struct SettingsView: View {
             }
 
             Section("其他计费方式") {
-                LabeledContent {
+                settingsRow {
+                    Label("API Key", systemImage: "key.fill")
+                } control: {
                     Text("按 Token 用量计费")
                         .foregroundStyle(.secondary)
-                } label: {
-                    Label("API Key", systemImage: "key.fill")
                 }
                 Text("API Key 是独立的按量计费方式，不属于 ChatGPT 订阅套餐。")
                     .font(.caption)
@@ -181,18 +188,38 @@ struct SettingsView: View {
                 healthRow("Codex CLI", health: store.sourceSummary?.cli)
                 healthRow("Codex macOS", health: store.sourceSummary?.desktop)
                 healthRow("线程索引", health: store.sourceSummary?.index)
-                LabeledContent("最近成功刷新", value: lastRefreshText)
+                settingsRow {
+                    Text("最近成功刷新")
+                } control: {
+                    Text(lastRefreshText)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("刷新") {
-                LabeledContent("自动刷新", value: "每 60 秒")
-                Button("立即刷新", systemImage: "arrow.clockwise") {
-                    Task { await store.refresh() }
+                settingsRow {
+                    Text("自动刷新")
+                } control: {
+                    Text("每 60 秒")
+                        .foregroundStyle(.secondary)
                 }
-                .disabled(store.isRefreshing)
-                if store.isRefreshing {
-                    ProgressView("正在刷新…")
-                        .controlSize(.small)
+
+                settingsRow {
+                    settingLabel("手动刷新", detail: "立即重新读取本机 Codex 数据")
+                } control: {
+                    Button {
+                        Task { await store.refresh() }
+                    } label: {
+                        if store.isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("立即刷新", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                    .disabled(store.isRefreshing)
                 }
             }
 
@@ -203,6 +230,8 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollDisabled(true)
+        .scrollIndicators(.hidden)
     }
 
     private func planRow(_ plan: CodexPlan) -> some View {
@@ -220,24 +249,27 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 16)
 
-            if plan.isPaid {
-                Text("付费")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(.quaternary, in: Capsule())
-            }
+            HStack(spacing: 6) {
+                if plan.isPaid {
+                    Text("付费")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(.quaternary, in: Capsule())
+                }
 
-            if isCurrent(plan) {
-                Label("当前套餐", systemImage: "checkmark.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.green)
+                if isCurrent(plan) {
+                    Label("当前套餐", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
             }
+            .frame(width: Layout.planBadgeWidth, alignment: .trailing)
         }
-        .padding(.vertical, 4)
+        .frame(minHeight: Layout.rowHeight)
     }
 
     private func isCurrent(_ plan: CodexPlan) -> Bool {
@@ -266,6 +298,34 @@ struct SettingsView: View {
         }
     }
 
+    private func preferenceRow<Control: View>(
+        _ title: String,
+        detail: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        settingsRow {
+            settingLabel(title, detail: detail)
+        } control: {
+            control()
+        }
+    }
+
+    private func settingsRow<Leading: View, Control: View>(
+        @ViewBuilder label: () -> Leading,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(alignment: .center, spacing: Layout.columnSpacing) {
+            label()
+                .frame(width: Layout.labelWidth, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            control()
+                .frame(width: Layout.controlWidth, alignment: .trailing)
+        }
+        .frame(minHeight: Layout.rowHeight)
+    }
+
     private func restoreDefaults() {
         appearanceRaw = AppearancePreference.system.rawValue
         quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
@@ -275,7 +335,9 @@ struct SettingsView: View {
     }
 
     private func healthRow(_ title: String, health: SourceHealth?) -> some View {
-        LabeledContent(title) {
+        settingsRow {
+            Text(title)
+        } control: {
             Label(healthText(health), systemImage: healthSymbol(health))
                 .foregroundStyle(healthColor(health))
         }
