@@ -78,6 +78,15 @@ struct MenuBarUnavailableContent: Equatable {
     }
 }
 
+enum MenuBarSummaryLayout: Equatable {
+    case sideBySide
+    case stacked
+
+    static func layout(forQuotaCount count: Int) -> MenuBarSummaryLayout {
+        count > 1 ? .stacked : .sideBySide
+    }
+}
+
 struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
@@ -270,28 +279,65 @@ struct MenuBarPopoverView: View {
     }
 
     private var quotaAndTodaySummary: some View {
-        HStack(alignment: .top, spacing: 10) {
-            quotaSection
+        let quotaCount = store.snapshot?.visibleQuotas.count ?? 0
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(width: 1, height: 62)
+        return Group {
+            switch MenuBarSummaryLayout.layout(forQuotaCount: quotaCount) {
+            case .sideBySide:
+                HStack(alignment: .top, spacing: 10) {
+                    quotaSection
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("今日 Token")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(width: 1, height: 62)
 
-                Text(store.snapshot.map { TokenFormatter.compact($0.todayTokens) } ?? "--")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+                    compactTodaySummary
+                }
+            case .stacked:
+                VStack(spacing: 9) {
+                    quotaSection
+
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(height: 1)
+
+                    wideTodaySummary
+                }
             }
-            .frame(width: 84, alignment: .leading)
         }
         .padding(10)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var compactTodaySummary: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("今日 Token")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            todayTokenValue
+        }
+        .frame(width: 84, alignment: .leading)
+    }
+
+    private var wideTodaySummary: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("今日 Token")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            todayTokenValue
+        }
+    }
+
+    private var todayTokenValue: some View {
+        Text(store.snapshot.map { TokenFormatter.compact($0.todayTokens) } ?? "--")
+            .font(.system(size: 20, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
     }
 
     @ViewBuilder

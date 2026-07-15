@@ -94,6 +94,12 @@ final class TokenFormatterTests: XCTestCase {
         )
     }
 
+    func testMenuSummaryLayoutStacksOnlyWhenBothQuotasAreVisible() {
+        XCTAssertEqual(MenuBarSummaryLayout.layout(forQuotaCount: 0), .sideBySide)
+        XCTAssertEqual(MenuBarSummaryLayout.layout(forQuotaCount: 1), .sideBySide)
+        XCTAssertEqual(MenuBarSummaryLayout.layout(forQuotaCount: 2), .stacked)
+    }
+
     func testFormatsCompactValues() {
         XCTAssertEqual(TokenFormatter.compact(999), "999")
         XCTAssertEqual(TokenFormatter.compact(1_500), "1.5K")
