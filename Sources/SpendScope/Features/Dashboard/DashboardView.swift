@@ -75,6 +75,7 @@ private struct DashboardContentView: View {
         .padding(16)
         .frame(minWidth: 920, minHeight: 620)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tint(SpendScopeTheme.dashboardPrimary)
     }
 
     private var dashboardHeader: some View {
@@ -132,7 +133,9 @@ private struct DashboardContentView: View {
     }
 
     private func quotaColor(for quota: QuotaSnapshot) -> Color {
-        quota.id == "7d" ? SpendScopeTheme.accentBlue : SpendScopeTheme.accent
+        quota.id == "7d"
+            ? SpendScopeTheme.dashboardSecondary
+            : SpendScopeTheme.dashboardPrimary
     }
 
     private func quotaDiameter(for quota: QuotaSnapshot) -> CGFloat {
@@ -229,25 +232,25 @@ private struct DashboardContentView: View {
                     "输入",
                     value: period.uncachedInput,
                     share: period.share(of: period.uncachedInput),
-                    color: SpendScopeTheme.accent
+                    color: SpendScopeTheme.dashboardInput
                 )
                 periodMetric(
                     "缓存",
                     value: period.cachedInput,
                     share: period.share(of: period.cachedInput),
-                    color: SpendScopeTheme.accentBlue
+                    color: SpendScopeTheme.dashboardCachedInput
                 )
                 periodMetric(
                     "输出",
                     value: period.visibleOutput,
                     share: period.share(of: period.visibleOutput),
-                    color: SpendScopeTheme.output
+                    color: SpendScopeTheme.dashboardOutput
                 )
                 periodMetric(
                     "推理",
                     value: period.reasoning,
                     share: period.share(of: period.reasoning),
-                    color: SpendScopeTheme.reasoning
+                    color: SpendScopeTheme.dashboardReasoning
                 )
             }
         }
@@ -307,14 +310,7 @@ private struct DashboardContentView: View {
             HStack {
                 Text("Token 趋势").font(.headline)
                 Spacer()
-                Picker("时间范围", selection: $selectedRange) {
-                    ForEach(TrendRange.allCases) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 260)
+                trendRangePicker
             }
 
             Chart(selectedRange.select(from: snapshot.dailyUsage)) { item in
@@ -322,20 +318,20 @@ private struct DashboardContentView: View {
                     x: .value("日期", item.day),
                     y: .value("Token", item.total)
                 )
-                .foregroundStyle(SpendScopeTheme.accent.opacity(0.12))
+                .foregroundStyle(SpendScopeTheme.dashboardPrimary.opacity(0.12))
 
                 LineMark(
                     x: .value("日期", item.day),
                     y: .value("Token", item.total)
                 )
-                .foregroundStyle(SpendScopeTheme.accent)
+                .foregroundStyle(SpendScopeTheme.dashboardPrimary)
                 .lineStyle(StrokeStyle(lineWidth: 3))
 
                 PointMark(
                     x: .value("日期", item.day),
                     y: .value("Token", item.total)
                 )
-                .foregroundStyle(SpendScopeTheme.accent)
+                .foregroundStyle(SpendScopeTheme.dashboardPrimary)
             }
             .chartYAxis {
                 AxisMarks(position: .leading) { value in
@@ -350,5 +346,37 @@ private struct DashboardContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .dashboardCard(padding: 12)
+    }
+
+    private var trendRangePicker: some View {
+        HStack(spacing: 2) {
+            ForEach(TrendRange.allCases) { range in
+                let isSelected = selectedRange == range
+
+                Button {
+                    selectedRange = range
+                } label: {
+                    Text(range.rawValue)
+                        .font(.caption.weight(isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                        .background {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(SpendScopeTheme.dashboardPrimary)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(range.rawValue)
+                .accessibilityValue(isSelected ? "已选择" : "未选择")
+            }
+        }
+        .padding(2)
+        .frame(width: 260)
+        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("时间范围")
     }
 }
