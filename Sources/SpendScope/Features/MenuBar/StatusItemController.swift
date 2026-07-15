@@ -439,6 +439,7 @@ final class StatusItemController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
     private var popover: NSPopover?
+    private var popoverNeedsFocus = false
     private var appearanceObservation: NSKeyValueObservation?
     private var lastPresentation: StatusItemPresentation?
     private var lastAppearanceName: NSAppearance.Name?
@@ -472,6 +473,7 @@ final class StatusItemController: NSObject {
     }
 
     func closePopover() {
+        popoverNeedsFocus = false
         popover?.performClose(nil)
         popover = nil
     }
@@ -524,8 +526,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func applicationDidBecomeActive(_ notification: Notification) {
-        guard let popover else { return }
-        focusPopoverWindow(popover)
+        focusPopoverIfReady()
     }
 
     @objc private func statusItemClicked() {
@@ -560,14 +561,23 @@ final class StatusItemController: NSObject {
         hostingController.view.layoutSubtreeIfNeeded()
         popover.contentSize = hostingController.view.fittingSize
         self.popover = popover
+        popoverNeedsFocus = true
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        focusPopoverWindow(popover)
-        NSApp.activate(ignoringOtherApps: true)
+        focusPopoverIfReady()
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
-    private func focusPopoverWindow(_ popover: NSPopover) {
-        guard popover.isShown else { return }
-        popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
+    private func focusPopoverIfReady() {
+        guard popoverNeedsFocus,
+              let popover,
+              popover.isShown,
+              let window = popover.contentViewController?.view.window else {
+            return
+        }
+        window.makeKey()
+        popoverNeedsFocus = false
     }
 
     private func updateStatusItem() {
@@ -613,6 +623,6 @@ extension StatusItemController: NSPopoverDelegate {
               shownPopover === popover else {
             return
         }
-        focusPopoverWindow(shownPopover)
+        focusPopoverIfReady()
     }
 }
