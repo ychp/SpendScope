@@ -20,7 +20,7 @@ struct SpendScopeApp: App {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 14, height: 14)
+                    .frame(width: 11, height: 11)
                 Text(store.menuBarLabel(configuration: menuBarConfiguration))
                     .monospacedDigit()
                     .lineLimit(1)
