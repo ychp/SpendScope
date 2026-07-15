@@ -70,8 +70,6 @@ struct SettingsView: View {
     }
 
     let store: DashboardStore
-    @Environment(\.colorScheme) private var colorScheme
-    @AppStorage(AppPreferenceKeys.appearance) private var appearanceRaw = AppearancePreference.system.rawValue
     @AppStorage(AppPreferenceKeys.statusItemDisplayMode) private var statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
     @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
@@ -95,18 +93,6 @@ struct SettingsView: View {
 
     private var generalSettings: some View {
         Form {
-            Section("界面") {
-                preferenceRow("外观", detail: "默认跟随 macOS 系统外观") {
-                    Picker("", selection: $appearanceRaw) {
-                        Text("自动").tag(AppearancePreference.system.rawValue)
-                        Text("浅色").tag(AppearancePreference.light.rawValue)
-                        Text("深色").tag(AppearancePreference.dark.rawValue)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                }
-            }
-
             Section("状态栏") {
                 preferenceRow("实时预览", detail: "与状态栏使用同一套绘制样式") {
                     Image(nsImage: StatusItemRenderer().render(
@@ -155,7 +141,7 @@ struct SettingsView: View {
             }
 
             Section {
-                preferenceRow("恢复默认", detail: "恢复外观与状态栏显示设置") {
+                preferenceRow("恢复默认", detail: "恢复状态栏显示设置") {
                     Button("恢复默认设置", systemImage: "arrow.counterclockwise") {
                         restoreDefaults()
                     }
@@ -341,9 +327,6 @@ struct SettingsView: View {
     }
 
     private var previewAppearance: NSAppearance {
-        if let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua) {
-            return appearance
-        }
         return NSAppearance(named: .aqua)!
     }
 
@@ -436,7 +419,6 @@ struct SettingsView: View {
     }
 
     private func restoreDefaults() {
-        appearanceRaw = AppearancePreference.system.rawValue
         statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
         showsResetCountdown = true
         quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue

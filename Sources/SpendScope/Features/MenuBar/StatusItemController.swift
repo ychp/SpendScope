@@ -542,7 +542,7 @@ final class StatusItemController: NSObject {
                 self?.onOpenSettings()
             }
         )
-        .preferredColorScheme(preferredColorScheme)
+        .preferredColorScheme(.light)
         let hostingController = NSHostingController(rootView: content)
         popover.contentViewController = hostingController
         hostingController.view.layoutSubtreeIfNeeded()
@@ -586,9 +586,4 @@ final class StatusItemController: NSObject {
         ) ?? .rich
     }
 
-    private var preferredColorScheme: ColorScheme? {
-        AppearancePreference(
-            rawValue: defaults.string(forKey: AppPreferenceKeys.appearance) ?? ""
-        )?.colorScheme
-    }
 }

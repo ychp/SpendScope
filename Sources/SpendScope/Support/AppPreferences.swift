@@ -1,28 +1,11 @@
 import SwiftUI
 
 enum AppPreferenceKeys {
-    static let appearance = "appearance"
     static let statusItemDisplayMode = "menuBar.displayMode"
     static let showsResetCountdown = "menuBar.showsResetCountdown"
     static let quotaDisplay = "menuBar.quotaDisplay"
     static let showsFiveHour = "menuBar.showsFiveHour"
     static let showsWeekly = "menuBar.showsWeekly"
-}
-
-enum AppearancePreference: String, CaseIterable, Identifiable, Sendable {
-    case system
-    case light
-    case dark
-
-    var id: Self { self }
-
-    var colorScheme: ColorScheme? {
-        switch self {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
-        }
-    }
 }
 
 enum QuotaDisplayPreference: String, CaseIterable, Identifiable, Sendable {

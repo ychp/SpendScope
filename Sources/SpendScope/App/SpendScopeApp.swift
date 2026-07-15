@@ -3,26 +3,20 @@ import SwiftUI
 @main
 struct SpendScopeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @AppStorage(AppPreferenceKeys.appearance) private var appearanceRaw = AppearancePreference.system.rawValue
 
     var body: some Scene {
         Window("SpendScope", id: "dashboard") {
             DashboardView(store: appDelegate.store)
-                .preferredColorScheme(preferredColorScheme)
+                .preferredColorScheme(.light)
                 .background(StatusItemSceneBridge(appDelegate: appDelegate))
         }
         .defaultSize(width: 920, height: 620)
 
         Settings {
             SettingsView(store: appDelegate.store)
-                .preferredColorScheme(preferredColorScheme)
+                .preferredColorScheme(.light)
         }
     }
-
-    private var preferredColorScheme: ColorScheme? {
-        AppearancePreference(rawValue: appearanceRaw)?.colorScheme
-    }
-
 }
 
 private struct StatusItemSceneBridge: View {
