@@ -66,7 +66,7 @@ struct SettingsView: View {
         static let controlWidth: CGFloat = 248
         static let columnSpacing: CGFloat = 20
         static let rowHeight: CGFloat = 48
-        static let planBadgeWidth: CGFloat = 148
+        static let planBadgeWidth: CGFloat = 52
     }
 
     let store: DashboardStore
@@ -156,6 +156,22 @@ struct SettingsView: View {
                     ForEach(CodexPlanCatalog.plans) { plan in
                         planRow(plan)
                             .padding(.horizontal, 12)
+                            .background {
+                                if isCurrent(plan) {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(Color.accentColor.opacity(0.08))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 2)
+                                }
+                            }
+                            .overlay {
+                                if isCurrent(plan) {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(Color.accentColor.opacity(0.22), lineWidth: 1)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 2)
+                                }
+                            }
 
                         if plan.id != CodexPlanCatalog.plans.last?.id {
                             Divider()
@@ -248,8 +264,20 @@ struct SettingsView: View {
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(plan.name)
-                    .fontWeight(isCurrent(plan) ? .semibold : .regular)
+                HStack(spacing: 6) {
+                    Text(plan.name)
+                        .fontWeight(isCurrent(plan) ? .semibold : .regular)
+
+                    if isCurrent(plan) {
+                        Label("当前套餐", systemImage: "checkmark.circle.fill")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    }
+                }
+
                 Text(plan.summary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -258,12 +286,6 @@ struct SettingsView: View {
             Spacer(minLength: 16)
 
             HStack(spacing: 6) {
-                if isCurrent(plan) {
-                    Label("当前套餐", systemImage: "checkmark.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.green)
-                }
-
                 if plan.isPaid {
                     Text("付费")
                         .font(.caption2.weight(.medium))
