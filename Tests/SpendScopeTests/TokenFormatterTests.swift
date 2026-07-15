@@ -142,6 +142,11 @@ final class StatusItemPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.imageSize.height, 22)
         XCTAssertEqual(StatusItemLayoutMetrics.iconRect, NSRect(x: 2, y: 2, width: 18, height: 18))
+        XCTAssertEqual(StatusItemLayoutMetrics.elementSpacing, 5)
+        XCTAssertEqual(
+            StatusItemLayoutMetrics.leadingContentWidth,
+            StatusItemLayoutMetrics.iconRect.maxX + StatusItemLayoutMetrics.elementSpacing
+        )
         XCTAssertEqual(presentation.itemLength, presentation.imageSize.width + 8)
 
         guard let appearance = NSAppearance(named: .aqua) else {
@@ -215,6 +220,7 @@ final class StatusItemPresentationTests: XCTestCase {
             visible.imageSize.width,
             StatusItemLayoutMetrics.leadingContentWidth
                 + StatusItemLayoutMetrics.richValueWidth
+                + StatusItemLayoutMetrics.elementSpacing
                 + StatusItemLayoutMetrics.richResetWidth
                 + 2
         )

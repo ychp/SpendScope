@@ -11,11 +11,12 @@ enum StatusItemLayoutMetrics {
     static let imageHeight: CGFloat = 22
     static let itemOuterPadding: CGFloat = 8
     static let iconRect = NSRect(x: 2, y: 2, width: 18, height: 18)
-    static let leadingContentWidth: CGFloat = 22
+    static let elementSpacing: CGFloat = 5
+    static let leadingContentWidth: CGFloat = iconRect.maxX + elementSpacing
     static let classicQuotaUnitWidth: CGFloat = 25
     static let richValueWidth: CGFloat = 38
     static let richMetricWidth: CGFloat = 58
-    static let richResetWidth: CGFloat = 37
+    static let richResetWidth: CGFloat = 35
     static let richMetricSpacing: CGFloat = 5
     static let emptyImageWidth: CGFloat = 24
 }
@@ -87,7 +88,10 @@ struct StatusItemPresentation: Equatable {
                 imageWidth = StatusItemLayoutMetrics.emptyImageWidth
             } else {
                 let resetWidth = metrics.reduce(CGFloat.zero) { width, metric in
-                    width + (metric.resetText == nil ? 0 : StatusItemLayoutMetrics.richResetWidth)
+                    width + (metric.resetText == nil
+                        ? 0
+                        : StatusItemLayoutMetrics.elementSpacing
+                            + StatusItemLayoutMetrics.richResetWidth)
                 }
                 let metricWidth = metrics.count == 1
                     ? StatusItemLayoutMetrics.richValueWidth
@@ -196,6 +200,7 @@ struct StatusItemRenderer {
                 : StatusItemLayoutMetrics.richValueWidth
 
             if let resetText = metric.resetText {
+                x += StatusItemLayoutMetrics.elementSpacing
                 drawResetCountdown(resetText, x: x)
                 x += StatusItemLayoutMetrics.richResetWidth
             }
@@ -307,7 +312,7 @@ struct StatusItemRenderer {
 
     private func drawResetCountdown(_ value: String, x: CGFloat) {
         let color = NSColor.systemBlue
-        let backgroundRect = NSRect(x: x + 2, y: 3, width: 33, height: 16)
+        let backgroundRect = NSRect(x: x, y: 3, width: 33, height: 16)
         color.withAlphaComponent(0.14).setFill()
         NSBezierPath(
             roundedRect: backgroundRect,
@@ -315,9 +320,7 @@ struct StatusItemRenderer {
             yRadius: backgroundRect.height / 2
         ).fill()
 
-        // SF Symbols have a slightly high optical center when drawn into a square.
-        // Nudge the reset glyph down so it shares the countdown text's visual baseline.
-        let iconRect = NSRect(x: x + 5, y: 6, width: 8, height: 8)
+        let iconRect = NSRect(x: x + 3, y: 7, width: 8, height: 8)
         if let symbol = NSImage(
             systemSymbolName: "arrow.clockwise",
             accessibilityDescription: nil
@@ -326,7 +329,7 @@ struct StatusItemRenderer {
         }
         drawText(
             value,
-            in: NSRect(x: x + 14, y: 4, width: 18, height: 13),
+            in: NSRect(x: x + 12, y: 4, width: 18, height: 13),
             font: .monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold),
             color: color,
             alignment: .left
