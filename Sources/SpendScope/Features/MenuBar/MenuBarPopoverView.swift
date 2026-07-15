@@ -330,7 +330,7 @@ struct MenuBarPopoverView: View {
 
                     Rectangle()
                         .fill(Color.primary.opacity(0.08))
-                        .frame(width: 1, height: 76)
+                        .frame(width: 1, height: 58)
 
                     compactTodaySummary
                 }
@@ -346,7 +346,8 @@ struct MenuBarPopoverView: View {
                 }
             }
         }
-        .padding(10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
     }
 
@@ -359,7 +360,7 @@ struct MenuBarPopoverView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(width: 84, height: 76)
+        .frame(width: 84, height: 58)
     }
 
     private var wideTodaySummary: some View {
