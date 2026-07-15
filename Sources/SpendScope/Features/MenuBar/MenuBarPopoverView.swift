@@ -127,11 +127,27 @@ struct MenuBarPopoverView: View {
 
             tokenCompositionBar
 
-            LazyVGrid(columns: tokenMetricColumns, spacing: 8) {
-                ForEach(tokenMetrics) { metric in
+            LazyVGrid(columns: tokenMetricColumns, spacing: 0) {
+                ForEach(Array(tokenMetrics.enumerated()), id: \.element.id) { index, metric in
                     tokenMetricCard(metric)
+                        .overlay(alignment: .trailing) {
+                            if index.isMultiple(of: 2) {
+                                Rectangle()
+                                    .fill(Color.primary.opacity(0.07))
+                                    .frame(width: 1)
+                            }
+                        }
+                        .overlay(alignment: .bottom) {
+                            if index < 2 {
+                                Rectangle()
+                                    .fill(Color.primary.opacity(0.07))
+                                    .frame(height: 1)
+                            }
+                        }
                 }
             }
+            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .dashboardCard(padding: 14)
     }
@@ -184,10 +200,6 @@ struct MenuBarPopoverView: View {
         }
         .padding(10)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.primary.opacity(0.07))
-        }
     }
 
     @ViewBuilder
@@ -334,12 +346,7 @@ struct MenuBarPopoverView: View {
             }
 
         }
-        .padding(9)
-        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 9))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9)
-                .stroke(Color.primary.opacity(0.06))
-        }
+        .padding(10)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(metric.accessibilityText)
     }
