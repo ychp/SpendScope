@@ -141,7 +141,6 @@ struct SettingsView: View {
                         restoreDefaults()
                     }
                     .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -213,7 +212,6 @@ struct SettingsView: View {
                         }
                     }
                     .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
                     .disabled(store.isRefreshing)
                 }
             }
