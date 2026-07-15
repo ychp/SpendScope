@@ -113,6 +113,8 @@ struct MenuBarPopoverView: View {
 
             quotaAndTodaySummary
 
+            tokenCompositionBar
+
             LazyVGrid(columns: tokenMetricColumns, spacing: 8) {
                 ForEach(tokenMetrics) { metric in
                     tokenMetricCard(metric)
@@ -242,6 +244,42 @@ struct MenuBarPopoverView: View {
         ]
     }
 
+    private var tokenCompositionBar: some View {
+        let metrics = tokenMetrics
+        let hasUsage = metrics.contains { $0.value != nil }
+
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("今日构成")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Text(hasUsage ? "按今日总量" : "暂无数据")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    ForEach(metrics) { metric in
+                        Rectangle()
+                            .fill(metric.color)
+                            .frame(width: geometry.size.width * metric.share)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.08))
+                .clipShape(Capsule())
+            }
+            .frame(height: 6)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("今日 Token 构成")
+        .accessibilityValue(hasUsage ? metrics.map(\.accessibilityText).joined(separator: "，") : "暂无数据")
+    }
+
     private var tokenMetrics: [MenuBarTokenMetric] {
         let breakdown = store.snapshot?.breakdown
         let total = store.snapshot?.todayTokens ?? 0
@@ -287,9 +325,6 @@ struct MenuBarPopoverView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            ProgressView(value: metric.share)
-                .tint(metric.color)
-                .controlSize(.mini)
         }
         .padding(9)
         .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 9))
@@ -331,5 +366,9 @@ private struct MenuBarTokenMetric: Identifiable {
 
     var shareText: String {
         value == nil ? "--" : TokenFormatter.percentage(share)
+    }
+
+    var accessibilityText: String {
+        "\(title) \(valueText)，占今日 \(shareText)"
     }
 }
