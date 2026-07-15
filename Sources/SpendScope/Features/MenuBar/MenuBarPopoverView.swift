@@ -158,16 +158,16 @@ struct MenuBarPopoverView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 32, height: 32)
+                .frame(width: 16, height: 16)
                 .foregroundStyle(.white)
-                .padding(10)
+                .padding(5)
                 .background(
                     LinearGradient(
                         colors: [SpendScopeTheme.popoverSecondary, SpendScopeTheme.popoverPrimary],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    in: RoundedRectangle(cornerRadius: 11)
+                    in: RoundedRectangle(cornerRadius: 6)
                 )
 
             VStack(alignment: .leading, spacing: 2) {
