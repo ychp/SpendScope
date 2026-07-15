@@ -162,6 +162,9 @@ struct MenuBarPopoverView: View {
                 }
                 NSApp.activate(ignoringOtherApps: true)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(SpendScopeTheme.accent)
+
             Button("设置", systemImage: "gearshape") {
                 if let onOpenSettings {
                     onOpenSettings()
@@ -170,11 +173,22 @@ struct MenuBarPopoverView: View {
                 }
                 NSApp.activate(ignoringOtherApps: true)
             }
-            Button("退出", systemImage: "power") {
+            .buttonStyle(.bordered)
+
+            Spacer(minLength: 0)
+
+            Divider()
+                .frame(height: 18)
+
+            Button(role: .destructive) {
                 NSApp.terminate(nil)
+            } label: {
+                Label("退出", systemImage: "power")
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("退出 SpendScope")
         }
-        .buttonStyle(.bordered)
     }
 
     private var quotaAndTodaySummary: some View {
