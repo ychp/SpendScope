@@ -73,18 +73,7 @@ struct MenuBarPopoverView: View {
                     .background(availabilityColor.opacity(0.12), in: Capsule())
             }
 
-            HStack(spacing: 20) {
-                quotaColumn(
-                    store.snapshot?.fiveHourQuota,
-                    title: "5 小时",
-                    color: SpendScopeTheme.accent
-                )
-                quotaColumn(
-                    store.snapshot?.weeklyQuota,
-                    title: "7 天",
-                    color: SpendScopeTheme.accentBlue
-                )
-            }
+            quotaSection
 
             Divider()
 
@@ -121,22 +110,50 @@ struct MenuBarPopoverView: View {
         .buttonStyle(.bordered)
     }
 
-    private func quotaColumn(
-        _ quota: QuotaSnapshot?,
-        title: String,
-        color: Color
-    ) -> some View {
+    @ViewBuilder
+    private var quotaSection: some View {
+        let quotas = store.snapshot?.visibleQuotas ?? []
+
+        if quotas.isEmpty {
+            HStack(spacing: 10) {
+                Image(systemName: "gauge.with.dots.needle.33percent")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("暂无可用额度数据")
+                        .font(.headline)
+                    Text("等待 Codex 返回额度信息")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+        } else {
+            HStack(spacing: 20) {
+                ForEach(quotas) { quota in
+                    quotaColumn(quota, color: quotaColor(for: quota))
+                }
+            }
+        }
+    }
+
+    private func quotaColumn(_ quota: QuotaSnapshot, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("\(title)剩余").foregroundStyle(.secondary)
-            Text(quota.map { "\($0.remainingPercent)%" } ?? "--")
+            Text("\(quota.title)剩余").foregroundStyle(.secondary)
+            Text("\(quota.remainingPercent)%")
                 .font(.title.bold())
                 .monospacedDigit()
-            ProgressView(value: quota?.remaining ?? 0).tint(color)
-            Text(quota?.resetText ?? "暂无额度数据")
+            ProgressView(value: quota.remaining).tint(color)
+            Text(quota.resetText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func quotaColor(for quota: QuotaSnapshot) -> Color {
+        quota.id == "7d" ? SpendScopeTheme.accentBlue : SpendScopeTheme.accent
     }
 
     private func breakdownRow(_ title: String, _ value: Int?, _ color: Color) -> some View {
