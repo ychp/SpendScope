@@ -32,7 +32,8 @@ struct MenuBarPopoverView: View {
 
     private var header: some View {
         HStack {
-            Image(systemName: "chart.bar.fill")
+            Image("MenuBarIcon")
+                .renderingMode(.template)
                 .font(.title2)
                 .foregroundStyle(.white)
                 .padding(10)
