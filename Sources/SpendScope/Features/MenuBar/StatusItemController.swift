@@ -8,11 +8,11 @@ enum StatusItemLayoutMetrics {
     static let textOriginX: CGFloat = 24
     static let trailingPadding: CGFloat = 2
     static let itemOuterPadding: CGFloat = 8
-    static let metricSpacing: CGFloat = 6
-    static let labelValueSpacing: CGFloat = 3
-    static let valueHorizontalPadding: CGFloat = 5
-    static let valueMinimumWidth: CGFloat = 32
-    static let valueHeight: CGFloat = 14
+    static let metricSpacing: CGFloat = 7
+    static let labelValueSpacing: CGFloat = 4
+    static let valueHorizontalPadding: CGFloat = 6
+    static let valueMinimumWidth: CGFloat = 36
+    static let valueHeight: CGFloat = 16
 }
 
 struct StatusItemPresentation: Equatable {
@@ -38,10 +38,10 @@ struct StatusItemPresentation: Equatable {
         itemLength = imageWidth + StatusItemLayoutMetrics.itemOuterPadding
     }
 
-    private static var labelFont: NSFont { NSFont.systemFont(ofSize: 9, weight: .medium) }
-    private static var valueFont: NSFont { NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold) }
+    private static var labelFont: NSFont { NSFont.systemFont(ofSize: 10, weight: .semibold) }
+    private static var valueFont: NSFont { NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .bold) }
     private static var fallbackFont: NSFont {
-        NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
     }
 
     private static func metrics(from label: String) -> [Metric] {
@@ -98,9 +98,9 @@ struct StatusItemPresentation: Equatable {
 }
 
 struct StatusItemRenderer {
-    private let labelFont = NSFont.systemFont(ofSize: 9, weight: .medium)
-    private let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold)
-    private let fallbackFont = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+    private let labelFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
+    private let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .bold)
+    private let fallbackFont = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
     private let blue = NSColor(srgbRed: 0.12, green: 0.47, blue: 0.96, alpha: 1)
 
     func render(_ presentation: StatusItemPresentation, appearance: NSAppearance) -> NSImage {
@@ -120,7 +120,7 @@ struct StatusItemRenderer {
         }
 
         NSGraphicsContext.current?.imageInterpolation = .high
-        drawIcon(in: StatusItemLayoutMetrics.iconRect, color: blue)
+        drawIcon(in: StatusItemLayoutMetrics.iconRect, color: NSColor.labelColor)
         drawMetrics(presentation.metrics)
         return image
     }
@@ -141,7 +141,7 @@ struct StatusItemRenderer {
             }
 
             let labelWidth = textWidth(metric.label, font: labelFont)
-            drawText(metric.label, at: x, width: labelWidth, font: labelFont, color: NSColor.secondaryLabelColor)
+            drawText(metric.label, at: x, width: labelWidth, font: labelFont, color: NSColor.labelColor)
             x += labelWidth + StatusItemLayoutMetrics.labelValueSpacing
 
             let valueWidth = max(
@@ -161,20 +161,22 @@ struct StatusItemRenderer {
 
     private func drawValuePill(_ value: String, fraction: CGFloat?, in rect: NSRect) {
         let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
-        blue.withAlphaComponent(0.16).setFill()
+        blue.withAlphaComponent(0.20).setFill()
         path.fill()
 
+        var fillRect: NSRect?
         if let fraction, fraction > 0 {
             NSGraphicsContext.saveGraphicsState()
             path.addClip()
             let fillWidth = max(2, rect.width * min(max(fraction, 0), 1))
-            let fillRect = NSRect(x: rect.minX, y: rect.minY, width: fillWidth, height: rect.height)
+            let progressRect = NSRect(x: rect.minX, y: rect.minY, width: fillWidth, height: rect.height)
             let gradient = NSGradient(
-                starting: blue.withAlphaComponent(0.38),
-                ending: blue.withAlphaComponent(0.68)
+                starting: NSColor(srgbRed: 0.22, green: 0.60, blue: 1.0, alpha: 0.88),
+                ending: blue
             )
-            gradient?.draw(in: fillRect, angle: 0)
+            gradient?.draw(in: progressRect, angle: 0)
             NSGraphicsContext.restoreGraphicsState()
+            fillRect = progressRect
         }
 
         let text = NSAttributedString(
@@ -184,11 +186,21 @@ struct StatusItemRenderer {
                 .foregroundColor: NSColor.labelColor
             ]
         )
-        let textSize = text.size()
-        text.draw(at: NSPoint(
-            x: floor(rect.midX - textSize.width / 2),
-            y: floor(rect.midY - textSize.height / 2)
-        ))
+        drawCentered(text, in: rect)
+
+        if let fillRect {
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: fillRect).addClip()
+            let highlightedText = NSAttributedString(
+                string: value,
+                attributes: [
+                    .font: valueFont,
+                    .foregroundColor: NSColor.white
+                ]
+            )
+            drawCentered(highlightedText, in: rect)
+            NSGraphicsContext.restoreGraphicsState()
+        }
     }
 
     private func drawText(_ value: String, at x: CGFloat, width: CGFloat, font: NSFont, color: NSColor) {
@@ -208,6 +220,14 @@ struct StatusItemRenderer {
 
     private func textWidth(_ value: String, font: NSFont) -> CGFloat {
         ceil((value as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    private func drawCentered(_ text: NSAttributedString, in rect: NSRect) {
+        let textSize = text.size()
+        text.draw(at: NSPoint(
+            x: floor(rect.midX - textSize.width / 2),
+            y: floor(rect.midY - textSize.height / 2)
+        ))
     }
 
     private func drawIcon(in rect: NSRect, color: NSColor) {
