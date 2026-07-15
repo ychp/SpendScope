@@ -129,6 +129,8 @@ struct MenuBarPopoverView: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+        } else if quotas.count == 1, let quota = quotas.first {
+            wideQuotaRow(quota, color: quotaColor(for: quota))
         } else {
             HStack(spacing: 20) {
                 ForEach(quotas) { quota in
@@ -138,16 +140,49 @@ struct MenuBarPopoverView: View {
         }
     }
 
+    private func wideQuotaRow(_ quota: QuotaSnapshot, color: Color) -> some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Text("\(quota.title)额度")
+                    .font(.headline)
+
+                Text("\(quota.remainingPercent)% 剩余")
+                    .font(.headline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(color)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(color.opacity(0.12), in: Capsule())
+
+                Spacer(minLength: 8)
+
+                Label("\(quota.resetText) 重置", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            ProgressView(value: quota.remaining)
+                .tint(color)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func quotaColumn(_ quota: QuotaSnapshot, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("\(quota.title)剩余").foregroundStyle(.secondary)
-            Text("\(quota.remainingPercent)%")
-                .font(.title.bold())
-                .monospacedDigit()
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(quota.title)额度")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 6)
+                Text("\(quota.remainingPercent)%")
+                    .font(.title2.bold())
+                    .monospacedDigit()
+            }
             ProgressView(value: quota.remaining).tint(color)
-            Text(quota.resetText)
+            Label("\(quota.resetText) 重置", systemImage: "clock")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
