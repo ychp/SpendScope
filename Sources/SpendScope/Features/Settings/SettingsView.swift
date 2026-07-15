@@ -258,6 +258,12 @@ struct SettingsView: View {
             Spacer(minLength: 16)
 
             HStack(spacing: 6) {
+                if isCurrent(plan) {
+                    Label("当前套餐", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+
                 if plan.isPaid {
                     Text("付费")
                         .font(.caption2.weight(.medium))
@@ -265,12 +271,6 @@ struct SettingsView: View {
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background(.quaternary, in: Capsule())
-                }
-
-                if isCurrent(plan) {
-                    Label("当前套餐", systemImage: "checkmark.circle.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.green)
                 }
             }
             .frame(width: Layout.planBadgeWidth, alignment: .trailing)
