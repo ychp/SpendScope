@@ -149,11 +149,6 @@ actor CodexImporter {
                 || checkpoint.committedOffset > rollout.fileSize {
                 return true
             }
-            if let indexedThreadID = rollout.thread?.threadID,
-               let checkpointThreadID = checkpoint.threadID,
-               indexedThreadID != checkpointThreadID {
-                return true
-            }
         }
         return false
     }
@@ -172,19 +167,16 @@ actor CodexImporter {
         }
         for rollout in inventory.rollouts {
             let threadID: String?
-            if let indexedThreadID = rollout.thread?.threadID {
-                threadID = indexedThreadID
-            } else {
-                do {
-                    threadID = try store.fileCheckpoint(fileID: rollout.fileID)?.threadID
-                } catch {
-                    issues.append(.init(
-                        kind: .store,
-                        fileID: rollout.fileID,
-                        detail: "checkpoint-read-failed"
-                    ))
-                    continue
-                }
+            do {
+                threadID = try store.fileCheckpoint(fileID: rollout.fileID)?.threadID
+                    ?? rollout.thread?.threadID
+            } catch {
+                issues.append(.init(
+                    kind: .store,
+                    fileID: rollout.fileID,
+                    detail: "checkpoint-read-failed"
+                ))
+                continue
             }
             guard let threadID else { continue }
             mergeArchiveFact(
@@ -247,7 +239,7 @@ actor CodexImporter {
         }
 
         let storedByThread = Dictionary(uniqueKeysWithValues: storedSessions.map { ($0.threadID, $0) })
-        let recoveredThreadID = rollout.thread?.threadID ?? previousFile?.threadID
+        let recoveredThreadID = previousFile?.threadID ?? rollout.thread?.threadID
         let storedForThread = recoveredThreadID.flatMap { storedByThread[$0] }
         let archiveFact = recoveredThreadID.flatMap { archiveFacts[$0] }
         if canSkip(
@@ -460,10 +452,6 @@ actor CodexImporter {
     ) throws {
         switch event {
         case .session(let metadata):
-            if let indexedThreadID = rollout.thread?.threadID,
-               indexedThreadID != metadata.threadID {
-                throw ImportContextIssue.threadMismatch
-            }
             if context.threadID != metadata.threadID {
                 context = contextForSession(
                     metadata,
@@ -768,12 +756,6 @@ private enum FileImportOutcome {
 
 private enum ImportContextIssue: Error {
     case missingThread
-    case threadMismatch
 
-    var detail: String {
-        switch self {
-        case .missingThread: "missing-thread-context"
-        case .threadMismatch: "thread-index-mismatch"
-        }
-    }
+    var detail: String { "missing-thread-context" }
 }

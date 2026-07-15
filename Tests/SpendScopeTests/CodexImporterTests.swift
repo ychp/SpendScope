@@ -247,6 +247,32 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(Set(checkpoints.compactMap { $0.counters?.input }), [150, 200])
     }
 
+    func testEmbeddedSessionMetadataOverridesStaleIndexThreadWithoutDroppingUsage() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic"),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        try fixture.installIndex(
+            archived: false,
+            childEdgeStatus: "closed",
+            updatedAtMilliseconds: 9_000,
+            threadID: "stale-index-thread"
+        )
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(rootURL: fixture.codexRoot, store: store)
+
+        let first = await importer.refresh(scope: .history)
+        let second = await importer.refresh(scope: .history)
+
+        XCTAssertTrue(first.isSuccessful)
+        XCTAssertEqual(second.skippedFileCount, 1)
+        XCTAssertEqual(try store.totalUsage(), 120)
+        XCTAssertEqual(try store.sessions().map(\.threadID), [CodexFixture.threadID])
+        let fileID = try XCTUnwrap(store.sessions().first?.sourceFileID)
+        XCTAssertEqual(try store.fileCheckpoint(fileID: fileID)?.threadID, CodexFixture.threadID)
+    }
+
     func testArchiveFactAggregatesAcrossSameThreadFilesInEitherOrderAndRestart() async throws {
         for archivedIsNewer in [false, true] {
             let fixture = try CodexFixture.make(events: [.sessionCLI, .turn(model: "gpt-synthetic")])
@@ -440,7 +466,8 @@ private final class CodexFixture: @unchecked Sendable {
     func installIndex(
         archived: Bool,
         childEdgeStatus: String,
-        updatedAtMilliseconds: Int64
+        updatedAtMilliseconds: Int64,
+        threadID: String = CodexFixture.threadID
     ) throws {
         let database = try SQLiteDatabase(url: codexRoot.appending(path: "state_1.sqlite"))
         try database.execute(sql: """
@@ -452,14 +479,14 @@ private final class CodexFixture: @unchecked Sendable {
         try database.execute(
             sql: "INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?)",
             bindings: [
-                .text(Self.threadID), .text(rolloutURL.path), .text("cli"), .text("gpt-index"),
+                .text(threadID), .text(rolloutURL.path), .text("cli"), .text("gpt-index"),
                 .integer(1_000), .integer(updatedAtMilliseconds), .integer(archived ? 1 : 0)
             ]
         )
         try database.execute(sql: "CREATE TABLE thread_spawn_edges(child_thread_id TEXT, status TEXT)")
         try database.execute(
             sql: "INSERT INTO thread_spawn_edges VALUES (?, ?)",
-            bindings: [.text(Self.threadID), .text(childEdgeStatus)]
+            bindings: [.text(threadID), .text(childEdgeStatus)]
         )
     }
 
