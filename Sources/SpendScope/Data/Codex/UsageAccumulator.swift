@@ -44,7 +44,7 @@ enum PlanResolver {
             kind = .free
         case "plus":
             kind = .plus
-        case "prolite":
+        case "prolite", "pro":
             kind = .proLite
         default:
             kind = nil

@@ -51,6 +51,10 @@ final class UsageAccumulatorTests: XCTestCase {
             PlanResolution(kind: .proLite, rawValue: "prolite", isInferred: false)
         )
         XCTAssertEqual(
+            PlanResolver.resolve(rawValue: "pro"),
+            PlanResolution(kind: .proLite, rawValue: "pro", isInferred: false)
+        )
+        XCTAssertEqual(
             PlanResolver.resolve(rawValue: "future-plan"),
             PlanResolution(kind: .free, rawValue: "future-plan", isInferred: true)
         )

@@ -4,6 +4,19 @@ import XCTest
 
 @MainActor
 final class DashboardStoreTests: XCTestCase {
+    func testMenuStaleAvailabilityDescribesDataRefreshWithoutImplyingPlanExpiry() {
+        let state = DashboardLoadState.stale(
+            .fixture(todayTokens: 17),
+            .fixture,
+            "暂时无法刷新，正在显示上次可用数据。"
+        )
+
+        let text = MenuBarAvailabilityText.text(for: state)
+
+        XCTAssertEqual(text, "数据待更新")
+        XCTAssertFalse(text.contains("过期"))
+    }
+
     func testRefreshPublishesRealSnapshotAndCoalescesConcurrentCalls() async {
         let client = FakeDashboardDataClient(
             loadResult: .empty(.fixture),

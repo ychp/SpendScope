@@ -12,6 +12,41 @@ final class CodexEventDecoderTests: XCTestCase {
         XCTAssertEqual(try decoder.decode(line: Data(turn.utf8)), .turn(.init(turnID: "turn-1", model: "gpt-5.6-sol")))
     }
 
+    func testSessionSourceObjectIsIgnoredWhileDesktopOriginatorRemainsAuthoritative() throws {
+        let session = #"{"type":"session_meta","payload":{"id":"thread-object-desktop","source":{"subagent":true},"originator":"Codex Desktop","cli_version":"1.0.0"}}"#
+
+        XCTAssertEqual(
+            try decoder.decode(line: Data(session.utf8)),
+            .session(.init(
+                threadID: "thread-object-desktop",
+                source: .desktop,
+                formatVersion: "1.0.0"
+            ))
+        )
+    }
+
+    func testSessionStringCLISourceRemainsCLI() throws {
+        let session = #"{"type":"session_meta","payload":{"id":"thread-cli","source":"cli","cli_version":"1.0.0"}}"#
+
+        XCTAssertEqual(
+            try decoder.decode(line: Data(session.utf8)),
+            .session(.init(threadID: "thread-cli", source: .cli, formatVersion: "1.0.0"))
+        )
+    }
+
+    func testSessionUnknownSourceObjectWithoutOriginatorMapsToUnknown() throws {
+        let session = #"{"type":"session_meta","payload":{"id":"thread-object-unknown","source":{"subagent":true},"cli_version":"1.0.0"}}"#
+
+        XCTAssertEqual(
+            try decoder.decode(line: Data(session.utf8)),
+            .session(.init(
+                threadID: "thread-object-unknown",
+                source: .unknown,
+                formatVersion: "1.0.0"
+            ))
+        )
+    }
+
     func testDecodesTokenCountersQuotasAndPlan() throws {
         let line = #"{"timestamp":"2026-07-14T06:55:23.433Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":32450,"cached_input_tokens":21248,"output_tokens":327,"reasoning_output_tokens":158,"total_tokens":32777}},"rate_limits":{"plan_type":"plus","primary":{"used_percent":15.0,"window_minutes":300,"resets_at":1784600433},"secondary":{"used_percent":16.0,"window_minutes":10080,"resets_at":1785200000}}}}"#
 

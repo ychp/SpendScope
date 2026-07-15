@@ -88,6 +88,22 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.planName, "Free")
     }
 
+    func testDisplaysProLiteStorageKindAsProPlanName() throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [usage("pro-plan", at: now, total: 1, planRaw: "prolite")],
+            quotas: []
+        ))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(
+            now: now,
+            calendar: .current
+        )
+
+        XCTAssertEqual(snapshot.planName, "Pro")
+    }
+
     func testAggregateOverflowThrowsInsteadOfWrapping() throws {
         let store = try makeStore()
         try store.commit(batch(

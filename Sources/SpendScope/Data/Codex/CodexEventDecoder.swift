@@ -165,6 +165,14 @@ private extension CodexEventDecoder {
         let originator: String?
         let cliVersion: String?
 
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decodeIfPresent(String.self, forKey: .id)
+            source = try? container.decode(String.self, forKey: .source)
+            originator = try container.decodeIfPresent(String.self, forKey: .originator)
+            cliVersion = try container.decodeIfPresent(String.self, forKey: .cliVersion)
+        }
+
         enum CodingKeys: String, CodingKey {
             case id
             case source

@@ -1,6 +1,18 @@
 import AppKit
 import SwiftUI
 
+enum MenuBarAvailabilityText {
+    static func text(for state: DashboardLoadState) -> String {
+        switch state {
+        case .loaded: "可用"
+        case .stale: "数据待更新"
+        case .loading: "载入中"
+        case .empty: "暂无数据"
+        case .failed, .unsupported: "不可用"
+        }
+    }
+}
+
 struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
@@ -147,13 +159,7 @@ struct MenuBarPopoverView: View {
     }
 
     private var availabilityText: String {
-        switch store.state {
-        case .loaded: "可用"
-        case .stale: "可能过期"
-        case .loading: "载入中"
-        case .empty: "暂无数据"
-        case .failed, .unsupported: "不可用"
-        }
+        MenuBarAvailabilityText.text(for: store.state)
     }
 
     private var availabilityColor: Color {
