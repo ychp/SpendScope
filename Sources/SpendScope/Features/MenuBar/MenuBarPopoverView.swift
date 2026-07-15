@@ -145,7 +145,6 @@ struct MenuBarPopoverView: View {
                     Task { await store.refresh() }
                 }
                 .buttonStyle(.bordered)
-                .tint(SpendScopeTheme.popoverPrimary)
                 .disabled(store.isRefreshing)
             }
         }
@@ -185,16 +184,15 @@ struct MenuBarPopoverView: View {
             } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7)
-                        .fill(SpendScopeTheme.popoverPrimary.opacity(0.09))
+                        .fill(Color.primary.opacity(0.055))
 
                     if store.isRefreshing {
                         ProgressView()
                             .controlSize(.small)
-                            .tint(SpendScopeTheme.popoverPrimary)
+                            .tint(SpendScopeTheme.accent)
                     } else {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(SpendScopeTheme.popoverPrimary)
                     }
                 }
                 .frame(width: 30, height: 30)
@@ -262,8 +260,7 @@ struct MenuBarPopoverView: View {
                 }
                 NSApp.activate(ignoringOtherApps: true)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(SpendScopeTheme.popoverPrimary)
+            .buttonStyle(.bordered)
 
             Button("设置", systemImage: "gearshape") {
                 if let onOpenSettings {
@@ -274,7 +271,6 @@ struct MenuBarPopoverView: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
             .buttonStyle(.bordered)
-            .tint(SpendScopeTheme.popoverPrimary)
 
             Spacer(minLength: 0)
 
@@ -287,7 +283,7 @@ struct MenuBarPopoverView: View {
                 Label("退出", systemImage: "power")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(SpendScopeTheme.popoverPrimary)
+            .foregroundStyle(.secondary)
             .help("退出 SpendScope")
         }
     }
