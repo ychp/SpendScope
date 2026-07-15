@@ -30,6 +30,12 @@ enum MenuBarUpdateText {
     }
 }
 
+enum MenuBarQuotaResetText {
+    static func text(for quota: QuotaSnapshot, now: Date = Date()) -> String {
+        quota.resetDescription(now: now) ?? "\(quota.resetText) 重置"
+    }
+}
+
 struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
@@ -216,12 +222,13 @@ struct MenuBarPopoverView: View {
                 .tint(color)
                 .controlSize(.mini)
 
-            Text(quota.resetText)
+            Text(MenuBarQuotaResetText.text(for: quota))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .help("额度信息来自最近一次 Codex 本地观测")
     }
 
     private func quotaColor(for quota: QuotaSnapshot) -> Color {

@@ -71,6 +71,29 @@ private extension DashboardSnapshot {
 }
 
 final class TokenFormatterTests: XCTestCase {
+    func testMenuQuotaResetTextUsesRelativeDescriptionAndLabeledFallback() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let relativeQuota = QuotaSnapshot(
+            id: "7d",
+            title: "7 天",
+            remaining: 0.52,
+            resetText: "2026-07-22 10:08",
+            resetsAt: now.addingTimeInterval(6 * 86_400)
+        )
+        let fallbackQuota = QuotaSnapshot(
+            id: "7d",
+            title: "7 天",
+            remaining: 0.52,
+            resetText: "2026-07-22 10:08"
+        )
+
+        XCTAssertEqual(MenuBarQuotaResetText.text(for: relativeQuota, now: now), "6 天后重置")
+        XCTAssertEqual(
+            MenuBarQuotaResetText.text(for: fallbackQuota, now: now),
+            "2026-07-22 10:08 重置"
+        )
+    }
+
     func testFormatsCompactValues() {
         XCTAssertEqual(TokenFormatter.compact(999), "999")
         XCTAssertEqual(TokenFormatter.compact(1_500), "1.5K")
