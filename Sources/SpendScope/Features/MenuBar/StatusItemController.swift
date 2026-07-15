@@ -300,7 +300,9 @@ struct StatusItemRenderer {
             yRadius: backgroundRect.height / 2
         ).fill()
 
-        let iconRect = NSRect(x: x + 5, y: 7, width: 8, height: 8)
+        // SF Symbols have a slightly high optical center when drawn into a square.
+        // Nudge the reset glyph down so it shares the countdown text's visual baseline.
+        let iconRect = NSRect(x: x + 5, y: 6, width: 8, height: 8)
         if let symbol = NSImage(
             systemSymbolName: "arrow.clockwise",
             accessibilityDescription: nil
