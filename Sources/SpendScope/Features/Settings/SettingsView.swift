@@ -107,8 +107,8 @@ struct SettingsView: View {
                 }
             }
 
-            Section("菜单栏") {
-                preferenceRow("实时预览", detail: "与菜单栏使用同一套绘制样式") {
+            Section("状态栏") {
+                preferenceRow("实时预览", detail: "与状态栏使用同一套绘制样式") {
                     Image(nsImage: StatusItemRenderer().render(
                         statusItemPresentation,
                         appearance: previewAppearance
@@ -129,7 +129,7 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                 }
 
-                preferenceRow("额度口径", detail: "选择菜单栏百分比的统计方式") {
+                preferenceRow("额度口径", detail: "选择状态栏百分比的统计方式") {
                     Picker("", selection: $quotaDisplayRaw) {
                         Text("已用量").tag(QuotaDisplayPreference.used.rawValue)
                         Text("剩余量").tag(QuotaDisplayPreference.remaining.rawValue)
@@ -155,7 +155,7 @@ struct SettingsView: View {
             }
 
             Section {
-                preferenceRow("恢复默认", detail: "恢复外观与菜单栏显示设置") {
+                preferenceRow("恢复默认", detail: "恢复外观与状态栏显示设置") {
                     Button("恢复默认设置", systemImage: "arrow.counterclockwise") {
                         restoreDefaults()
                     }
