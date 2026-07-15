@@ -209,7 +209,7 @@ struct QuotaSnapshot: Identifiable, Sendable {
         if seconds < 86_400 {
             return (max(1, Int(ceil(seconds / 3_600))), "h", "小时")
         }
-        return (max(1, Int(ceil(seconds / 86_400))), "d", "天")
+        return (max(1, Int(floor(seconds / 86_400))), "d", "天")
     }
 }
 

@@ -308,7 +308,7 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertEqual(
             QuotaSnapshot(
                 id: "7d", title: "7 天", remaining: 0.8, resetText: "",
-                resetsAt: now.addingTimeInterval(6 * 86_400)
+                resetsAt: now.addingTimeInterval(6 * 86_400 + 23 * 3_600)
             ).resetCountdown(now: now),
             "6d"
         )
