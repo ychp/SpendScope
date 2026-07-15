@@ -99,6 +99,21 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.menuBarQuotaLabel, "7d 84%")
     }
 
+    func testExhaustedFiveHourQuotaRemainsVisible() {
+        let exhaustedFiveHourQuota = QuotaSnapshot(
+            id: "5h",
+            title: "5 小时",
+            remaining: 0,
+            resetText: "02:52"
+        )
+        let weeklyQuota = DashboardSnapshot.preview.quotas.first { $0.id == "7d" }!
+        let snapshot = makeSnapshot(quotas: [exhaustedFiveHourQuota, weeklyQuota])
+
+        XCTAssertNotNil(snapshot.fiveHourQuota)
+        XCTAssertEqual(snapshot.visibleQuotas.map(\.id), ["5h", "7d"])
+        XCTAssertEqual(snapshot.menuBarQuotaLabel, "5H 0% · 7d 84%")
+    }
+
     func testPreviewPeriodsUseConsistentTotals() {
         let periods = DashboardSnapshot.preview.periods
 
