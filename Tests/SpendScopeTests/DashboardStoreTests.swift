@@ -4,6 +4,29 @@ import XCTest
 
 @MainActor
 final class DashboardStoreTests: XCTestCase {
+    func testCodexPlanCatalogIncludesCurrentOfficialPlansAndMarksProCurrent() {
+        XCTAssertEqual(
+            CodexPlanCatalog.plans.map(\.name),
+            ["Free", "Go", "Plus", "Pro", "Business", "Enterprise / Edu"]
+        )
+        XCTAssertFalse(CodexPlanCatalog.plans[0].isPaid)
+        XCTAssertTrue(CodexPlanCatalog.plans.dropFirst().allSatisfy(\.isPaid))
+
+        let currentPlans = CodexPlanCatalog.plans.filter {
+            CodexPlanCatalog.isCurrent($0, currentPlanName: "Pro")
+        }
+
+        XCTAssertEqual(currentPlans.map(\.name), ["Pro"])
+    }
+
+    func testCodexPlanCatalogFallsBackToFreeWhenCurrentPlanIsUnavailable() {
+        let currentPlans = CodexPlanCatalog.plans.filter {
+            CodexPlanCatalog.isCurrent($0, currentPlanName: nil)
+        }
+
+        XCTAssertEqual(currentPlans.map(\.name), ["Free"])
+    }
+
     func testMenuStaleAvailabilityDescribesDataRefreshWithoutImplyingPlanExpiry() {
         let state = DashboardLoadState.stale(
             .fixture(todayTokens: 17),

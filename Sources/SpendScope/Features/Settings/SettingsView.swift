@@ -1,9 +1,116 @@
 import SwiftUI
 
+struct CodexPlan: Identifiable, Sendable {
+    let name: String
+    let summary: String
+    let symbol: String
+    let isPaid: Bool
+
+    var id: String { name }
+}
+
+enum CodexPlanCatalog {
+    static let plans: [CodexPlan] = [
+        .init(
+            name: "Free",
+            summary: "适合体验 Codex 和处理简短编码任务",
+            symbol: "sparkles",
+            isPaid: false
+        ),
+        .init(
+            name: "Go",
+            summary: "适合轻量、日常的编码任务",
+            symbol: "figure.walk.motion",
+            isPaid: true
+        ),
+        .init(
+            name: "Plus",
+            summary: "适合每周进行几次专注的编码工作",
+            symbol: "plus.circle.fill",
+            isPaid: true
+        ),
+        .init(
+            name: "Pro",
+            summary: "提供比 Plus 更高的 Codex 使用额度",
+            symbol: "bolt.fill",
+            isPaid: true
+        ),
+        .init(
+            name: "Business",
+            summary: "面向团队，包含工作区和基础管理能力",
+            symbol: "person.2.fill",
+            isPaid: true
+        ),
+        .init(
+            name: "Enterprise / Edu",
+            summary: "面向组织和教育机构，提供企业级控制能力",
+            symbol: "building.2.fill",
+            isPaid: true
+        )
+    ]
+
+    static func isCurrent(_ plan: CodexPlan, currentPlanName: String?) -> Bool {
+        plan.name.caseInsensitiveCompare(currentPlanName ?? "Free") == .orderedSame
+    }
+}
+
 struct SettingsView: View {
     let store: DashboardStore
 
     var body: some View {
+        TabView {
+            planSettings
+                .tabItem { Label("套餐", systemImage: "shippingbox.fill") }
+
+            dataSettings
+                .tabItem { Label("数据", systemImage: "externaldrive.fill") }
+        }
+        .frame(width: 580, height: 500)
+        .task { await store.start() }
+    }
+
+    private var planSettings: some View {
+        Form {
+            Section {
+                Label {
+                    HStack(spacing: 6) {
+                        Text("当前使用")
+                            .foregroundStyle(.secondary)
+                        Text(currentPlanName)
+                            .fontWeight(.semibold)
+                    }
+                } icon: {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                }
+            }
+
+            Section {
+                ForEach(CodexPlanCatalog.plans) { plan in
+                    planRow(plan)
+                }
+            } header: {
+                Text("Codex 套餐")
+            } footer: {
+                Text("Free 用于免费账户及无法确认套餐时的本地回退；其余为当前付费套餐。")
+            }
+
+            Section("其他计费方式") {
+                LabeledContent {
+                    Text("按 Token 用量计费")
+                        .foregroundStyle(.secondary)
+                } label: {
+                    Label("API Key", systemImage: "key.fill")
+                }
+                Text("API Key 是独立的按量计费方式，不属于 ChatGPT 订阅套餐。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var dataSettings: some View {
         Form {
             Section("数据源") {
                 healthRow("Codex CLI", health: store.sourceSummary?.cli)
@@ -31,8 +138,49 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 420)
-        .task { await store.start() }
+    }
+
+    private var currentPlanName: String {
+        store.snapshot?.planName ?? "Free"
+    }
+
+    private func planRow(_ plan: CodexPlan) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: plan.symbol)
+                .font(.title3)
+                .foregroundStyle(isCurrent(plan) ? Color.accentColor : Color.secondary)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(plan.name)
+                    .fontWeight(isCurrent(plan) ? .semibold : .regular)
+                Text(plan.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 12)
+
+            if plan.isPaid {
+                Text("付费")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.quaternary, in: Capsule())
+            }
+
+            if isCurrent(plan) {
+                Label("当前套餐", systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func isCurrent(_ plan: CodexPlan) -> Bool {
+        CodexPlanCatalog.isCurrent(plan, currentPlanName: store.snapshot?.planName)
     }
 
     private func healthRow(_ title: String, health: SourceHealth?) -> some View {
