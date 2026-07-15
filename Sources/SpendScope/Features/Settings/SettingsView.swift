@@ -98,6 +98,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollDisabled(true)
         .scrollIndicators(.hidden)
     }
 
