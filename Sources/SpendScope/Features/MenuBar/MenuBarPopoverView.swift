@@ -129,7 +129,7 @@ struct MenuBarPopoverView: View {
         VStack(spacing: 9) {
             Image(systemName: content.systemImage)
                 .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(unavailableIconColor)
 
             Text(content.title)
                 .font(.headline)
@@ -145,6 +145,7 @@ struct MenuBarPopoverView: View {
                     Task { await store.refresh() }
                 }
                 .buttonStyle(.bordered)
+                .tint(SpendScopeTheme.popoverPrimary)
                 .disabled(store.isRefreshing)
             }
         }
@@ -161,7 +162,14 @@ struct MenuBarPopoverView: View {
                 .frame(width: 32, height: 32)
                 .foregroundStyle(.white)
                 .padding(10)
-                .background(SpendScopeTheme.accent.gradient, in: RoundedRectangle(cornerRadius: 11))
+                .background(
+                    LinearGradient(
+                        colors: [SpendScopeTheme.popoverSecondary, SpendScopeTheme.popoverPrimary],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 11)
+                )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("SpendScope").font(.title2.bold())
@@ -177,15 +185,16 @@ struct MenuBarPopoverView: View {
             } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7)
-                        .fill(Color.primary.opacity(0.055))
+                        .fill(SpendScopeTheme.popoverPrimary.opacity(0.09))
 
                     if store.isRefreshing {
                         ProgressView()
                             .controlSize(.small)
-                            .tint(SpendScopeTheme.accent)
+                            .tint(SpendScopeTheme.popoverPrimary)
                     } else {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(SpendScopeTheme.popoverPrimary)
                     }
                 }
                 .frame(width: 30, height: 30)
@@ -200,8 +209,12 @@ struct MenuBarPopoverView: View {
     private var usageCard: some View {
         VStack(spacing: 12) {
             HStack {
-                Label("Codex · \(store.snapshot?.planName ?? "未检测到")", systemImage: "shippingbox.fill")
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Image(systemName: "shippingbox.fill")
+                        .foregroundStyle(SpendScopeTheme.popoverPrimary)
+                    Text("Codex · \(store.snapshot?.planName ?? "未检测到")")
+                }
+                .font(.headline)
                 Spacer()
                 Text(availabilityText)
                     .foregroundStyle(availabilityColor)
@@ -250,7 +263,7 @@ struct MenuBarPopoverView: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
             .buttonStyle(.borderedProminent)
-            .tint(SpendScopeTheme.accent)
+            .tint(SpendScopeTheme.popoverPrimary)
 
             Button("设置", systemImage: "gearshape") {
                 if let onOpenSettings {
@@ -261,6 +274,7 @@ struct MenuBarPopoverView: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
             .buttonStyle(.bordered)
+            .tint(SpendScopeTheme.popoverPrimary)
 
             Spacer(minLength: 0)
 
@@ -273,7 +287,7 @@ struct MenuBarPopoverView: View {
                 Label("退出", systemImage: "power")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(SpendScopeTheme.popoverPrimary)
             .help("退出 SpendScope")
         }
     }
@@ -506,6 +520,17 @@ struct MenuBarPopoverView: View {
         case .stale: .orange
         case .loading, .empty: .secondary
         case .failed, .unsupported: .red
+        }
+    }
+
+    private var unavailableIconColor: Color {
+        switch store.state {
+        case .failed, .unsupported:
+            .red
+        case .stale:
+            .orange
+        case .loading, .empty, .loaded:
+            SpendScopeTheme.popoverPrimary
         }
     }
 }
