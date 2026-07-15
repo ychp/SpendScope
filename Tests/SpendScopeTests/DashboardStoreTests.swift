@@ -53,6 +53,20 @@ final class DashboardStoreTests: XCTestCase {
         )
     }
 
+    func testMenuUnavailableContentReplacesMetricsForNonUsableStates() throws {
+        let failed = try XCTUnwrap(MenuBarUnavailableContent.content(for: .failed("读取失败")))
+
+        XCTAssertEqual(failed.title, "暂时无法读取数据")
+        XCTAssertEqual(failed.description, "读取失败")
+        XCTAssertTrue(failed.showsRefresh)
+        XCTAssertNil(MenuBarUnavailableContent.content(for: .loaded(.fixture(todayTokens: 1), .fixture)))
+        XCTAssertNil(MenuBarUnavailableContent.content(for: .stale(
+            .fixture(todayTokens: 1),
+            .fixture,
+            "部分数据待更新"
+        )))
+    }
+
     func testRefreshPublishesRealSnapshotAndCoalescesConcurrentCalls() async {
         let client = FakeDashboardDataClient(
             loadResult: .empty(.fixture),

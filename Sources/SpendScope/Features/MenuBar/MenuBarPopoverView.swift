@@ -36,6 +36,48 @@ enum MenuBarQuotaResetText {
     }
 }
 
+struct MenuBarUnavailableContent: Equatable {
+    let title: String
+    let description: String
+    let systemImage: String
+    let showsRefresh: Bool
+
+    static func content(for state: DashboardLoadState) -> MenuBarUnavailableContent? {
+        switch state {
+        case .loading:
+            MenuBarUnavailableContent(
+                title: "正在载入 Codex 数据",
+                description: "SpendScope 正在读取本地统计。",
+                systemImage: "chart.bar.doc.horizontal",
+                showsRefresh: false
+            )
+        case .empty:
+            MenuBarUnavailableContent(
+                title: "未检测到 Codex 数据",
+                description: "使用 Codex 后重新刷新即可查看 Token 用量。",
+                systemImage: "tray",
+                showsRefresh: true
+            )
+        case .failed(let message):
+            MenuBarUnavailableContent(
+                title: "暂时无法读取数据",
+                description: message,
+                systemImage: "exclamationmark.triangle",
+                showsRefresh: true
+            )
+        case .unsupported(let message):
+            MenuBarUnavailableContent(
+                title: "数据格式暂不兼容",
+                description: message,
+                systemImage: "doc.badge.ellipsis",
+                showsRefresh: true
+            )
+        case .loaded, .stale:
+            nil
+        }
+    }
+}
+
 struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
@@ -57,12 +99,48 @@ struct MenuBarPopoverView: View {
     var body: some View {
         VStack(spacing: 12) {
             header
-            usageCard
+            popoverContent
             footerActions
         }
         .padding(14)
         .frame(width: 390)
         .task { await store.start() }
+    }
+
+    @ViewBuilder
+    private var popoverContent: some View {
+        if let content = MenuBarUnavailableContent.content(for: store.state) {
+            unavailableCard(content)
+        } else {
+            usageCard
+        }
+    }
+
+    private func unavailableCard(_ content: MenuBarUnavailableContent) -> some View {
+        VStack(spacing: 9) {
+            Image(systemName: content.systemImage)
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Text(content.title)
+                .font(.headline)
+
+            Text(content.description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if content.showsRefresh {
+                Button("重新刷新", systemImage: "arrow.clockwise") {
+                    Task { await store.refresh() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(store.isRefreshing)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 136)
+        .dashboardCard(padding: 14)
     }
 
     private var header: some View {
