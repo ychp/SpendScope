@@ -65,12 +65,13 @@ struct SettingsView: View {
         static let labelWidth: CGFloat = 205
         static let controlWidth: CGFloat = 248
         static let columnSpacing: CGFloat = 20
-        static let rowHeight: CGFloat = 48
+        static let rowHeight: CGFloat = 56
+        static let cardHorizontalPadding: CGFloat = 16
         static let planBadgeWidth: CGFloat = 52
     }
 
     let store: DashboardStore
-    @AppStorage(AppPreferenceKeys.statusItemDisplayMode) private var statusItemDisplayModeRaw = StatusItemDisplayMode.rich.rawValue
+    @AppStorage(AppPreferenceKeys.showsLivePreview) private var showsLivePreview = true
     @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
     @AppStorage(AppPreferenceKeys.showsFiveHour) private var showsFiveHour = true
@@ -78,7 +79,7 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 20) {
                 statusBarSettings
                 dataAndRefreshSettings
                 planAndBillingSettings
@@ -96,56 +97,63 @@ struct SettingsView: View {
     private var statusBarSettings: some View {
         settingsSection("状态栏") {
             VStack(spacing: 0) {
-                preferenceRow("实时预览", detail: "与状态栏使用同一套绘制样式") {
-                    Image(nsImage: StatusItemRenderer().render(
-                        statusItemPresentation,
-                        appearance: previewAppearance
-                    ))
-                    .interpolation(.high)
-                    .frame(maxWidth: .infinity, minHeight: 34)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-                    .accessibilityLabel("SpendScope 状态栏预览")
-                    .accessibilityValue(statusItemPresentation.label)
-                }
-                settingsDivider
-
-                preferenceRow("展示模式", detail: "丰富显示进度与倒计时，经典使用额度环") {
-                    Picker("", selection: $statusItemDisplayModeRaw) {
-                        Text("丰富（推荐）").tag(StatusItemDisplayMode.rich.rawValue)
-                        Text("经典").tag(StatusItemDisplayMode.classic.rawValue)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                }
-                settingsDivider
-
-                preferenceRow("额度口径", detail: "选择状态栏百分比的统计方式") {
-                    Picker("", selection: $quotaDisplayRaw) {
-                        Text("已用量").tag(QuotaDisplayPreference.used.rawValue)
-                        Text("剩余量").tag(QuotaDisplayPreference.remaining.rawValue)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                }
-                settingsDivider
-
-                preferenceRow("显示内容", detail: "不可用额度会自动隐藏，至少保留一项") {
-                    HStack(spacing: 2) {
-                        multiSelectSegment("5H", isOn: fiveHourVisibilityBinding)
-                        multiSelectSegment("7d", isOn: weeklyVisibilityBinding)
-                    }
-                    .padding(2)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-                }
-                settingsDivider
-
-                preferenceRow("重置倒计时", detail: "控制状态栏及悬浮提示中的倒计时") {
-                    Toggle("", isOn: $showsResetCountdown)
+                preferenceRow("实时预览", detail: "在设置中显示状态栏当前效果") {
+                    Toggle("", isOn: $showsLivePreview)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
+
+                VStack(spacing: 0) {
+                    settingsDivider
+                    preferenceRow("预览效果", detail: "与实际状态栏使用同一绘制样式") {
+                        Image(nsImage: StatusItemRenderer().render(
+                            statusItemPresentation,
+                            appearance: previewAppearance
+                        ))
+                        .interpolation(.high)
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                        .accessibilityLabel("SpendScope 状态栏预览")
+                        .accessibilityValue(statusItemPresentation.label)
+                    }
+                    settingsDivider
+
+                    preferenceRow("额度口径", detail: "选择状态栏百分比的统计方式") {
+                        segmentedGroup {
+                            selectionSegment(
+                                "已用量",
+                                isSelected: quotaDisplayRaw == QuotaDisplayPreference.used.rawValue
+                            ) {
+                                quotaDisplayRaw = QuotaDisplayPreference.used.rawValue
+                            }
+                            selectionSegment(
+                                "剩余量",
+                                isSelected: quotaDisplayRaw == QuotaDisplayPreference.remaining.rawValue
+                            ) {
+                                quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
+                            }
+                        }
+                    }
+                    settingsDivider
+
+                    preferenceRow("显示内容", detail: "不可用额度会自动隐藏，至少保留一项") {
+                        segmentedGroup {
+                            multiSelectSegment("5H", isOn: fiveHourVisibilityBinding)
+                            multiSelectSegment("7d", isOn: weeklyVisibilityBinding)
+                        }
+                    }
+                    settingsDivider
+
+                    preferenceRow("重置倒计时", detail: "控制状态栏及悬浮提示中的倒计时") {
+                        Toggle("", isOn: $showsResetCountdown)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+                }
+                .disabled(!showsLivePreview)
+                .opacity(showsLivePreview ? 1 : 0.45)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Layout.cardHorizontalPadding)
             .settingsCard()
         }
     }
@@ -153,23 +161,33 @@ struct SettingsView: View {
     private var dataAndRefreshSettings: some View {
         settingsSection("数据与刷新") {
             VStack(spacing: 0) {
-                healthRow("Codex CLI", health: store.sourceSummary?.cli)
+                healthRow(
+                    "Codex CLI",
+                    detail: "命令行会话与用量数据",
+                    health: store.sourceSummary?.cli
+                )
                 settingsDivider
-                healthRow("Codex macOS", health: store.sourceSummary?.desktop)
+                healthRow(
+                    "Codex macOS",
+                    detail: "桌面端会话与用量数据",
+                    health: store.sourceSummary?.desktop
+                )
                 settingsDivider
-                healthRow("线程索引", health: store.sourceSummary?.index)
+                healthRow(
+                    "线程索引",
+                    detail: "本地线程状态与归档信息",
+                    health: store.sourceSummary?.index
+                )
                 settingsDivider
-                settingsRow {
-                    Text("最近成功刷新")
-                } control: {
+                preferenceRow("最近成功刷新", detail: "最近一次成功读取本机数据的时间") {
                     Text(lastRefreshText)
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 settingsDivider
-                settingsRow {
-                    Text("自动刷新")
-                } control: {
+                preferenceRow("自动刷新", detail: "在后台定时更新统计数据") {
                     Text("每 60 秒")
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 settingsDivider
@@ -190,18 +208,18 @@ struct SettingsView: View {
                     .disabled(store.isRefreshing)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Layout.cardHorizontalPadding)
             .settingsCard()
         }
     }
 
     private var planAndBillingSettings: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             settingsSection("Codex 套餐") {
                 VStack(spacing: 0) {
                     ForEach(CodexPlanCatalog.plans) { plan in
                         planRow(plan)
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, Layout.cardHorizontalPadding)
                             .background {
                                 if isCurrent(plan) {
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -221,7 +239,7 @@ struct SettingsView: View {
 
                         if plan.id != CodexPlanCatalog.plans.last?.id {
                             Divider()
-                                .padding(.leading, 48)
+                                .padding(.leading, Layout.cardHorizontalPadding + 36)
                         }
                     }
                 }
@@ -235,9 +253,10 @@ struct SettingsView: View {
                         settingLabel("API Key", detail: "独立按量计费，不属于 ChatGPT 订阅套餐")
                     } control: {
                         Text("按 Token 用量计费")
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Layout.cardHorizontalPadding)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .settingsCard()
@@ -306,6 +325,7 @@ struct SettingsView: View {
 
     private var menuBarConfiguration: MenuBarLabelConfiguration {
         MenuBarLabelConfiguration(
+            showsLivePreview: showsLivePreview,
             quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining,
             showsFiveHour: showsFiveHour,
             showsWeekly: showsWeekly,
@@ -316,8 +336,7 @@ struct SettingsView: View {
     private var statusItemPresentation: StatusItemPresentation {
         StatusItemPresentation(
             snapshot: store.snapshot,
-            configuration: menuBarConfiguration,
-            displayMode: StatusItemDisplayMode(rawValue: statusItemDisplayModeRaw) ?? .rich
+            configuration: menuBarConfiguration
         )
     }
 
@@ -348,9 +367,11 @@ struct SettingsView: View {
     private func settingLabel(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
+                .font(.body)
             Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
@@ -384,22 +405,40 @@ struct SettingsView: View {
             .padding(.leading, Layout.labelWidth + Layout.columnSpacing)
     }
 
-    private func multiSelectSegment(_ title: String, isOn: Binding<Bool>) -> some View {
-        Button {
-            isOn.wrappedValue.toggle()
-        } label: {
+    private func segmentedGroup<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 2) {
+            content()
+        }
+        .padding(2)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func selectionSegment(
+        _ title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
             Text(title)
                 .font(.callout)
                 .frame(maxWidth: .infinity, minHeight: 20)
-                .foregroundStyle(isOn.wrappedValue ? Color.white : Color.primary)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(isOn.wrappedValue ? Color.accentColor : Color.clear)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(isSelected ? Color.accentColor : Color.clear)
         }
-        .accessibilityAddTraits(isOn.wrappedValue ? .isSelected : [])
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func multiSelectSegment(_ title: String, isOn: Binding<Bool>) -> some View {
+        selectionSegment(title, isSelected: isOn.wrappedValue) {
+            isOn.wrappedValue.toggle()
+        }
     }
 
     private func settingsRow<Leading: View, Control: View>(
@@ -418,11 +457,12 @@ struct SettingsView: View {
         .frame(minHeight: Layout.rowHeight)
     }
 
-    private func healthRow(_ title: String, health: SourceHealth?) -> some View {
+    private func healthRow(_ title: String, detail: String, health: SourceHealth?) -> some View {
         settingsRow {
-            Text(title)
+            settingLabel(title, detail: detail)
         } control: {
             Label(healthText(health), systemImage: healthSymbol(health))
+                .font(.callout.weight(.medium))
                 .foregroundStyle(healthColor(health))
         }
     }

@@ -223,8 +223,7 @@ final class StatusItemPresentationTests: XCTestCase {
     func testUsesCodexUCompatibleCanvasAndIconMetrics() {
         let presentation = StatusItemPresentation(
             snapshot: .preview,
-            configuration: .standard,
-            displayMode: .rich
+            configuration: .standard
         )
 
         XCTAssertEqual(presentation.imageSize.height, 22)
@@ -244,23 +243,34 @@ final class StatusItemPresentationTests: XCTestCase {
         XCTAssertFalse(image.isTemplate)
     }
 
-    func testBuildsOnlyQuotaMetricsAndClassicUsesCompactWidth() {
-        let rich = StatusItemPresentation(
+    func testBuildsOnlyConfiguredQuotaMetrics() {
+        let presentation = StatusItemPresentation(
             snapshot: .preview,
-            configuration: .standard,
-            displayMode: .rich
-        )
-        let classic = StatusItemPresentation(
-            snapshot: .preview,
-            configuration: .standard,
-            displayMode: .classic
+            configuration: .standard
         )
 
-        XCTAssertEqual(rich.metrics.map(\.label), ["5H", "7d"])
-        XCTAssertEqual(rich.metrics.map(\.value), ["85%", "84%"])
-        XCTAssertEqual(rich.metrics.map(\.paletteRole), [.fiveHour, .weekly])
-        XCTAssertFalse(rich.label.contains("今日"))
-        XCTAssertLessThan(classic.imageSize.width, rich.imageSize.width)
+        XCTAssertEqual(presentation.metrics.map(\.label), ["5H", "7d"])
+        XCTAssertEqual(presentation.metrics.map(\.value), ["85%", "84%"])
+        XCTAssertEqual(presentation.metrics.map(\.paletteRole), [.fiveHour, .weekly])
+        XCTAssertFalse(presentation.label.contains("今日"))
+    }
+
+    func testDisabledLivePreviewCollapsesStatusItemToIconOnly() {
+        let presentation = StatusItemPresentation(
+            snapshot: .preview,
+            configuration: MenuBarLabelConfiguration(
+                showsLivePreview: false,
+                quotaDisplay: .remaining,
+                showsFiveHour: true,
+                showsWeekly: true,
+                showsResetCountdown: true
+            )
+        )
+
+        XCTAssertTrue(presentation.metrics.isEmpty)
+        XCTAssertEqual(presentation.imageSize.width, StatusItemLayoutMetrics.emptyImageWidth)
+        XCTAssertEqual(presentation.label, "SpendScope")
+        XCTAssertTrue(presentation.tooltip.contains("实时预览已关闭"))
     }
 
     func testCountdownPreferenceControlsInlineResetAndCodexStyleTooltip() {
@@ -281,18 +291,17 @@ final class StatusItemPresentationTests: XCTestCase {
         let visible = StatusItemPresentation(
             snapshot: snapshot,
             configuration: .standard,
-            displayMode: .rich,
             now: now
         )
         let hidden = StatusItemPresentation(
             snapshot: snapshot,
             configuration: MenuBarLabelConfiguration(
+                showsLivePreview: true,
                 quotaDisplay: .remaining,
                 showsFiveHour: true,
                 showsWeekly: true,
                 showsResetCountdown: false
             ),
-            displayMode: .rich,
             now: now
         )
 
@@ -444,12 +453,14 @@ final class DashboardSnapshotTests: XCTestCase {
 
     func testMenuBarConfigurationControlsMetricAndVisibleContent() {
         let usedFiveHour = MenuBarLabelConfiguration(
+            showsLivePreview: true,
             quotaDisplay: .used,
             showsFiveHour: true,
             showsWeekly: false,
             showsResetCountdown: true
         )
         let remainingWeekly = MenuBarLabelConfiguration(
+            showsLivePreview: true,
             quotaDisplay: .remaining,
             showsFiveHour: false,
             showsWeekly: true,
@@ -468,9 +479,25 @@ final class DashboardSnapshotTests: XCTestCase {
 
     func testMenuBarConfigurationFallsBackWhenEveryItemIsHidden() {
         let hidden = MenuBarLabelConfiguration(
+            showsLivePreview: true,
             quotaDisplay: .remaining,
             showsFiveHour: false,
             showsWeekly: false,
+            showsResetCountdown: true
+        )
+
+        XCTAssertEqual(
+            DashboardSnapshot.preview.menuBarLabel(configuration: hidden),
+            "SpendScope"
+        )
+    }
+
+    func testMenuBarConfigurationHidesAllContentWhenLivePreviewIsDisabled() {
+        let hidden = MenuBarLabelConfiguration(
+            showsLivePreview: false,
+            quotaDisplay: .remaining,
+            showsFiveHour: true,
+            showsWeekly: true,
             showsResetCountdown: true
         )
 

@@ -52,6 +52,7 @@ struct DashboardSnapshot: Sendable {
     }
 
     func menuBarLabel(configuration: MenuBarLabelConfiguration) -> String {
+        guard configuration.showsLivePreview else { return "SpendScope" }
         var components: [String] = []
         if configuration.showsFiveHour, let fiveHourQuota {
             components.append(fiveHourQuota.label(for: configuration.quotaDisplay))

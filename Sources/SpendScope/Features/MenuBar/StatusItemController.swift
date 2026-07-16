@@ -13,7 +13,6 @@ enum StatusItemLayoutMetrics {
     static let iconRect = NSRect(x: 2, y: 2, width: 18, height: 18)
     static let elementSpacing: CGFloat = 5
     static let leadingContentWidth: CGFloat = iconRect.maxX + elementSpacing
-    static let classicQuotaUnitWidth: CGFloat = 25
     static let richValueWidth: CGFloat = 38
     static let richMetricWidth: CGFloat = 58
     static let richResetWidth: CGFloat = 35
@@ -32,7 +31,6 @@ struct StatusItemMetricPresentation: Equatable, Identifiable {
 }
 
 struct StatusItemPresentation: Equatable {
-    let displayMode: StatusItemDisplayMode
     let metrics: [StatusItemMetricPresentation]
     let imageSize: NSSize
     let itemLength: CGFloat
@@ -42,12 +40,11 @@ struct StatusItemPresentation: Equatable {
     init(
         snapshot: DashboardSnapshot?,
         configuration: MenuBarLabelConfiguration,
-        displayMode: StatusItemDisplayMode,
         now: Date = Date()
     ) {
-        self.displayMode = displayMode
-
-        let availableQuotas = snapshot?.visibleQuotas ?? []
+        let availableQuotas = configuration.showsLivePreview
+            ? snapshot?.visibleQuotas ?? []
+            : []
         var selectedQuotas = availableQuotas.filter { quota in
             switch quota.id {
             case "5h": configuration.showsFiveHour
@@ -55,7 +52,9 @@ struct StatusItemPresentation: Equatable {
             default: false
             }
         }
-        if selectedQuotas.isEmpty, let fallback = availableQuotas.first {
+        if configuration.showsLivePreview,
+           selectedQuotas.isEmpty,
+           let fallback = availableQuotas.first {
             selectedQuotas = [fallback]
         }
 
@@ -82,29 +81,22 @@ struct StatusItemPresentation: Equatable {
         }
 
         let imageWidth: CGFloat
-        switch displayMode {
-        case .rich:
-            if metrics.isEmpty {
-                imageWidth = StatusItemLayoutMetrics.emptyImageWidth
-            } else {
-                let resetWidth = metrics.reduce(CGFloat.zero) { width, metric in
-                    width + (metric.resetText == nil
-                        ? 0
-                        : StatusItemLayoutMetrics.elementSpacing
-                            + StatusItemLayoutMetrics.richResetWidth)
-                }
-                let metricWidth = metrics.count == 1
-                    ? StatusItemLayoutMetrics.richValueWidth
-                    : CGFloat(metrics.count) * StatusItemLayoutMetrics.richMetricWidth
-                imageWidth = StatusItemLayoutMetrics.leadingContentWidth
-                    + metricWidth
-                    + CGFloat(max(0, metrics.count - 1)) * StatusItemLayoutMetrics.richMetricSpacing
-                    + resetWidth
-                    + 2
+        if metrics.isEmpty {
+            imageWidth = StatusItemLayoutMetrics.emptyImageWidth
+        } else {
+            let resetWidth = metrics.reduce(CGFloat.zero) { width, metric in
+                width + (metric.resetText == nil
+                    ? 0
+                    : StatusItemLayoutMetrics.elementSpacing
+                        + StatusItemLayoutMetrics.richResetWidth)
             }
-        case .classic:
+            let metricWidth = metrics.count == 1
+                ? StatusItemLayoutMetrics.richValueWidth
+                : CGFloat(metrics.count) * StatusItemLayoutMetrics.richMetricWidth
             imageWidth = StatusItemLayoutMetrics.leadingContentWidth
-                + CGFloat(metrics.count) * StatusItemLayoutMetrics.classicQuotaUnitWidth
+                + metricWidth
+                + CGFloat(max(0, metrics.count - 1)) * StatusItemLayoutMetrics.richMetricSpacing
+                + resetWidth
                 + 2
         }
         imageSize = NSSize(width: imageWidth, height: StatusItemLayoutMetrics.imageHeight)
@@ -126,7 +118,9 @@ struct StatusItemPresentation: Equatable {
             return description
         }.joined(separator: "；")
         tooltip = metrics.isEmpty
-            ? "SpendScope · Codex · 暂无可用额度 · 点击查看用量"
+            ? configuration.showsLivePreview
+                ? "SpendScope · Codex · 暂无可用额度 · 点击查看用量"
+                : "SpendScope · Codex · 实时预览已关闭 · 点击查看用量"
             : "SpendScope · Codex · \(quotaDescription) · 点击查看用量"
     }
 }
@@ -156,13 +150,7 @@ struct StatusItemRenderer {
 
         NSGraphicsContext.current?.imageInterpolation = .high
         drawIcon(in: StatusItemLayoutMetrics.iconRect)
-
-        switch presentation.displayMode {
-        case .rich:
-            drawRich(presentation.metrics)
-        case .classic:
-            drawClassic(presentation.metrics)
-        }
+        drawRich(presentation.metrics)
         return image
     }
 
@@ -204,34 +192,6 @@ struct StatusItemRenderer {
                 drawResetCountdown(resetText, x: x)
                 x += StatusItemLayoutMetrics.richResetWidth
             }
-        }
-    }
-
-    private func drawClassic(_ metrics: [StatusItemMetricPresentation]) {
-        var x = StatusItemLayoutMetrics.leadingContentWidth
-        for metric in metrics {
-            let ringRect = NSRect(x: x + 2, y: 1, width: 20, height: 20)
-            drawCircularProgress(
-                in: ringRect,
-                fraction: metric.fraction,
-                paletteRole: metric.paletteRole,
-                lineWidth: 1.6
-            )
-            drawText(
-                metric.label,
-                in: NSRect(x: x + 3, y: 11.1, width: 18, height: 7),
-                font: .monospacedDigitSystemFont(ofSize: 6.2, weight: .semibold),
-                color: NSColor.secondaryLabelColor,
-                alignment: .center
-            )
-            drawText(
-                metric.value,
-                in: NSRect(x: x + 2, y: 3.5, width: 20, height: 8),
-                font: .monospacedDigitSystemFont(ofSize: 7.8, weight: .bold),
-                color: NSColor.labelColor,
-                alignment: .center
-            )
-            x += StatusItemLayoutMetrics.classicQuotaUnitWidth
         }
     }
 
@@ -334,45 +294,6 @@ struct StatusItemRenderer {
             color: color,
             alignment: .left
         )
-    }
-
-    private func drawCircularProgress(
-        in rect: NSRect,
-        fraction: CGFloat,
-        paletteRole: StatusItemQuotaPaletteRole,
-        lineWidth: CGFloat
-    ) {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) / 2 - lineWidth / 2
-        let palette = palette(for: paletteRole)
-
-        let track = NSBezierPath()
-        track.appendArc(
-            withCenter: center,
-            radius: radius,
-            startAngle: 90,
-            endAngle: -270,
-            clockwise: true
-        )
-        track.lineWidth = lineWidth
-        track.lineCapStyle = .round
-        palette.track.setStroke()
-        track.stroke()
-
-        let normalized = min(max(fraction, 0), 1)
-        guard normalized > 0 else { return }
-        let progress = NSBezierPath()
-        progress.appendArc(
-            withCenter: center,
-            radius: radius,
-            startAngle: 90,
-            endAngle: 90 - normalized * 360,
-            clockwise: true
-        )
-        progress.lineWidth = lineWidth
-        progress.lineCapStyle = .round
-        palette.end.setStroke()
-        progress.stroke()
     }
 
     private func palette(for role: StatusItemQuotaPaletteRole) -> Palette {
@@ -587,8 +508,7 @@ final class StatusItemController: NSObject {
         guard let button = statusItem.button else { return }
         let presentation = StatusItemPresentation(
             snapshot: store.snapshot,
-            configuration: menuBarConfiguration,
-            displayMode: statusItemDisplayMode
+            configuration: menuBarConfiguration
         )
         let appearance = button.effectiveAppearance
         guard presentation != lastPresentation || appearance.name != lastAppearanceName else { return }
@@ -603,6 +523,7 @@ final class StatusItemController: NSObject {
 
     private var menuBarConfiguration: MenuBarLabelConfiguration {
         MenuBarLabelConfiguration(
+            showsLivePreview: defaults.object(forKey: AppPreferenceKeys.showsLivePreview) as? Bool ?? true,
             quotaDisplay: QuotaDisplayPreference(
                 rawValue: defaults.string(forKey: AppPreferenceKeys.quotaDisplay) ?? ""
             ) ?? .remaining,
@@ -610,12 +531,6 @@ final class StatusItemController: NSObject {
             showsWeekly: defaults.object(forKey: AppPreferenceKeys.showsWeekly) as? Bool ?? true,
             showsResetCountdown: defaults.object(forKey: AppPreferenceKeys.showsResetCountdown) as? Bool ?? true
         )
-    }
-
-    private var statusItemDisplayMode: StatusItemDisplayMode {
-        StatusItemDisplayMode(
-            rawValue: defaults.string(forKey: AppPreferenceKeys.statusItemDisplayMode) ?? ""
-        ) ?? .rich
     }
 
 }
