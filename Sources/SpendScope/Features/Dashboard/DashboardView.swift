@@ -805,10 +805,10 @@ private struct DashboardContentView: View {
 }
 
 private enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
-    case activity = "Skills / Tools"
     case trend = "用量趋势"
+    case activity = "Skills / Tools"
 
-    static let defaultTab: DashboardAnalyticsTab = .activity
+    static let defaultTab: DashboardAnalyticsTab = .trend
 
     var id: Self { self }
 }
