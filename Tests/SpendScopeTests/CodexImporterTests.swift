@@ -23,6 +23,7 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(first.discoveredFileIDs?.count, 1)
         XCTAssertEqual(second.skippedFileCount, 1)
         XCTAssertEqual(try store.totalUsage(), 1_100)
+        XCTAssertEqual(try store.usageEvents().first?.project.name, "SpendScopeFixture")
         XCTAssertEqual(try store.latestQuotas().map(\.observation.kind), [.fiveHour, .weekly])
         XCTAssertEqual(try store.sessions().first?.activity, .completed)
         XCTAssertEqual(try store.sessions().first?.sourceKind, .desktop)
@@ -654,11 +655,11 @@ private final class CodexFixture: @unchecked Sendable {
             switch self {
             case .sessionDesktop:
                 return """
-                {"type":"session_meta","payload":{"id":"\(CodexFixture.threadID)","originator":"Codex Desktop","cli_version":"1.0.0"}}
+                {"type":"session_meta","payload":{"id":"\(CodexFixture.threadID)","originator":"Codex Desktop","cli_version":"1.0.0","cwd":"/synthetic/SpendScopeFixture"}}
                 """
             case .sessionCLI:
                 return """
-                {"type":"session_meta","payload":{"id":"\(CodexFixture.threadID)","source":"cli","cli_version":"1.0.0"}}
+                {"type":"session_meta","payload":{"id":"\(CodexFixture.threadID)","source":"cli","cli_version":"1.0.0","cwd":"/synthetic/SpendScopeFixture"}}
                 """
             case let .turn(model):
                 return """

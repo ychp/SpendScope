@@ -10,6 +10,31 @@ struct StoredUsageEvent: Sendable {
     let usage: TokenUsageDelta
     let sourceFileID: String
     let sourceOffset: Int64
+    let project: ProjectIdentity
+
+    init(
+        fingerprint: String,
+        observedAtMilliseconds: Int64,
+        threadID: String,
+        sourceKind: CodexSourceKind,
+        model: String,
+        plan: PlanResolution,
+        usage: TokenUsageDelta,
+        sourceFileID: String,
+        sourceOffset: Int64,
+        project: ProjectIdentity = .unknown
+    ) {
+        self.fingerprint = fingerprint
+        self.observedAtMilliseconds = observedAtMilliseconds
+        self.threadID = threadID
+        self.sourceKind = sourceKind
+        self.model = model
+        self.plan = plan
+        self.usage = usage
+        self.sourceFileID = sourceFileID
+        self.sourceOffset = sourceOffset
+        self.project = project
+    }
 }
 
 struct StoredQuotaEvent: Sendable {
@@ -82,6 +107,7 @@ struct FileCheckpoint: Sendable {
     let counterSegment: Int64
     let lastTokenAtMilliseconds: Int64?
     let activityCommittedOffset: Int64
+    let project: ProjectIdentity?
 
     init(
         fileID: String,
@@ -101,7 +127,8 @@ struct FileCheckpoint: Sendable {
         counters: TokenCounters? = nil,
         counterSegment: Int64 = 0,
         lastTokenAtMilliseconds: Int64? = nil,
-        activityCommittedOffset: Int64 = 0
+        activityCommittedOffset: Int64 = 0,
+        project: ProjectIdentity? = nil
     ) {
         self.fileID = fileID
         self.deviceID = deviceID
@@ -121,6 +148,7 @@ struct FileCheckpoint: Sendable {
         self.counterSegment = counterSegment
         self.lastTokenAtMilliseconds = lastTokenAtMilliseconds
         self.activityCommittedOffset = activityCommittedOffset
+        self.project = project
     }
 }
 
@@ -183,6 +211,7 @@ struct StoredUsageQueryRow: Sendable {
     let visibleOutputTokens: Int64
     let reasoningTokens: Int64
     let totalTokens: Int64
+    let project: ProjectIdentity
 }
 
 struct StoredSessionQueryRow: Sendable {
@@ -307,7 +336,8 @@ final class UsageStore: @unchecked Sendable {
             counters: counters,
             counterSegment: try row.requiredInt64("counter_segment"),
             lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms"),
-            activityCommittedOffset: try row.requiredInt64("activity_committed_offset")
+            activityCommittedOffset: try row.requiredInt64("activity_committed_offset"),
+            project: try projectIdentity(from: row)
         )
     }
 
@@ -315,7 +345,7 @@ final class UsageStore: @unchecked Sendable {
         kind: ActivityKind,
         fromMilliseconds: Int64? = nil,
         toMilliseconds: Int64? = nil,
-        limit: Int = 6
+        limit: Int = 20
     ) throws -> [StoredActivityCount] {
         guard limit > 0 else { return [] }
         var predicates = ["kind = ?"]
@@ -452,7 +482,7 @@ final class UsageStore: @unchecked Sendable {
             sql: """
             SELECT fingerprint, observed_at_ms, thread_id, model, plan, plan_raw, plan_is_inferred,
                    uncached_input_tokens, cached_input_tokens, visible_output_tokens,
-                   reasoning_tokens, total_tokens
+                   reasoning_tokens, total_tokens, project_id, project_name
             FROM usage_events\(whereClause)
             ORDER BY observed_at_ms, fingerprint
             """,
@@ -470,7 +500,8 @@ final class UsageStore: @unchecked Sendable {
                 cachedInputTokens: try row.requiredInt64("cached_input_tokens"),
                 visibleOutputTokens: try row.requiredInt64("visible_output_tokens"),
                 reasoningTokens: try row.requiredInt64("reasoning_tokens"),
-                totalTokens: try row.requiredInt64("total_tokens")
+                totalTokens: try row.requiredInt64("total_tokens"),
+                project: try projectIdentity(from: row) ?? .unknown
             )
         }
     }
@@ -761,12 +792,13 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 4 else {
+            guard versions.last ?? 0 <= 5 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(4) {
+            if versions.contains(5) {
                 try validateVersionTwoSchema()
                 try validateVersionThreeSchema()
+                try validateVersionFiveSchema()
                 return
             }
 
@@ -787,14 +819,24 @@ final class UsageStore: @unchecked Sendable {
                 try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (3)")
             }
 
-            // v4 changes quota semantics: only the default Codex pool contributes
-            // to the dashboard. v3 did not persist pool identity, so mixed legacy
-            // snapshots cannot be repaired in place. Clear derived imports and let
-            // the importer rebuild them from the untouched local rollout files.
+            if !versions.contains(4) {
+                // v4 changes quota semantics: only the default Codex pool contributes
+                // to the dashboard. v3 did not persist pool identity, so mixed legacy
+                // snapshots cannot be repaired in place.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (4)")
+            }
+
+            for statement in Self.versionFiveStatements {
+                try database.execute(sql: statement)
+            }
+            // v5 adds project identity to usage events. Rebuild from untouched
+            // rollouts so historical events receive the correct project as well.
             try resetImportedDataInCurrentTransaction()
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (4)")
+            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (5)")
             try validateVersionTwoSchema()
             try validateVersionThreeSchema()
+            try validateVersionFiveSchema()
         }
     }
 
@@ -823,8 +865,9 @@ final class UsageStore: @unchecked Sendable {
             INSERT INTO usage_events(
               fingerprint, observed_at_ms, thread_id, source_kind, model, plan, plan_raw,
               plan_is_inferred, uncached_input_tokens, cached_input_tokens,
-              visible_output_tokens, reasoning_tokens, total_tokens, source_file_id, source_offset
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              visible_output_tokens, reasoning_tokens, total_tokens, source_file_id, source_offset,
+              project_id, project_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(fingerprint) DO NOTHING
             """,
             bindings: [
@@ -833,7 +876,8 @@ final class UsageStore: @unchecked Sendable {
                 event.plan.rawValue.sqliteValue, .integer(event.plan.isInferred ? 1 : 0),
                 .integer(event.usage.uncachedInput), .integer(event.usage.cachedInput),
                 .integer(event.usage.visibleOutput), .integer(event.usage.reasoning),
-                .integer(total), .text(event.sourceFileID), .integer(event.sourceOffset)
+                .integer(total), .text(event.sourceFileID), .integer(event.sourceOffset),
+                .text(event.project.id), .text(event.project.name)
             ]
         )
     }
@@ -1046,8 +1090,9 @@ final class UsageStore: @unchecked Sendable {
               thread_id, last_record_at_ms, last_success_at_ms, format_status, last_error,
               current_model, plan, plan_raw, plan_is_inferred,
               input_tokens, cached_input_tokens, output_tokens, reasoning_tokens,
-              counter_segment, last_token_at_ms, activity_committed_offset
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              counter_segment, last_token_at_ms, activity_committed_offset,
+              project_id, project_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_id) DO UPDATE SET
               device_id = excluded.device_id, inode = excluded.inode, path = excluded.path,
               file_size = excluded.file_size, committed_offset = excluded.committed_offset,
@@ -1063,7 +1108,9 @@ final class UsageStore: @unchecked Sendable {
               reasoning_tokens = excluded.reasoning_tokens,
               counter_segment = excluded.counter_segment,
               last_token_at_ms = excluded.last_token_at_ms,
-              activity_committed_offset = excluded.activity_committed_offset
+              activity_committed_offset = excluded.activity_committed_offset,
+              project_id = excluded.project_id,
+              project_name = excluded.project_name
             """,
             bindings: [
                 .text(checkpoint.fileID), .integer(checkpoint.deviceID), .integer(checkpoint.inode),
@@ -1081,7 +1128,9 @@ final class UsageStore: @unchecked Sendable {
                 (checkpoint.counters?.reasoning).sqliteValue,
                 .integer(checkpoint.counterSegment),
                 checkpoint.lastTokenAtMilliseconds.sqliteValue,
-                .integer(checkpoint.activityCommittedOffset)
+                .integer(checkpoint.activityCommittedOffset),
+                checkpoint.project.map(\.id).sqliteValue,
+                checkpoint.project.map(\.name).sqliteValue
             ]
         )
     }
@@ -1245,8 +1294,23 @@ final class UsageStore: @unchecked Sendable {
         "CREATE INDEX activity_events_ranking_idx ON activity_events(kind, observed_at_ms, name)"
     ]
 
+    private static let versionFiveStatements = [
+        "ALTER TABLE source_files ADD COLUMN project_id TEXT",
+        "ALTER TABLE source_files ADD COLUMN project_name TEXT",
+        "ALTER TABLE usage_events ADD COLUMN project_id TEXT NOT NULL DEFAULT 'unknown'",
+        "ALTER TABLE usage_events ADD COLUMN project_name TEXT NOT NULL DEFAULT '未识别项目'",
+        "CREATE INDEX usage_events_project_time_idx ON usage_events(project_id, observed_at_ms)"
+    ]
+
     private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
         try SQLitePlanResolution.optional(from: row)
+    }
+
+    private func projectIdentity(from row: SQLiteRow) throws -> ProjectIdentity? {
+        guard let id = try row.optionalString("project_id"),
+              let name = try row.optionalString("project_name"),
+              !id.isEmpty, !name.isEmpty else { return nil }
+        return ProjectIdentity(id: id, name: name)
     }
 
     private func storedSession(from row: SQLiteRow) throws -> StoredSession {
@@ -1310,6 +1374,26 @@ final class UsageStore: @unchecked Sendable {
                     "source_kind", "source_file_id", "source_offset"
                 ]
             )
+        ]
+        for requirement in requiredColumns {
+            let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")
+            let existing = try Set(rows.map {
+                try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+            })
+            let missing = requirement.columns.filter { !existing.contains($0) }
+            if !missing.isEmpty {
+                throw UsageStoreError.rebuildRequired(
+                    table: requirement.table,
+                    missingColumns: missing
+                )
+            }
+        }
+    }
+
+    private func validateVersionFiveSchema() throws {
+        let requiredColumns: [(table: String, columns: [String])] = [
+            ("source_files", ["project_id", "project_name"]),
+            ("usage_events", ["project_id", "project_name"])
         ]
         for requirement in requiredColumns {
             let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")

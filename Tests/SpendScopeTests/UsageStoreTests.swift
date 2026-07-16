@@ -24,6 +24,21 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.fileCheckpoint(fileID: batch.file.fileID)?.committedOffset, 80)
     }
 
+    func testUsageEventsPersistOnlyProjectIdentityAndDisplayName() throws {
+        let store = try makeStore()
+        let project = ProjectIdentity(id: "hashed-project-id", name: "SpendScope")
+        try store.commit(ImportBatch(
+            file: .fixture(committedOffset: 80),
+            usageEvents: [.fixture(fingerprint: "project-usage", total: 100, project: project)],
+            quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+
+        XCTAssertEqual(try store.usageEvents().first?.project, project)
+        let columns = try store.schemaColumns(table: "usage_events")
+        XCTAssertFalse(columns.contains("cwd"))
+        XCTAssertFalse(columns.contains("project_path"))
+    }
+
     func testStoresOrthogonalSessionFactsWithoutMessageColumns() throws {
         let store = try makeStore()
         try store.commit(.fixture(session: .fixture(
@@ -44,12 +59,12 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertFalse(columns.contains("response"))
     }
 
-    func testMigrationCreatesExactVersionFourStorageSurface() throws {
+    func testMigrationCreatesExactVersionFiveStorageSurface() throws {
         let url = temporaryDatabaseURL()
         _ = try UsageStore(databaseURL: url)
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5])
         XCTAssertEqual(
             Set(try store.schemaColumns(table: "source_files")),
             Set([
@@ -58,7 +73,7 @@ final class UsageStoreTests: XCTestCase {
                 "format_status", "last_error", "current_model", "plan", "plan_raw",
                 "plan_is_inferred", "input_tokens", "cached_input_tokens", "output_tokens",
                 "reasoning_tokens", "counter_segment", "last_token_at_ms",
-                "activity_committed_offset"
+                "activity_committed_offset", "project_id", "project_name"
             ])
         )
         XCTAssertEqual(
@@ -85,6 +100,10 @@ final class UsageStoreTests: XCTestCase {
                 "source_kind", "source_file_id", "source_offset"
             ])
         )
+        XCTAssertTrue(try store.schemaColumns(table: "usage_events").contains("project_id"))
+        XCTAssertTrue(try store.schemaColumns(table: "usage_events").contains("project_name"))
+        XCTAssertFalse(try store.schemaColumns(table: "usage_events").contains("cwd"))
+        XCTAssertFalse(try store.schemaColumns(table: "usage_events").contains("project_path"))
         XCTAssertEqual(
             Set(try store.schemaTables()),
             Set([
@@ -328,7 +347,7 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.sourceFacts().lastSuccessfulRefreshMilliseconds, 3_000)
     }
 
-    func testExistingVersionOneIsRebuiltIntoVersionFourStorage() throws {
+    func testExistingVersionOneIsRebuiltIntoVersionFiveStorage() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)")
@@ -350,13 +369,13 @@ final class UsageStoreTests: XCTestCase {
 
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5])
         XCTAssertNil(try store.fileCheckpoint(fileID: "legacy"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("input_tokens"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("activity_committed_offset"))
     }
 
-    func testVersionTwoToFourMigrationClearsDerivedDataForSemanticRebuild() throws {
+    func testVersionTwoToFiveMigrationClearsDerivedDataForSemanticRebuild() throws {
         let url = temporaryDatabaseURL()
         do {
             let store = try UsageStore(databaseURL: url)
@@ -367,19 +386,24 @@ final class UsageStoreTests: XCTestCase {
             ))
         }
         let database = try SQLiteDatabase(url: url)
+        try database.execute(sql: "DROP INDEX usage_events_project_time_idx")
+        try database.execute(sql: "ALTER TABLE usage_events DROP COLUMN project_id")
+        try database.execute(sql: "ALTER TABLE usage_events DROP COLUMN project_name")
+        try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_id")
+        try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_name")
         try database.execute(sql: "DROP TABLE activity_events")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN activity_committed_offset")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4, 5)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
     }
 
-    func testVersionThreeToFourMigrationClearsMixedQuotaSnapshots() throws {
+    func testVersionThreeToFiveMigrationClearsDerivedSnapshots() throws {
         let url = temporaryDatabaseURL()
         do {
             let store = try UsageStore(databaseURL: url)
@@ -391,11 +415,16 @@ final class UsageStoreTests: XCTestCase {
             ))
         }
         let database = try SQLiteDatabase(url: url)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version = 4")
+        try database.execute(sql: "DROP INDEX usage_events_project_time_idx")
+        try database.execute(sql: "ALTER TABLE usage_events DROP COLUMN project_id")
+        try database.execute(sql: "ALTER TABLE usage_events DROP COLUMN project_name")
+        try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_id")
+        try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_name")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (4, 5)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertEqual(try migrated.quotaEventCount(), 0)
@@ -600,7 +629,8 @@ private extension StoredUsageEvent {
         fingerprint: String,
         observedAtMilliseconds: Int64 = 3_600_001,
         threadID: String = "thread-1",
-        total: Int64
+        total: Int64,
+        project: ProjectIdentity = .unknown
     ) -> StoredUsageEvent {
         fixture(
             fingerprint: fingerprint,
@@ -611,7 +641,8 @@ private extension StoredUsageEvent {
                 cachedInput: 0,
                 visibleOutput: 0,
                 reasoning: 0
-            )
+            ),
+            project: project
         )
     }
 
@@ -619,7 +650,8 @@ private extension StoredUsageEvent {
         fingerprint: String,
         observedAtMilliseconds: Int64 = 3_600_001,
         threadID: String = "thread-1",
-        usage: TokenUsageDelta
+        usage: TokenUsageDelta,
+        project: ProjectIdentity = .unknown
     ) -> StoredUsageEvent {
         StoredUsageEvent(
             fingerprint: fingerprint,
@@ -630,7 +662,8 @@ private extension StoredUsageEvent {
             plan: PlanResolver.resolve(rawValue: "plus"),
             usage: usage,
             sourceFileID: "file-1",
-            sourceOffset: 64
+            sourceOffset: 64,
+            project: project
         )
     }
 }

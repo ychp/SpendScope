@@ -12,6 +12,17 @@ final class CodexEventDecoderTests: XCTestCase {
         XCTAssertEqual(try decoder.decode(line: Data(turn.utf8)), .turn(.init(turnID: "turn-1", model: "gpt-5.6-sol")))
     }
 
+    func testSessionCapturesHashedProjectIdentityWithoutKeepingFullPath() throws {
+        let session = #"{"type":"session_meta","payload":{"id":"thread-project","source":"cli","cli_version":"1.0.0","cwd":"/Users/example/work/SpendScope"}}"#
+
+        guard case let .session(metadata) = try decoder.decode(line: Data(session.utf8)) else {
+            return XCTFail("Expected session metadata")
+        }
+        XCTAssertEqual(metadata.project?.name, "SpendScope")
+        XCTAssertEqual(metadata.project?.id.count, 64)
+        XCTAssertFalse(metadata.project?.id.contains("/Users/example") ?? true)
+    }
+
     func testSessionSourceObjectIsIgnoredWhileDesktopOriginatorRemainsAuthoritative() throws {
         let session = #"{"type":"session_meta","payload":{"id":"thread-object-desktop","source":{"subagent":true},"originator":"Codex Desktop","cli_version":"1.0.0"}}"#
 

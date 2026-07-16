@@ -8,6 +8,7 @@ struct DashboardSnapshot: Sendable {
     let models: [ModelUsage]
     let dailyUsage: [DailyUsage]
     let activityRankings: ActivityRankingSnapshot
+    let projectUsage: ProjectUsageSnapshot
     let issues: [DashboardIssue]
 
     init(
@@ -18,6 +19,7 @@ struct DashboardSnapshot: Sendable {
         models: [ModelUsage],
         dailyUsage: [DailyUsage],
         activityRankings: ActivityRankingSnapshot = .empty,
+        projectUsage: ProjectUsageSnapshot = .empty,
         issues: [DashboardIssue] = []
     ) {
         self.planName = planName
@@ -27,6 +29,7 @@ struct DashboardSnapshot: Sendable {
         self.models = models
         self.dailyUsage = dailyUsage
         self.activityRankings = activityRankings
+        self.projectUsage = projectUsage
         self.issues = issues
     }
 
@@ -138,6 +141,41 @@ struct ActivityRankingSnapshot: Equatable, Sendable {
     )
 
     func ranking(for range: ActivityRange) -> ActivityRanking {
+        switch range {
+        case .sevenDays: sevenDays
+        case .thirtyDays: thirtyDays
+        case .allTime: allTime
+        }
+    }
+}
+
+struct ProjectUsageEntry: Identifiable, Equatable, Sendable {
+    let id: String
+    let name: String
+    let tokens: Int
+    let share: Double
+}
+
+struct ProjectUsageRanking: Equatable, Sendable {
+    let entries: [ProjectUsageEntry]
+    let totalTokens: Int
+    let projectCount: Int
+
+    static let empty = ProjectUsageRanking(entries: [], totalTokens: 0, projectCount: 0)
+}
+
+struct ProjectUsageSnapshot: Equatable, Sendable {
+    let sevenDays: ProjectUsageRanking
+    let thirtyDays: ProjectUsageRanking
+    let allTime: ProjectUsageRanking
+
+    static let empty = ProjectUsageSnapshot(
+        sevenDays: .empty,
+        thirtyDays: .empty,
+        allTime: .empty
+    )
+
+    func ranking(for range: ActivityRange) -> ProjectUsageRanking {
         switch range {
         case .sevenDays: sevenDays
         case .thirtyDays: thirtyDays

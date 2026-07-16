@@ -95,6 +95,7 @@ private struct DashboardContentView: View {
     @State private var selectedRange = TrendRange.defaultRange
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
     @State private var selectedActivityRange = ActivityRange.defaultRange
+    @State private var selectedProjectRange = ActivityRange.defaultRange
     @State private var hoveredUsageID: DailyUsage.ID?
 
     var body: some View {
@@ -466,6 +467,10 @@ private struct DashboardContentView: View {
         snapshot.activityRankings.ranking(for: selectedActivityRange)
     }
 
+    private var selectedProjectRanking: ProjectUsageRanking {
+        snapshot.projectUsage.ranking(for: selectedProjectRange)
+    }
+
     private var analyticsPanel: some View {
         VStack(spacing: 9) {
             HStack(spacing: 10) {
@@ -473,6 +478,9 @@ private struct DashboardContentView: View {
                 Spacer()
                 if selectedAnalyticsTab == .activity {
                     activityRangeSelector
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
+                } else if selectedAnalyticsTab == .project {
+                    projectRangeSelector
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -484,6 +492,8 @@ private struct DashboardContentView: View {
                     ActivityRankingPanel(ranking: selectedActivityRanking)
                 case .trend:
                     trendRow
+                case .project:
+                    ProjectUsagePanel(ranking: selectedProjectRanking)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -520,15 +530,33 @@ private struct DashboardContentView: View {
     }
 
     private var activityRangeSelector: some View {
+        analyticsRangeSelector(
+            selectedRange: selectedActivityRange,
+            accessibilityLabel: "排行榜时间范围"
+        ) { selectedActivityRange = $0 }
+    }
+
+    private var projectRangeSelector: some View {
+        analyticsRangeSelector(
+            selectedRange: selectedProjectRange,
+            accessibilityLabel: "项目用量时间范围"
+        ) { selectedProjectRange = $0 }
+    }
+
+    private func analyticsRangeSelector(
+        selectedRange: ActivityRange,
+        accessibilityLabel: String,
+        onSelect: @escaping (ActivityRange) -> Void
+    ) -> some View {
         HStack(spacing: 2) {
             ForEach(ActivityRange.allCases) { range in
                 dashboardSelectorButton(
                     title: range.rawValue,
-                    isSelected: selectedActivityRange == range,
+                    isSelected: selectedRange == range,
                     width: 48
                 ) {
                     withAnimation(.easeOut(duration: 0.16)) {
-                        selectedActivityRange = range
+                        onSelect(range)
                     }
                 }
             }
@@ -543,7 +571,7 @@ private struct DashboardContentView: View {
                 .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72))
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("排行榜时间范围")
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private func dashboardSelectorButton(
@@ -807,6 +835,7 @@ private struct DashboardContentView: View {
 private enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
     case trend = "用量趋势"
     case activity = "Skills / Tools"
+    case project = "项目用量"
 
     static let defaultTab: DashboardAnalyticsTab = .trend
 

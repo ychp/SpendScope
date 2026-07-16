@@ -130,6 +130,73 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.dailyUsage.isEmpty)
         XCTAssertEqual(snapshot.planName, "Free")
         XCTAssertEqual(snapshot.activityRankings, .empty)
+        XCTAssertEqual(snapshot.projectUsage, .empty)
+    }
+
+    func testBuildsProjectUsageForSevenThirtyAndAllTimeRanges() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 14, hour: 12
+        )))
+        let todayStart = calendar.startOfDay(for: now)
+        let sevenDayStart = try XCTUnwrap(calendar.date(byAdding: .day, value: -6, to: todayStart))
+        let thirtyDayStart = try XCTUnwrap(calendar.date(byAdding: .day, value: -29, to: todayStart))
+        let projectA = ProjectIdentity(id: "project-a", name: "SpendScope")
+        let projectB = ProjectIdentity(id: "project-b", name: "Website")
+        let sameNameDifferentPath = ProjectIdentity(id: "project-c", name: "SpendScope")
+        let legacy = ProjectIdentity(id: "project-legacy", name: "Legacy")
+        let future = ProjectIdentity(id: "project-future", name: "Future")
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage("a-today", at: todayStart.addingTimeInterval(60), total: 100, project: projectA),
+            usage("a-seven-edge", at: sevenDayStart, total: 20, project: projectA),
+            usage("b-before-seven", at: sevenDayStart.addingTimeInterval(-1), total: 80, project: projectB),
+            usage("same-name", at: thirtyDayStart, total: 30, project: sameNameDifferentPath),
+            usage("legacy", at: thirtyDayStart.addingTimeInterval(-1), total: 50, project: legacy),
+            usage("future", at: now.addingTimeInterval(86_400), total: 1_000, project: future)
+        ], quotas: []))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: calendar)
+        let sevenDays = snapshot.projectUsage.ranking(for: .sevenDays)
+        let thirtyDays = snapshot.projectUsage.ranking(for: .thirtyDays)
+        let allTime = snapshot.projectUsage.ranking(for: .allTime)
+
+        XCTAssertEqual(sevenDays.entries.map(\.id), ["project-a"])
+        XCTAssertEqual(sevenDays.totalTokens, 120)
+        XCTAssertEqual(sevenDays.entries.first?.share, 1)
+        XCTAssertEqual(thirtyDays.entries.map(\.tokens), [120, 80, 30])
+        XCTAssertEqual(thirtyDays.projectCount, 3)
+        XCTAssertEqual(allTime.totalTokens, 280)
+        XCTAssertEqual(allTime.projectCount, 4)
+        XCTAssertEqual(allTime.entries.filter { $0.name == "SpendScope" }.count, 2,
+                       "Same leaf names from different project paths remain distinct")
+        XCTAssertFalse(allTime.entries.contains { $0.id == "project-future" })
+    }
+
+    func testProjectUsageReturnsEveryProjectInSelectedRange() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let store = try makeStore()
+        let events = (0..<25).map { index in
+            usage(
+                "project-\(index)",
+                at: now.addingTimeInterval(-1),
+                total: Int64(index + 1),
+                project: ProjectIdentity(id: "project-id-\(index)", name: "project-\(index)")
+            )
+        }
+        try store.commit(batch(events: events, quotas: []))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(
+            now: now,
+            calendar: .current
+        )
+        let allTime = snapshot.projectUsage.ranking(for: .allTime)
+
+        XCTAssertEqual(allTime.projectCount, 25)
+        XCTAssertEqual(allTime.entries.count, 25)
+        XCTAssertEqual(allTime.entries.first?.tokens, 25)
+        XCTAssertEqual(allTime.entries.last?.tokens, 1)
     }
 
     func testBuildsActivityRankingsForSevenThirtyAndAllTimeLocalDayBoundaries() throws {
@@ -142,7 +209,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         let sevenDayStart = try XCTUnwrap(calendar.date(byAdding: .day, value: -6, to: todayStart))
         let thirtyDayStart = try XCTUnwrap(calendar.date(byAdding: .day, value: -29, to: todayStart))
         let store = try makeStore()
-        let activityEvents = [
+        var activityEvents = [
             activity("skill-today", kind: .skill, name: "swiftui-patterns", at: todayStart.addingTimeInterval(60)),
             activity("skill-seven-edge", kind: .skill, name: "swiftui-patterns", at: sevenDayStart),
             activity("skill-before-seven", kind: .skill, name: "imagegen", at: sevenDayStart.addingTimeInterval(-1)),
@@ -158,6 +225,14 @@ final class DashboardQueryServiceTests: XCTestCase {
             activity("tool-g", kind: .tool, name: "golf", at: todayStart.addingTimeInterval(8)),
             activity("tool-future", kind: .tool, name: "future", at: calendar.date(byAdding: .day, value: 1, to: todayStart)!)
         ]
+        activityEvents += (0..<14).map { index in
+            activity(
+                "tool-extra-\(index)",
+                kind: .tool,
+                name: String(format: "tool-%02d", index),
+                at: todayStart.addingTimeInterval(TimeInterval(20 + index))
+            )
+        }
         try store.commit(batch(events: [], quotas: [], activityEvents: activityEvents))
 
         let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: calendar)
@@ -172,10 +247,12 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(thirtyDays.skills.map(\.count), [2, 2])
         XCTAssertEqual(allTime.skills.map(\.name), ["imagegen", "swiftui-patterns", "legacy-skill"])
         XCTAssertEqual(allTime.skills.map(\.count), [2, 2, 1])
-        XCTAssertEqual(sevenDays.tools.map(\.name), [
-            "alpha", "beta", "charlie", "delta", "echo", "foxtrot"
-        ], "Rankings are capped at Top 6 and ties are stable")
+        XCTAssertEqual(sevenDays.tools.count, 20, "Skills and Tools rankings are capped at Top 20")
+        XCTAssertEqual(sevenDays.tools.first?.name, "alpha")
         XCTAssertEqual(sevenDays.tools.first?.count, 2)
+        XCTAssertTrue(sevenDays.tools.contains { $0.name == "golf" })
+        XCTAssertFalse(sevenDays.tools.contains { $0.name == "tool-13" },
+                       "The stable alphabetical tie break determines the twentieth item")
         XCTAssertFalse(sevenDays.tools.contains { $0.name == "future" })
     }
 
@@ -307,7 +384,8 @@ final class DashboardQueryServiceTests: XCTestCase {
         total: Int64,
         usage: TokenUsageDelta? = nil,
         model: String = "test-model",
-        planRaw: String = "plus"
+        planRaw: String = "plus",
+        project: ProjectIdentity = .unknown
     ) -> StoredUsageEvent {
         StoredUsageEvent(
             fingerprint: fingerprint,
@@ -318,7 +396,8 @@ final class DashboardQueryServiceTests: XCTestCase {
             plan: PlanResolver.resolve(rawValue: planRaw),
             usage: usage ?? .init(uncachedInput: total, cachedInput: 0, visibleOutput: 0, reasoning: 0),
             sourceFileID: "file-1",
-            sourceOffset: 1
+            sourceOffset: 1,
+            project: project
         )
     }
 

@@ -47,6 +47,11 @@ final class DashboardQueryService: @unchecked Sendable {
             ),
             allTime: try activityRanking(fromMilliseconds: nil, toMilliseconds: end)
         )
+        let projectUsage = ProjectUsageSnapshot(
+            sevenDays: try projectRanking(from: sevenDayRows),
+            thirtyDays: try projectRanking(from: thirtyDayRows),
+            allTime: try projectRanking(from: allRows.filter { $0.observedAtMilliseconds < end })
+        )
 
         return DashboardSnapshot(
             planName: resolvedPlanName(from: allRows),
@@ -61,7 +66,42 @@ final class DashboardQueryService: @unchecked Sendable {
                 calendar: calendar
             ),
             activityRankings: activityRankings,
+            projectUsage: projectUsage,
             issues: quotaResult.issues
+        )
+    }
+
+    private func projectRanking(from rows: [StoredUsageQueryRow]) throws -> ProjectUsageRanking {
+        var totals: [String: (name: String, tokens: Int64)] = [:]
+        var overall: Int64 = 0
+        for row in rows {
+            let current = totals[row.project.id] ?? (row.project.name, 0)
+            totals[row.project.id] = (
+                current.name,
+                try checkedAdd(current.tokens, row.totalTokens, context: "project.total")
+            )
+            overall = try checkedAdd(overall, row.totalTokens, context: "projects.total")
+        }
+        guard overall > 0 else { return .empty }
+
+        let ordered = totals.map { id, value in
+            (id: id, name: value.name, tokens: value.tokens)
+        }.sorted { left, right in
+            if left.tokens != right.tokens { return left.tokens > right.tokens }
+            if left.name != right.name { return left.name < right.name }
+            return left.id < right.id
+        }
+        return ProjectUsageRanking(
+            entries: ordered.map { entry in
+                ProjectUsageEntry(
+                    id: entry.id,
+                    name: entry.name,
+                    tokens: Int(clamping: entry.tokens),
+                    share: min(max(Double(entry.tokens) / Double(overall), 0), 1)
+                )
+            },
+            totalTokens: Int(clamping: overall),
+            projectCount: totals.count
         )
     }
 
@@ -73,14 +113,16 @@ final class DashboardQueryService: @unchecked Sendable {
             skills: try store.activityCounts(
                 kind: .skill,
                 fromMilliseconds: fromMilliseconds,
-                toMilliseconds: toMilliseconds
+                toMilliseconds: toMilliseconds,
+                limit: 20
             ).map {
                 ActivityRankingEntry(name: $0.name, count: Int(clamping: $0.count))
             },
             tools: try store.activityCounts(
                 kind: .tool,
                 fromMilliseconds: fromMilliseconds,
-                toMilliseconds: toMilliseconds
+                toMilliseconds: toMilliseconds,
+                limit: 20
             ).map {
                 ActivityRankingEntry(name: $0.name, count: Int(clamping: $0.count))
             }

@@ -46,23 +46,26 @@ struct ActivityRankingPanel: View {
             if entries.isEmpty {
                 compactEmptyState(title: title)
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(entries.prefix(6).enumerated()), id: \.element.id) { index, entry in
-                        rankingRow(
-                            entry,
-                            rank: index + 1,
-                            maximum: entries.first?.count ?? 0
-                        )
-                        if index < min(entries.count, 6) - 1 {
-                            Rectangle()
-                                .fill(SpendScopeTheme.dashboardBorder.opacity(0.72))
-                                .frame(height: 1)
-                                .padding(.leading, 38)
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                            rankingRow(
+                                entry,
+                                rank: index + 1,
+                                maximum: entries.first?.count ?? 0
+                            )
+                            if index < entries.count - 1 {
+                                Rectangle()
+                                    .fill(SpendScopeTheme.dashboardBorder.opacity(0.72))
+                                    .frame(height: 1)
+                                    .padding(.leading, 38)
+                            }
                         }
                     }
+                    .padding(.horizontal, 10)
                 }
-                .padding(.horizontal, 10)
-                .frame(maxHeight: .infinity, alignment: .top)
+                .scrollIndicators(.visible)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

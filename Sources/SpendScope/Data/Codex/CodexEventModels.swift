@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum CodexSourceKind: String, Codable, Sendable {
@@ -13,10 +14,43 @@ enum PlanKind: String, Codable, Sendable {
     case pro20x
 }
 
+struct ProjectIdentity: Equatable, Sendable {
+    let id: String
+    let name: String
+
+    static let unknown = ProjectIdentity(id: "unknown", name: "未识别项目")
+
+    static func resolve(cwd: String?) -> ProjectIdentity? {
+        guard let cwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !cwd.isEmpty else { return nil }
+        let standardizedPath = URL(fileURLWithPath: cwd).standardizedFileURL.path
+        let name = URL(fileURLWithPath: standardizedPath).lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != "/" else { return nil }
+        let id = SHA256.hash(data: Data(standardizedPath.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return ProjectIdentity(id: id, name: name)
+    }
+}
+
 struct SessionMetadata: Equatable, Sendable {
     let threadID: String
     let source: CodexSourceKind
     let formatVersion: String
+    let project: ProjectIdentity?
+
+    init(
+        threadID: String,
+        source: CodexSourceKind,
+        formatVersion: String,
+        project: ProjectIdentity? = nil
+    ) {
+        self.threadID = threadID
+        self.source = source
+        self.formatVersion = formatVersion
+        self.project = project
+    }
 }
 
 struct TurnContext: Equatable, Sendable {

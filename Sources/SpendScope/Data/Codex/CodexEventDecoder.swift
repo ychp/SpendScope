@@ -30,7 +30,8 @@ struct CodexEventDecoder {
                 .init(
                     threadID: threadID,
                     source: source,
-                    formatVersion: formatVersion
+                    formatVersion: formatVersion,
+                    project: ProjectIdentity.resolve(cwd: envelope.payload.cwd)
                 )
             )
 
@@ -204,6 +205,7 @@ private extension CodexEventDecoder {
         let source: String?
         let originator: String?
         let cliVersion: String?
+        let cwd: String?
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -211,12 +213,14 @@ private extension CodexEventDecoder {
             source = try? container.decode(String.self, forKey: .source)
             originator = try container.decodeIfPresent(String.self, forKey: .originator)
             cliVersion = try container.decodeIfPresent(String.self, forKey: .cliVersion)
+            cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
         }
 
         enum CodingKeys: String, CodingKey {
             case id
             case source
             case originator
+            case cwd
             case cliVersion = "cli_version"
         }
     }

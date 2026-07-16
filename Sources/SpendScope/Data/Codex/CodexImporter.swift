@@ -519,6 +519,7 @@ actor CodexImporter {
             }
             context.threadID = metadata.threadID
             context.source = metadata.source
+            if let project = metadata.project { context.project = project }
 
         case .turn(let turn):
             guard context.threadID != nil else { throw ImportContextIssue.missingThread }
@@ -561,7 +562,8 @@ actor CodexImporter {
                         plan: effectivePlan,
                         usage: delta,
                         sourceFileID: rollout.fileID,
-                        sourceOffset: lineOffset
+                        sourceOffset: lineOffset,
+                        project: context.project ?? .unknown
                     ))
                 }
                 context.counters = counters
@@ -691,6 +693,7 @@ actor CodexImporter {
             counters: nil,
             counterSegment: 0,
             lastTokenAtMilliseconds: nil,
+            project: metadata.project,
             state: storedSession?.state ?? .empty(threadID: metadata.threadID),
             createdAtMilliseconds: matchingIndex?.createdAtMilliseconds ?? storedSession?.createdAtMilliseconds,
             updatedAtMilliseconds: matchingIndex?.updatedAtMilliseconds ?? storedSession?.updatedAtMilliseconds
@@ -715,6 +718,7 @@ actor CodexImporter {
             counters: previousFile?.counters,
             counterSegment: previousFile?.counterSegment ?? 0,
             lastTokenAtMilliseconds: previousFile?.lastTokenAtMilliseconds,
+            project: previousFile?.project,
             state: session?.state ?? threadID.map(SessionStateSnapshot.empty(threadID:)),
             createdAtMilliseconds: rollout.thread?.createdAtMilliseconds ?? session?.createdAtMilliseconds,
             updatedAtMilliseconds: rollout.thread?.updatedAtMilliseconds ?? session?.updatedAtMilliseconds
@@ -814,7 +818,8 @@ actor CodexImporter {
             counters: context?.counters,
             counterSegment: context?.counterSegment ?? 0,
             lastTokenAtMilliseconds: context?.lastTokenAtMilliseconds,
-            activityCommittedOffset: activityCommittedOffset
+            activityCommittedOffset: activityCommittedOffset,
+            project: context?.project
         )
     }
 
@@ -867,6 +872,7 @@ private struct ImportContext {
     var counters: TokenCounters?
     var counterSegment: Int64
     var lastTokenAtMilliseconds: Int64?
+    var project: ProjectIdentity?
     var state: SessionStateSnapshot?
     var createdAtMilliseconds: Int64?
     var updatedAtMilliseconds: Int64?
