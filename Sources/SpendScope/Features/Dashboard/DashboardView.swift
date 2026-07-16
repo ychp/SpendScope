@@ -102,7 +102,7 @@ private struct DashboardContentView: View {
             VStack(alignment: .leading, spacing: 14) {
                 dashboardHeader
                 overviewPanel.frame(height: 238)
-                trendPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
+                trendRow.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .padding(20)
         }
@@ -482,6 +482,14 @@ private struct DashboardContentView: View {
         return max(1, maximum + max(maximum / 5, 1))
     }
 
+    private var trendRow: some View {
+        HStack(spacing: 14) {
+            UsageCalendarPanel(usage: snapshot.dailyUsage)
+                .frame(width: 300)
+            trendPanel
+        }
+    }
+
     private var trendPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
@@ -555,7 +563,7 @@ private struct DashboardContentView: View {
                         position: Double(item.total) / Double(trendUpperBound) > 0.72 ? .bottom : .top,
                         spacing: 8
                     ) {
-                        trendHoverCard(item)
+                        DailyUsageHoverCard(usage: item, dateText: item.day)
                     }
                 }
             }
@@ -668,74 +676,6 @@ private struct DashboardContentView: View {
         }
         .min { $0.distance < $1.distance }?
         .id
-    }
-
-    private func trendHoverCard(_ item: DailyUsage) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(item.day)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-
-                Spacer(minLength: 8)
-
-                Text("总 Token")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                Text(TokenFormatter.compact(item.total))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
-                    .monospacedDigit()
-            }
-
-            Rectangle()
-                .fill(SpendScopeTheme.dashboardBorder.opacity(0.8))
-                .frame(height: 1)
-
-            HStack(spacing: 10) {
-                trendHoverMetric("输入", value: item.uncachedInput, color: SpendScopeTheme.dashboardViolet)
-                trendHoverMetric("缓存", value: item.cachedInput, color: SpendScopeTheme.dashboardBlue)
-            }
-
-            HStack(spacing: 10) {
-                trendHoverMetric("输出", value: item.output, color: SpendScopeTheme.output)
-                trendHoverMetric("推理", value: item.reasoning, color: SpendScopeTheme.reasoning)
-            }
-        }
-        .frame(width: 174)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(
-            SpendScopeTheme.dashboardSurface,
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(SpendScopeTheme.dashboardBorder)
-        }
-        .shadow(color: SpendScopeTheme.dashboardShadow, radius: 7, y: 3)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "\(item.day)，总 Token \(item.total)，输入 \(item.uncachedInput)，缓存 \(item.cachedInput)，输出 \(item.output)，推理 \(item.reasoning)"
-        )
-    }
-
-    private func trendHoverMetric(_ title: String, value: Int, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 5, height: 5)
-            Text(title)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-            Spacer(minLength: 2)
-            Text(TokenFormatter.compact(value))
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
-                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.86))
-                .monospacedDigit()
-                .minimumScaleFactor(0.72)
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private func trendSummary(_ title: String, value: Int) -> some View {

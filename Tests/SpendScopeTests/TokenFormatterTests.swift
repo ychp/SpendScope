@@ -79,6 +79,56 @@ private extension DashboardSnapshot {
 }
 
 final class TokenFormatterTests: XCTestCase {
+    func testUsageCalendarBuildsMondayFirstSixWeekGrid() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 16, hour: 12
+        )))
+        let usage = DailyUsage(id: "2026-07-15", day: "7/15", total: 100)
+        let model = UsageCalendarModel(usage: [usage], calendar: calendar, today: today)
+
+        let cells = model.cells(for: today)
+
+        XCTAssertEqual(cells.count, 42)
+        XCTAssertEqual(cells.first?.id, "2026-06-29")
+        XCTAssertEqual(cells.last?.id, "2026-08-09")
+        XCTAssertEqual(cells.filter(\.isInDisplayedMonth).count, 31)
+        XCTAssertEqual(cells.first { $0.id == "2026-07-16" }?.isToday, true)
+        XCTAssertEqual(cells.first { $0.id == "2026-07-17" }?.isFuture, true)
+    }
+
+    func testUsageCalendarNavigationUsesNonzeroHistoryAndCurrentMonthBounds() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let today = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 16, hour: 12
+        )))
+        let model = UsageCalendarModel(
+            usage: [
+                DailyUsage(id: "2026-05-30", day: "5/30", total: 0),
+                DailyUsage(id: "2026-06-02", day: "6/2", total: 10)
+            ],
+            calendar: calendar,
+            today: today
+        )
+
+        XCTAssertTrue(model.canMoveMonth(model.latestMonth, by: -1))
+        XCTAssertFalse(model.canMoveMonth(model.earliestMonth, by: -1))
+        XCTAssertFalse(model.canMoveMonth(model.latestMonth, by: 1))
+        XCTAssertEqual(
+            calendar.dateComponents([.year, .month], from: model.earliestMonth),
+            DateComponents(year: 2026, month: 6)
+        )
+    }
+
+    func testUsageCalendarIntensityUsesLogarithmicFourLevelScale() {
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 0, maximum: 1_000_000), 0)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 10, maximum: 1_000_000), 1)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 1_000, maximum: 1_000_000), 3)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 1_000_000, maximum: 1_000_000), 4)
+    }
+
     func testMenuQuotaResetTextUsesRelativeDescriptionAndLabeledFallback() {
         let now = Date(timeIntervalSince1970: 1_000)
         let relativeQuota = QuotaSnapshot(
