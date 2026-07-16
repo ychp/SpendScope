@@ -1,12 +1,18 @@
 import AppKit
+import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = DashboardStore.live()
+    lazy var usageReminderController = UsageReminderController(store: store)
 
     private var statusItemController: StatusItemController?
     private var openDashboardAction: (() -> Void)?
     private var openSettingsAction: (() -> Void)?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -15,6 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onOpenDashboard: { [weak self] in self?.openDashboard() },
             onOpenSettings: { [weak self] in self?.openSettings() }
         )
+        usageReminderController.start()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        usageReminderController.applicationDidBecomeActive()
     }
 
     func updateSceneActions(
@@ -41,5 +52,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        guard notification.request.content.categoryIdentifier
+                == UsageReminderNotification.categoryIdentifier else {
+            completionHandler([])
+            return
+        }
+        completionHandler([.banner, .sound])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let request = response.notification.request
+        let isUsageReminder = request.content.categoryIdentifier
+            == UsageReminderNotification.categoryIdentifier
+            || request.identifier.hasPrefix(UsageReminderNotification.identifierPrefix)
+        completionHandler()
+        guard isUsageReminder else { return }
+        Task { @MainActor [weak self] in
+            self?.openDashboard()
+        }
     }
 }

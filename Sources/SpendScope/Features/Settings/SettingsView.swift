@@ -71,7 +71,14 @@ struct SettingsView: View {
     }
 
     let store: DashboardStore
+    let reminderController: UsageReminderController
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
+    @AppStorage(AppPreferenceKeys.usageRemindersEnabled) private var usageRemindersEnabled = false
+    @AppStorage(AppPreferenceKeys.remindsFiveHour) private var remindsFiveHour = true
+    @AppStorage(AppPreferenceKeys.remindsWeekly) private var remindsWeekly = true
+    @AppStorage(AppPreferenceKeys.remindsAtTwentyPercent) private var remindsAtTwentyPercent = true
+    @AppStorage(AppPreferenceKeys.remindsAtTenPercent) private var remindsAtTenPercent = true
+    @AppStorage(AppPreferenceKeys.remindsAtFivePercent) private var remindsAtFivePercent = true
     @AppStorage(AppPreferenceKeys.showsLivePreview) private var showsLivePreview = true
     @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
@@ -84,6 +91,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 dashboardSettings
                 statusBarSettings
+                usageReminderSettings
                 dataAndRefreshSettings
                 planAndBillingSettings
                 privacyNotice
@@ -94,7 +102,10 @@ struct SettingsView: View {
         }
         .scrollIndicators(.automatic)
         .frame(width: 600, height: 660)
-        .task { await store.start() }
+        .task {
+            await store.start()
+            await reminderController.refreshAuthorizationStatus()
+        }
         .alert("清空并重新抓取所有数据？", isPresented: $showsRebuildConfirmation) {
             Button("取消", role: .cancel) {}
             Button("清空并重新抓取", role: .destructive) {
@@ -180,6 +191,84 @@ struct SettingsView: View {
             }
             .padding(.horizontal, Layout.cardHorizontalPadding)
             .settingsCard()
+        }
+    }
+
+    private var usageReminderSettings: some View {
+        settingsSection("用量提醒") {
+            VStack(spacing: 0) {
+                preferenceRow("用量提醒", detail: "额度较低时发送 macOS 系统通知") {
+                    Toggle("", isOn: usageRemindersEnabledBinding)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                VStack(spacing: 0) {
+                    settingsDivider
+                    preferenceRow("提醒额度", detail: "选择需要监控的额度，至少保留一项") {
+                        segmentedGroup {
+                            multiSelectSegment("5H", isOn: reminderFiveHourBinding)
+                            multiSelectSegment("7d", isOn: reminderWeeklyBinding)
+                        }
+                    }
+                    settingsDivider
+                    preferenceRow("预警等级", detail: "剩余额度达到阈值时提醒") {
+                        segmentedGroup {
+                            multiSelectSegment("20%", isOn: reminderTwentyBinding)
+                            multiSelectSegment("10%", isOn: reminderTenBinding)
+                            multiSelectSegment("5%", isOn: reminderFiveBinding)
+                        }
+                    }
+                    settingsDivider
+                    preferenceRow("提醒规则", detail: "避免同一额度周期重复打扰") {
+                        Text("每档每周期一次")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(!usageRemindersEnabled)
+                .opacity(usageRemindersEnabled ? 1 : 0.45)
+
+                settingsDivider
+                preferenceRow("通知权限", detail: notificationPermissionDetail) {
+                    notificationPermissionControl
+                }
+            }
+            .padding(.horizontal, Layout.cardHorizontalPadding)
+            .settingsCard()
+        }
+    }
+
+    @ViewBuilder
+    private var notificationPermissionControl: some View {
+        switch reminderController.authorizationStatus {
+        case .notDetermined:
+            Label("开启后请求", systemImage: "bell")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+        case .authorized:
+            Label("已允许", systemImage: "checkmark.circle.fill")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.green)
+        case .denied:
+            HStack(spacing: 8) {
+                Label("未授权", systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.orange)
+                Button("系统设置") {
+                    reminderController.openNotificationSettings()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private var notificationPermissionDetail: String {
+        switch reminderController.authorizationStatus {
+        case .notDetermined: "首次开启提醒时申请系统权限"
+        case .authorized: "系统通知可以正常发送"
+        case .denied: "请在系统设置中允许 SpendScope 通知"
         }
     }
 
@@ -405,6 +494,73 @@ struct SettingsView: View {
             set: { isVisible in
                 guard isVisible || showsFiveHour else { return }
                 showsWeekly = isVisible
+            }
+        )
+    }
+
+    private var usageRemindersEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { usageRemindersEnabled },
+            set: { isEnabled in
+                usageRemindersEnabled = isEnabled
+                reminderController.configurationDidChange(
+                    requestAuthorizationIfNeeded: isEnabled
+                )
+            }
+        )
+    }
+
+    private var reminderFiveHourBinding: Binding<Bool> {
+        Binding(
+            get: { remindsFiveHour },
+            set: { isSelected in
+                guard isSelected || remindsWeekly else { return }
+                remindsFiveHour = isSelected
+                reminderController.configurationDidChange()
+            }
+        )
+    }
+
+    private var reminderWeeklyBinding: Binding<Bool> {
+        Binding(
+            get: { remindsWeekly },
+            set: { isSelected in
+                guard isSelected || remindsFiveHour else { return }
+                remindsWeekly = isSelected
+                reminderController.configurationDidChange()
+            }
+        )
+    }
+
+    private var reminderTwentyBinding: Binding<Bool> {
+        Binding(
+            get: { remindsAtTwentyPercent },
+            set: { isSelected in
+                guard isSelected || remindsAtTenPercent || remindsAtFivePercent else { return }
+                remindsAtTwentyPercent = isSelected
+                reminderController.configurationDidChange()
+            }
+        )
+    }
+
+    private var reminderTenBinding: Binding<Bool> {
+        Binding(
+            get: { remindsAtTenPercent },
+            set: { isSelected in
+                guard isSelected || remindsAtTwentyPercent || remindsAtFivePercent else { return }
+                remindsAtTenPercent = isSelected
+                reminderController.configurationDidChange()
+            }
+        )
+    }
+
+    private var reminderFiveBinding: Binding<Bool> {
+        Binding(
+            get: { remindsAtFivePercent },
+            set: { isSelected in
+                guard isSelected || remindsAtTwentyPercent || remindsAtTenPercent else { return }
+                remindsAtFivePercent = isSelected
+                reminderController.configurationDidChange()
             }
         )
     }

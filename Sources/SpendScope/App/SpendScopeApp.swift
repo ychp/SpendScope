@@ -22,7 +22,10 @@ struct SpendScopeApp: App {
         .defaultSize(width: 920, height: 620)
 
         Settings {
-            SettingsView(store: appDelegate.store)
+            SettingsView(
+                store: appDelegate.store,
+                reminderController: appDelegate.usageReminderController
+            )
                 .preferredColorScheme(.light)
                 .background(
                     AppWindowLevelBridge(

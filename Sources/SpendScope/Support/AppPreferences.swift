@@ -2,6 +2,13 @@ import SwiftUI
 
 enum AppPreferenceKeys {
     static let keepsDashboardOnTop = "dashboard.keepsOnTop"
+    static let usageRemindersEnabled = "usageReminders.enabled"
+    static let remindsFiveHour = "usageReminders.quotas.fiveHour"
+    static let remindsWeekly = "usageReminders.quotas.weekly"
+    static let remindsAtTwentyPercent = "usageReminders.thresholds.twenty"
+    static let remindsAtTenPercent = "usageReminders.thresholds.ten"
+    static let remindsAtFivePercent = "usageReminders.thresholds.five"
+    static let usageReminderCheckpoint = "usageReminders.checkpoint.v1"
     static let showsLivePreview = "menuBar.showsLivePreview"
     static let showsResetCountdown = "menuBar.showsResetCountdown"
     static let quotaDisplay = "menuBar.quotaDisplay"
