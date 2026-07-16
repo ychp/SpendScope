@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DashboardView: View {
     let store: DashboardStore
+    @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
 
     var body: some View {
         Group {
@@ -71,6 +72,18 @@ struct DashboardView: View {
                         .labelStyle(.iconOnly)
                 }
                 .help("设置")
+
+                Button {
+                    keepsDashboardOnTop.toggle()
+                } label: {
+                    Image(systemName: keepsDashboardOnTop ? "pin.fill" : "pin")
+                        .foregroundStyle(keepsDashboardOnTop ? Color.accentColor : Color.primary)
+                        .frame(width: 16, height: 16)
+                }
+                .accessibilityLabel(keepsDashboardOnTop ? "取消看板置顶" : "置顶看板")
+                .accessibilityValue(keepsDashboardOnTop ? "已置顶" : "未置顶")
+                .accessibilityAddTraits(keepsDashboardOnTop ? .isSelected : [])
+                .help(keepsDashboardOnTop ? "取消看板置顶" : "置顶看板")
             }
         }
     }

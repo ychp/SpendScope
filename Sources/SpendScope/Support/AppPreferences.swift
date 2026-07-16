@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum AppPreferenceKeys {
+    static let keepsDashboardOnTop = "dashboard.keepsOnTop"
     static let showsLivePreview = "menuBar.showsLivePreview"
     static let showsResetCountdown = "menuBar.showsResetCountdown"
     static let quotaDisplay = "menuBar.quotaDisplay"

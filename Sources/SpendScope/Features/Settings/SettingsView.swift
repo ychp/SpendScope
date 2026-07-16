@@ -71,6 +71,7 @@ struct SettingsView: View {
     }
 
     let store: DashboardStore
+    @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
     @AppStorage(AppPreferenceKeys.showsLivePreview) private var showsLivePreview = true
     @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
@@ -81,6 +82,7 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                dashboardSettings
                 statusBarSettings
                 dataAndRefreshSettings
                 planAndBillingSettings
@@ -100,6 +102,20 @@ struct SettingsView: View {
             }
         } message: {
             Text("这会清空 SpendScope 已抓取的用量、额度、会话和 Skills / Tools 统计，然后从本机 Codex 数据全量重新抓取。不会删除 Codex 原始数据。")
+        }
+    }
+
+    private var dashboardSettings: some View {
+        settingsSection("看板") {
+            VStack(spacing: 0) {
+                preferenceRow("置顶显示", detail: "让看板始终显示在其他普通窗口上方") {
+                    Toggle("", isOn: $keepsDashboardOnTop)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+            }
+            .padding(.horizontal, Layout.cardHorizontalPadding)
+            .settingsCard()
         }
     }
 

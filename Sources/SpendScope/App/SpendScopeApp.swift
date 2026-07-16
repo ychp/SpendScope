@@ -3,11 +3,20 @@ import SwiftUI
 @main
 struct SpendScopeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
 
     var body: some Scene {
         Window("SpendScope", id: "dashboard") {
             DashboardView(store: appDelegate.store)
                 .preferredColorScheme(.light)
+                .background(
+                    AppWindowLevelBridge(
+                        level: AppWindowLevelPolicy.level(
+                            for: .dashboard,
+                            keepsDashboardOnTop: keepsDashboardOnTop
+                        )
+                    )
+                )
                 .background(StatusItemSceneBridge(appDelegate: appDelegate))
         }
         .defaultSize(width: 920, height: 620)
@@ -15,7 +24,64 @@ struct SpendScopeApp: App {
         Settings {
             SettingsView(store: appDelegate.store)
                 .preferredColorScheme(.light)
+                .background(
+                    AppWindowLevelBridge(
+                        level: AppWindowLevelPolicy.level(
+                            for: .settings,
+                            keepsDashboardOnTop: keepsDashboardOnTop
+                        )
+                    )
+                )
         }
+    }
+}
+
+enum AppWindowRole {
+    case dashboard
+    case settings
+}
+
+@MainActor
+enum AppWindowLevelPolicy {
+    static func level(
+        for role: AppWindowRole,
+        keepsDashboardOnTop: Bool
+    ) -> NSWindow.Level {
+        guard keepsDashboardOnTop else { return .normal }
+        switch role {
+        case .dashboard: return .floating
+        case .settings: return .modalPanel
+        }
+    }
+}
+
+private final class AppWindowLevelView: NSView {
+    var level: NSWindow.Level = .normal {
+        didSet { updateWindowLevel() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateWindowLevel()
+    }
+
+    private func updateWindowLevel() {
+        guard let window else { return }
+        window.level = level
+    }
+}
+
+private struct AppWindowLevelBridge: NSViewRepresentable {
+    let level: NSWindow.Level
+
+    func makeNSView(context: Context) -> AppWindowLevelView {
+        let view = AppWindowLevelView()
+        view.level = level
+        return view
+    }
+
+    func updateNSView(_ nsView: AppWindowLevelView, context: Context) {
+        nsView.level = level
     }
 }
 

@@ -220,6 +220,29 @@ final class TokenFormatterTests: XCTestCase {
 
 @MainActor
 final class StatusItemPresentationTests: XCTestCase {
+    func testAppWindowLevelPolicyKeepsSettingsAbovePinnedDashboard() {
+        let dashboardLevel = AppWindowLevelPolicy.level(
+            for: .dashboard,
+            keepsDashboardOnTop: true
+        )
+        let settingsLevel = AppWindowLevelPolicy.level(
+            for: .settings,
+            keepsDashboardOnTop: true
+        )
+
+        XCTAssertEqual(dashboardLevel, .floating)
+        XCTAssertEqual(settingsLevel, .modalPanel)
+        XCTAssertGreaterThan(settingsLevel.rawValue, dashboardLevel.rawValue)
+        XCTAssertEqual(
+            AppWindowLevelPolicy.level(for: .dashboard, keepsDashboardOnTop: false),
+            .normal
+        )
+        XCTAssertEqual(
+            AppWindowLevelPolicy.level(for: .settings, keepsDashboardOnTop: false),
+            .normal
+        )
+    }
+
     func testUsesCodexUCompatibleCanvasAndIconMetrics() {
         let presentation = StatusItemPresentation(
             snapshot: .preview,
