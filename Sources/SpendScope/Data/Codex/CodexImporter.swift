@@ -56,6 +56,22 @@ actor CodexImporter {
         self.calendar = calendar
     }
 
+    func rebuildFromLocalData() async -> ImportResult {
+        do {
+            try store.resetImportedData()
+        } catch {
+            return ImportResult(
+                scope: .history,
+                processedFileCount: 0,
+                skippedFileCount: 0,
+                issues: [.init(kind: .store, fileID: nil, detail: "data-reset-failed")],
+                indexHealth: .degraded("data reset failed"),
+                discoveredFileIDs: nil
+            )
+        }
+        return await refresh(scope: .history)
+    }
+
     func refresh(scope: ImportScope) async -> ImportResult {
         let inventory: CodexSourceInventory
         do {

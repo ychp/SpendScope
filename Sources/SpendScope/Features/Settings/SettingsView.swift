@@ -76,6 +76,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
     @AppStorage(AppPreferenceKeys.showsFiveHour) private var showsFiveHour = true
     @AppStorage(AppPreferenceKeys.showsWeekly) private var showsWeekly = true
+    @State private var showsRebuildConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -92,6 +93,14 @@ struct SettingsView: View {
         .scrollIndicators(.automatic)
         .frame(width: 600, height: 660)
         .task { await store.start() }
+        .alert("清空并重新抓取所有数据？", isPresented: $showsRebuildConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("清空并重新抓取", role: .destructive) {
+                Task { await store.rebuildFromLocalData() }
+            }
+        } message: {
+            Text("这会清空 SpendScope 已抓取的用量、额度、会话和 Skills / Tools 统计，然后从本机 Codex 数据全量重新抓取。不会删除 Codex 原始数据。")
+        }
     }
 
     private var statusBarSettings: some View {
@@ -205,7 +214,27 @@ struct SettingsView: View {
                         }
                     }
                     .buttonStyle(.bordered)
-                    .disabled(store.isRefreshing)
+                    .disabled(store.isRefreshing || store.isRebuildingData)
+                }
+                settingsDivider
+                settingsRow {
+                    settingLabel("重建本地数据", detail: "清空统计与检查点后全量重新抓取")
+                } control: {
+                    Button(role: .destructive) {
+                        showsRebuildConfirmation = true
+                    } label: {
+                        if store.isRebuildingData {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("正在重新抓取")
+                            }
+                        } else {
+                            Label("清空并重抓", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(store.isRefreshing || store.isRebuildingData)
                 }
             }
             .padding(.horizontal, Layout.cardHorizontalPadding)

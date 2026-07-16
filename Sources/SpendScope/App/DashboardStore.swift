@@ -35,6 +35,7 @@ protocol DashboardDataClient: Sendable {
     func loadCached() async throws -> DashboardDataResult
     func refresh() async throws -> DashboardDataResult
     func backfillHistory() async throws -> DashboardDataResult
+    func rebuildFromLocalData() async throws -> DashboardDataResult
 }
 
 actor LiveDashboardDataClient: DashboardDataClient {
@@ -106,6 +107,23 @@ actor LiveDashboardDataClient: DashboardDataClient {
         await beforeImport(.history)
         try Task.checkCancellation()
         let importResult = await importer.refresh(scope: .history)
+        try Task.checkCancellation()
+        try store.persistSourceStatus(
+            indexHealth: importResult.indexHealth,
+            discoveredFileIDs: importResult.discoveredFileIDs,
+            issues: importResult.issues,
+            processedFileCount: importResult.processedFileCount
+        )
+        return try await makeResult(importResult: importResult)
+    }
+
+    func rebuildFromLocalData() async throws -> DashboardDataResult {
+        try await acquireOperation()
+        defer { releaseOperation() }
+        try Task.checkCancellation()
+        await beforeImport(.history)
+        try Task.checkCancellation()
+        let importResult = await importer.rebuildFromLocalData()
         try Task.checkCancellation()
         try store.persistSourceStatus(
             indexHealth: importResult.indexHealth,
@@ -233,6 +251,10 @@ private actor UnavailableDashboardDataClient: DashboardDataClient {
     func backfillHistory() async throws -> DashboardDataResult {
         throw LiveDashboardDataError.initializationFailed
     }
+
+    func rebuildFromLocalData() async throws -> DashboardDataResult {
+        throw LiveDashboardDataError.initializationFailed
+    }
 }
 
 @MainActor
@@ -242,6 +264,7 @@ final class DashboardStore {
 
     private(set) var state: DashboardLoadState = .loading
     private(set) var isRefreshing = false
+    private(set) var isRebuildingData = false
     private(set) var sourceSummary: SourceSummary?
 
     private let client: any DashboardDataClient
@@ -253,6 +276,7 @@ final class DashboardStore {
     private var foregroundRevision: UInt64 = 0
     private var startTask: Task<Void, Never>?
     private var inFlightRefresh: Task<Void, Never>?
+    private var inFlightRebuild: Task<Void, Never>?
     private var backfillTask: Task<Void, Never>?
     private var automaticRefreshTask: Task<Void, Never>?
 
@@ -331,6 +355,10 @@ final class DashboardStore {
     }
 
     func refresh() async {
+        if let inFlightRebuild {
+            await inFlightRebuild.value
+            return
+        }
         if let inFlightRefresh {
             await inFlightRefresh.value
             return
@@ -353,6 +381,45 @@ final class DashboardStore {
         await task.value
         inFlightRefresh = nil
         isRefreshing = false
+    }
+
+    func rebuildFromLocalData() async {
+        if let inFlightRebuild {
+            await inFlightRebuild.value
+            return
+        }
+        if let inFlightRefresh {
+            await inFlightRefresh.value
+            if let inFlightRebuild {
+                await inFlightRebuild.value
+                return
+            }
+        }
+
+        backfillTask?.cancel()
+        backfillTask = nil
+        foregroundRevision &+= 1
+        publicationRevision &+= 1
+        isRebuildingData = true
+        sourceSummary = nil
+        state = .loading
+
+        let client = self.client
+        let task = Task { @MainActor [weak self, client] in
+            do {
+                let result = try await client.rebuildFromLocalData()
+                guard !Task.isCancelled else { return }
+                self?.publish(result)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.publicationRevision &+= 1
+                self?.state = .failed("无法重新抓取 Codex 本地数据，请稍后重试。")
+            }
+        }
+        inFlightRebuild = task
+        await task.value
+        inFlightRebuild = nil
+        isRebuildingData = false
     }
 
     private func launchBackfill() {
@@ -426,6 +493,7 @@ final class DashboardStore {
     isolated deinit {
         startTask?.cancel()
         inFlightRefresh?.cancel()
+        inFlightRebuild?.cancel()
         backfillTask?.cancel()
         automaticRefreshTask?.cancel()
     }

@@ -111,6 +111,36 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertFalse(store.isRefreshing)
     }
 
+    func testRebuildCoalescesRequestsAndReplacesVisibleData() async {
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(.fixture(todayTokens: 17), .fixture),
+            refreshResults: [],
+            rebuildResult: .loaded(.fixture(todayTokens: 84), .fixture),
+            pauseRebuild: true
+        )
+        let store = DashboardStore(client: client, refreshInterval: .seconds(60))
+        await store.loadCached()
+
+        async let first: Void = store.rebuildFromLocalData()
+        async let second: Void = store.rebuildFromLocalData()
+        await eventually { await client.rebuildCount == 1 }
+
+        XCTAssertTrue(store.isRebuildingData)
+        XCTAssertNil(store.snapshot)
+        guard case .loading = store.state else { return XCTFail("Expected loading state") }
+
+        await client.resumeRebuild()
+        _ = await (first, second)
+
+        guard case let .loaded(snapshot, _) = store.state else {
+            return XCTFail("Expected rebuilt state")
+        }
+        XCTAssertEqual(snapshot.todayTokens, 84)
+        let rebuildCount = await client.rebuildCount
+        XCTAssertEqual(rebuildCount, 1)
+        XCTAssertFalse(store.isRebuildingData)
+    }
+
     func testNoCodexDataPublishesEmptyInsteadOfPreview() async {
         let client = FakeDashboardDataClient(
             loadResult: .empty(.fixture),
@@ -493,31 +523,39 @@ private actor FakeDashboardDataClient: DashboardDataClient {
     private let loadResult: DashboardDataResult
     private var refreshResults: [DashboardDataResult]
     private let backfillResult: DashboardDataResult
+    private let rebuildResult: DashboardDataResult
     private let refreshFailure: FakeClientError?
     private let pauseRefresh: Bool
     private let pauseBackfill: Bool
+    private let pauseRebuild: Bool
     private var refreshContinuations: [CheckedContinuation<Void, Never>] = []
     private var backfillContinuations: [CheckedContinuation<Void, Never>] = []
+    private var rebuildContinuations: [CheckedContinuation<Void, Never>] = []
 
     private(set) var loadCachedCount = 0
     private(set) var refreshCount = 0
     private(set) var backfillCount = 0
     private(set) var completedBackfillCount = 0
+    private(set) var rebuildCount = 0
 
     init(
         loadResult: DashboardDataResult,
         refreshResults: [DashboardDataResult],
         backfillResult: DashboardDataResult = .empty(.fixture),
+        rebuildResult: DashboardDataResult = .empty(.fixture),
         refreshFailure: FakeClientError? = nil,
         pauseRefresh: Bool = false,
-        pauseBackfill: Bool = false
+        pauseBackfill: Bool = false,
+        pauseRebuild: Bool = false
     ) {
         self.loadResult = loadResult
         self.refreshResults = refreshResults
         self.backfillResult = backfillResult
+        self.rebuildResult = rebuildResult
         self.refreshFailure = refreshFailure
         self.pauseRefresh = pauseRefresh
         self.pauseBackfill = pauseBackfill
+        self.pauseRebuild = pauseRebuild
     }
 
     func loadCached() async throws -> DashboardDataResult {
@@ -543,6 +581,14 @@ private actor FakeDashboardDataClient: DashboardDataClient {
         return backfillResult
     }
 
+    func rebuildFromLocalData() async throws -> DashboardDataResult {
+        rebuildCount += 1
+        if pauseRebuild {
+            await withCheckedContinuation { rebuildContinuations.append($0) }
+        }
+        return rebuildResult
+    }
+
     func resumeRefresh() {
         refreshContinuations.forEach { $0.resume() }
         refreshContinuations.removeAll()
@@ -551,6 +597,11 @@ private actor FakeDashboardDataClient: DashboardDataClient {
     func resumeBackfill() {
         backfillContinuations.forEach { $0.resume() }
         backfillContinuations.removeAll()
+    }
+
+    func resumeRebuild() {
+        rebuildContinuations.forEach { $0.resume() }
+        rebuildContinuations.removeAll()
     }
 }
 

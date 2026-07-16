@@ -31,6 +31,64 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.sessionStateEventCount(), 2)
     }
 
+    func testRebuildFromLocalDataClearsAllImportedRowsAndRescansHistory() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic"),
+            .activity,
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(rootURL: fixture.codexRoot, store: store)
+        _ = await importer.refresh(scope: .history)
+
+        try store.commit(ImportBatch(
+            file: FileCheckpoint(
+                fileID: "stale-file", deviceID: 1, inode: 1,
+                path: "/synthetic/stale.jsonl", fileSize: 1, committedOffset: 1,
+                generation: 0, threadID: "stale-thread", lastRecordAtMilliseconds: 1_000,
+                lastSuccessAtMilliseconds: 1_000, formatStatus: "supported", lastError: nil,
+                activityCommittedOffset: 1
+            ),
+            usageEvents: [StoredUsageEvent(
+                fingerprint: "stale-usage", observedAtMilliseconds: 1_000,
+                threadID: "stale-thread", sourceKind: .cli, model: "stale-model",
+                plan: PlanResolver.resolve(rawValue: "plus"),
+                usage: TokenUsageDelta(
+                    uncachedInput: 500, cachedInput: 0, visibleOutput: 0, reasoning: 0
+                ),
+                sourceFileID: "stale-file", sourceOffset: 1
+            )],
+            quotaEvents: [],
+            stateEvents: [],
+            activityEvents: [StoredActivityEvent(
+                fingerprint: "stale-activity", observedAtMilliseconds: 1_000,
+                threadID: "stale-thread", turnID: "stale-turn", kind: .tool,
+                name: "stale-tool", sourceKind: .cli,
+                sourceFileID: "stale-file", sourceOffset: 1
+            )],
+            sessions: [],
+            threadCheckpoints: []
+        ))
+        XCTAssertEqual(try store.totalUsage(), 620)
+        XCTAssertEqual(try store.activityEventCount(), 3)
+
+        let result = await importer.rebuildFromLocalData()
+
+        XCTAssertTrue(result.isSuccessful)
+        XCTAssertEqual(result.scope, .history)
+        XCTAssertEqual(result.processedFileCount, 1)
+        XCTAssertEqual(try store.totalUsage(), 120)
+        XCTAssertEqual(try store.activityEventCount(), 2)
+        XCTAssertNil(try store.fileCheckpoint(fileID: "stale-file"))
+        XCTAssertEqual(
+            try store.activityCounts(
+                kind: .tool, fromMilliseconds: nil, toMilliseconds: nil, limit: 6
+            ).map(\.name),
+            ["exec_command"]
+        )
+    }
+
     func testActivityHistoryBackfillUsesIndependentCheckpointAndIsIdempotent() async throws {
         let fixture = try CodexFixture.make(events: [
             .sessionCLI,
