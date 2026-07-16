@@ -267,8 +267,8 @@ struct SettingsView: View {
                             }
 
                         if plan.id != CodexPlanCatalog.plans.last?.id {
-                            Divider()
-                                .padding(.leading, Layout.cardHorizontalPadding + 36)
+                            settingsDivider
+                                .padding(.horizontal, Layout.cardHorizontalPadding)
                         }
                     }
                 }
@@ -431,7 +431,7 @@ struct SettingsView: View {
 
     private var settingsDivider: some View {
         Divider()
-            .padding(.leading, Layout.labelWidth + Layout.columnSpacing)
+            .accessibilityHidden(true)
     }
 
     private func segmentedGroup<Content: View>(
