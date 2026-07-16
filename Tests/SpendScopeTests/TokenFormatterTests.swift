@@ -58,7 +58,7 @@ private extension DashboardSnapshot {
                 ),
                 QuotaSnapshot(
                     id: "7d", title: "7 天", remaining: 0.84,
-                    resetText: "2026-07-13 10:45"
+                    resetText: "07-13"
                 )
             ],
             models: [
@@ -235,17 +235,15 @@ final class StatusItemPresentationTests: XCTestCase {
 
 final class DashboardSnapshotTests: XCTestCase {
     func testTrendRangesExposeExpectedLabelsAndDefault() {
-        XCTAssertEqual(TrendRange.allCases.map(\.rawValue), ["今日", "7 天", "30 天", "全部"])
+        XCTAssertEqual(TrendRange.allCases.map(\.rawValue), ["7 天", "30 天"])
         XCTAssertEqual(TrendRange.defaultRange, .sevenDays)
     }
 
     func testTrendRangesSelectLatestUsage() {
         let history = makeDailyUsage(count: 45)
 
-        XCTAssertEqual(TrendRange.today.select(from: history).map(\.total), [45])
         XCTAssertEqual(TrendRange.sevenDays.select(from: history).map(\.total), Array(39...45))
         XCTAssertEqual(TrendRange.thirtyDays.select(from: history).map(\.total), Array(16...45))
-        XCTAssertEqual(TrendRange.all.select(from: history).map(\.total), Array(1...45))
     }
 
     func testTrendRangeHandlesLimitedAndEmptyUsage() {
@@ -255,7 +253,7 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertTrue(TrendRange.thirtyDays.select(from: []).isEmpty)
     }
 
-    func testPreviewContainsHistoryForAllTrendRanges() {
+    func testPreviewContainsHistoryForSupportedTrendRanges() {
         XCTAssertGreaterThanOrEqual(DashboardSnapshot.preview.dailyUsage.count, 45)
     }
 
@@ -292,7 +290,7 @@ final class DashboardSnapshotTests: XCTestCase {
     func testPreviewQuotaResetTextUsesDashboardFormat() {
         let quotas = DashboardSnapshot.preview.quotas
 
-        XCTAssertEqual(quotas.map(\.resetText), ["02:52", "2026-07-13 10:45"])
+        XCTAssertEqual(quotas.map(\.resetText), ["02:52", "07-13"])
         XCTAssertFalse(quotas.contains { $0.resetText.contains("重置") })
     }
 

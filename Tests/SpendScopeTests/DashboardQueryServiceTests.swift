@@ -44,7 +44,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.breakdown.reasoning, 10)
         XCTAssertEqual(snapshot.periods.first?.output, 40, "PeriodUsage.output remains raw output")
         XCTAssertEqual(snapshot.visibleQuotas.map(\.id), ["5h", "7d"])
-        XCTAssertEqual(snapshot.visibleQuotas.map(\.resetText), ["14:00", "2026-07-21 12:00"])
+        XCTAssertEqual(snapshot.visibleQuotas.map(\.resetText), ["14:00", "07-21"])
         XCTAssertEqual(snapshot.planName, "Plus")
         XCTAssertTrue(snapshot.issues.isEmpty)
         XCTAssertEqual(snapshot.dailyUsage.count, 31)
@@ -53,6 +53,37 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.models.first?.name, "test-model")
         XCTAssertEqual(snapshot.models.reduce(0) { $0 + $1.share }, 1, accuracy: 0.000_001)
         XCTAssertTrue(snapshot.models.allSatisfy { $0.share.isFinite && $0.share >= 0 })
+    }
+
+    func testQuotaResetFormatterShowsTimeOnlyOnResetDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 21, hour: 23, minute: 30
+        )))
+        let sameDayReset = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 21, hour: 23, minute: 58
+        )))
+        let nextDayReset = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 22, hour: 0, minute: 8
+        )))
+
+        XCTAssertEqual(
+            QuotaResetFormatter.string(
+                resetsAtMilliseconds: Int64(sameDayReset.timeIntervalSince1970 * 1_000),
+                now: now,
+                calendar: calendar
+            ),
+            "23:58"
+        )
+        XCTAssertEqual(
+            QuotaResetFormatter.string(
+                resetsAtMilliseconds: Int64(nextDayReset.timeIntervalSince1970 * 1_000),
+                now: now,
+                calendar: calendar
+            ),
+            "07-22"
+        )
     }
 
     func testOmitsExpiredAndInvalidQuotaObservationsWithSafeIssues() throws {

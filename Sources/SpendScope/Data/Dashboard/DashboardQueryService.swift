@@ -161,7 +161,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 title: kind == .fiveHour ? "5 小时" : "7 天",
                 remaining: observation.remaining,
                 resetText: QuotaResetFormatter.string(
-                    kind: kind, resetsAtMilliseconds: resetsAt, calendar: calendar
+                    resetsAtMilliseconds: resetsAt, now: now, calendar: calendar
                 ),
                 resetsAt: Date(timeIntervalSince1970: TimeInterval(resetsAt) / 1_000),
                 observedAt: Date(
@@ -201,18 +201,19 @@ enum DashboardQueryError: Error, Equatable {
 
 enum QuotaResetFormatter {
     static func string(
-        kind: QuotaKind,
         resetsAtMilliseconds: Int64,
+        now: Date,
         calendar: Calendar
     ) -> String {
+        let resetDate = Date(
+            timeIntervalSince1970: TimeInterval(resetsAtMilliseconds) / 1_000
+        )
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = kind == .fiveHour ? "HH:mm" : "yyyy-MM-dd HH:mm"
-        return formatter.string(from: Date(
-            timeIntervalSince1970: TimeInterval(resetsAtMilliseconds) / 1_000
-        ))
+        formatter.dateFormat = calendar.isDate(resetDate, inSameDayAs: now) ? "HH:mm" : "MM-dd"
+        return formatter.string(from: resetDate)
     }
 }
 

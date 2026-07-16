@@ -104,26 +104,20 @@ enum DashboardIssue: Hashable, Sendable {
 }
 
 enum TrendRange: String, CaseIterable, Identifiable, Sendable {
-    case today = "今日"
     case sevenDays = "7 天"
     case thirtyDays = "30 天"
-    case all = "全部"
 
     static let defaultRange: TrendRange = .sevenDays
 
     var id: Self { self }
 
     func select(from usage: [DailyUsage]) -> [DailyUsage] {
-        let limit: Int?
         switch self {
-        case .today: limit = 1
-        case .sevenDays: limit = 7
-        case .thirtyDays: limit = 30
-        case .all: limit = nil
+        case .sevenDays:
+            return Array(usage.suffix(7))
+        case .thirtyDays:
+            return Array(usage.suffix(30))
         }
-
-        guard let limit else { return usage }
-        return Array(usage.suffix(limit))
     }
 }
 
