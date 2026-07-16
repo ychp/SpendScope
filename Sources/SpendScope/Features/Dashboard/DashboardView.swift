@@ -93,6 +93,7 @@ struct DashboardView: View {
 private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
     @State private var selectedRange = TrendRange.defaultRange
+    @State private var hoveredUsageID: DailyUsage.ID?
 
     var body: some View {
         ZStack {
@@ -136,7 +137,7 @@ private struct DashboardContentView: View {
 
     private var overviewPanel: some View {
         HStack(spacing: 16) {
-            currentQuotaSection.frame(width: 330)
+            currentQuotaSection.frame(width: 280)
             Rectangle()
                 .fill(SpendScopeTheme.dashboardBorder)
                 .frame(width: 1)
@@ -158,30 +159,9 @@ private struct DashboardContentView: View {
                 )
                 .foregroundStyle(SpendScopeTheme.dashboardMutedText)
             } else {
-                HStack(spacing: 14) {
-                    ZStack {
-                        ForEach(snapshot.visibleQuotas) { quota in
-                            quotaRing(
-                                quota,
-                                diameter: quotaDiameter(for: quota),
-                                lineWidth: quotaLineWidth(for: quota),
-                                color: quotaColor(for: quota)
-                            )
-                        }
-                        VStack(spacing: 6) {
-                            ForEach(snapshot.visibleQuotas) { quota in
-                                quotaCenterLabel(quota)
-                            }
-                        }
-                    }
-                    .frame(width: 166, height: 166)
-
-                    VStack(alignment: .leading, spacing: 18) {
-                        ForEach(snapshot.visibleQuotas) { quota in
-                            quotaResetRow(quota, color: quotaColor(for: quota))
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(spacing: 5) {
+                    quotaRingGroup
+                    quotaResetList
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -193,14 +173,43 @@ private struct DashboardContentView: View {
         quota.id == "7d" ? SpendScopeTheme.dashboardViolet : SpendScopeTheme.dashboardBlue
     }
 
+    private var quotaRingGroup: some View {
+        ZStack {
+            ForEach(snapshot.visibleQuotas) { quota in
+                quotaRing(
+                    quota,
+                    diameter: quotaDiameter(for: quota),
+                    lineWidth: quotaLineWidth(for: quota),
+                    color: quotaColor(for: quota)
+                )
+            }
+
+            if snapshot.visibleQuotas.count == 1,
+               let quota = snapshot.visibleQuotas.first {
+                quotaCenterLabel(quota)
+            } else {
+                if let weeklyQuota = snapshot.weeklyQuota {
+                    quotaCenterLabel(weeklyQuota)
+                }
+                if let fiveHourQuota = snapshot.fiveHourQuota {
+                    quotaOuterLabel(fiveHourQuota)
+                        .offset(y: -56)
+                }
+            }
+        }
+        .frame(width: 132, height: 122)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("剩余额度")
+    }
+
     private func quotaDiameter(for quota: QuotaSnapshot) -> CGFloat {
-        guard snapshot.visibleQuotas.count > 1 else { return 156 }
-        return quota.id == "5h" ? 164 : 128
+        guard snapshot.visibleQuotas.count > 1 else { return 112 }
+        return quota.id == "5h" ? 112 : 86
     }
 
     private func quotaLineWidth(for quota: QuotaSnapshot) -> CGFloat {
-        guard snapshot.visibleQuotas.count > 1 else { return 10 }
-        return quota.id == "5h" ? 10 : 8
+        guard snapshot.visibleQuotas.count > 1 else { return 6 }
+        return quota.id == "5h" ? 4.5 : 6.5
     }
 
     private func quotaCenterLabel(_ quota: QuotaSnapshot) -> some View {
@@ -216,6 +225,21 @@ private struct DashboardContentView: View {
         .accessibilityLabel(quota.remainingLabel)
     }
 
+    private func quotaOuterLabel(_ quota: QuotaSnapshot) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(quota.compactTitle)
+                .font(.system(size: 10, weight: .semibold))
+            Text("\(quota.remainingPercent)%")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .monospacedDigit()
+        }
+        .foregroundStyle(quotaColor(for: quota))
+        .padding(.horizontal, 7)
+        .background(SpendScopeTheme.dashboardSurfaceStrong)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(quota.remainingLabel)
+    }
+
     private func quotaRing(
         _ quota: QuotaSnapshot,
         diameter: CGFloat,
@@ -223,12 +247,13 @@ private struct DashboardContentView: View {
         color: Color
     ) -> some View {
         ZStack {
-            Circle().stroke(SpendScopeTheme.dashboardRingTrack, lineWidth: lineWidth)
+            Circle()
+                .stroke(color.opacity(0.28), lineWidth: 1.5)
             Circle()
                 .trim(from: 0, to: quota.remaining)
                 .stroke(
                     AngularGradient(
-                        colors: [color.opacity(0.72), color, color.opacity(0.88)],
+                        colors: [color.opacity(0.68), color, color.opacity(0.82)],
                         center: .center,
                         startAngle: .degrees(-90),
                         endAngle: .degrees(270)
@@ -240,26 +265,47 @@ private struct DashboardContentView: View {
         .frame(width: diameter, height: diameter)
     }
 
-    private func quotaResetRow(_ quota: QuotaSnapshot, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Circle().fill(color).frame(width: 7, height: 7)
-                Text("\(quota.compactTitle) 重置")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(color.opacity(0.94))
+    private var quotaResetList: some View {
+        VStack(spacing: 0) {
+            ForEach(snapshot.visibleQuotas) { quota in
+                quotaResetRow(quota, color: quotaColor(for: quota))
+
+                if quota.id != snapshot.visibleQuotas.last?.id {
+                    Rectangle()
+                        .fill(SpendScopeTheme.dashboardBorder)
+                        .frame(height: 1)
+                }
             }
-            Text(quota.resetText)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.82))
-                .monospacedDigit()
-                .padding(.leading, 13)
         }
+        .frame(maxWidth: 200)
+    }
+
+    private func quotaResetRow(_ quota: QuotaSnapshot, color: Color) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+
+            Text("\(quota.compactTitle) 重置")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.8))
+
+            Spacer(minLength: 8)
+
+            Text(quota.resetText)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.86))
+                .monospacedDigit()
+        }
+        .frame(height: 22)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(quota.compactTitle) 重置 \(quota.resetText)")
     }
 
     private var periodGridColumns: [GridItem] {
         [
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10)
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
         ]
     }
 
@@ -272,64 +318,39 @@ private struct DashboardContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var periodMetricGridColumns: [GridItem] {
-        [
-            GridItem(.flexible(), spacing: 10),
-            GridItem(.flexible(), spacing: 10)
-        ]
-    }
-
     private func periodTile(_ period: PeriodUsage) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: periodIcon(for: period))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(SpendScopeTheme.dashboardViolet)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 26, height: 26)
                     .background(
-                        SpendScopeTheme.dashboardViolet.opacity(0.13),
-                        in: RoundedRectangle(cornerRadius: 7)
+                        SpendScopeTheme.dashboardViolet.opacity(0.10),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                     )
                 Text(period.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.78))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.88))
+                    .lineLimit(1)
 
-                Spacer(minLength: 4)
+                Spacer(minLength: 6)
 
                 Text(TokenFormatter.compact(period.total))
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
                     .monospacedDigit()
                     .minimumScaleFactor(0.72)
+                    .lineLimit(1)
             }
 
-            LazyVGrid(columns: periodMetricGridColumns, alignment: .leading, spacing: 5) {
-                periodMetric(
-                    "输入",
-                    value: period.uncachedInput,
-                    share: period.share(of: period.uncachedInput),
-                    color: SpendScopeTheme.dashboardViolet
-                )
-                periodMetric(
-                    "缓存",
-                    value: period.cachedInput,
-                    share: period.share(of: period.cachedInput),
-                    color: SpendScopeTheme.dashboardBlue
-                )
-                periodMetric(
-                    "输出",
-                    value: period.visibleOutput,
-                    share: period.share(of: period.visibleOutput),
-                    color: SpendScopeTheme.output
-                )
-                periodMetric(
-                    "推理",
-                    value: period.reasoning,
-                    share: period.share(of: period.reasoning),
-                    color: SpendScopeTheme.reasoning
-                )
-            }
+            Rectangle()
+                .fill(SpendScopeTheme.dashboardBorder.opacity(0.82))
+                .frame(height: 1)
+
+            periodMetricMatrix(period)
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             SpendScopeTheme.dashboardTile,
@@ -342,12 +363,70 @@ private struct DashboardContentView: View {
         .shadow(color: SpendScopeTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
     }
 
+    private func periodMetricMatrix(_ period: PeriodUsage) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                periodMetric(
+                    "输入",
+                    value: period.uncachedInput,
+                    share: period.share(of: period.uncachedInput),
+                    color: SpendScopeTheme.dashboardViolet
+                )
+                .padding(.trailing, 10)
+
+                periodMetricVerticalDivider
+
+                periodMetric(
+                    "缓存",
+                    value: period.cachedInput,
+                    share: period.share(of: period.cachedInput),
+                    color: SpendScopeTheme.dashboardBlue
+                )
+                .padding(.leading, 10)
+            }
+            .frame(maxHeight: .infinity)
+
+            Rectangle()
+                .fill(SpendScopeTheme.dashboardBorder.opacity(0.72))
+                .frame(height: 1)
+
+            HStack(spacing: 0) {
+                periodMetric(
+                    "输出",
+                    value: period.visibleOutput,
+                    share: period.share(of: period.visibleOutput),
+                    color: SpendScopeTheme.output
+                )
+                .padding(.trailing, 10)
+
+                periodMetricVerticalDivider
+
+                periodMetric(
+                    "推理",
+                    value: period.reasoning,
+                    share: period.share(of: period.reasoning),
+                    color: SpendScopeTheme.reasoning
+                )
+                .padding(.leading, 10)
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var periodMetricVerticalDivider: some View {
+        Rectangle()
+            .fill(SpendScopeTheme.dashboardBorder.opacity(0.72))
+            .frame(width: 1)
+            .padding(.vertical, 2)
+    }
+
     private func periodIcon(for period: PeriodUsage) -> String {
         switch period.id {
-        case "today": "sun.max.fill"
+        case "today": "calendar"
         case "sevenDays": "calendar"
         case "thirtyDays": "calendar.badge.clock"
-        default: "sum"
+        default: "chart.bar.fill"
         }
     }
 
@@ -360,16 +439,17 @@ private struct DashboardContentView: View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 5, height: 5)
             Text(title)
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(SpendScopeTheme.dashboardMutedText)
             Spacer(minLength: 3)
             Text(TokenFormatter.compact(value))
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.82))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.88))
                 .monospacedDigit()
                 .minimumScaleFactor(0.72)
+                .lineLimit(1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             "\(title) \(TokenFormatter.compact(value))，占当前周期 \(TokenFormatter.percentage(share))"
@@ -390,6 +470,11 @@ private struct DashboardContentView: View {
     private var selectedAverage: Int {
         guard !selectedUsage.isEmpty else { return 0 }
         return selectedTotal / selectedUsage.count
+    }
+
+    private var hoveredUsage: DailyUsage? {
+        guard let hoveredUsageID else { return nil }
+        return selectedUsage.first { $0.id == hoveredUsageID }
     }
 
     private var trendUpperBound: Int {
@@ -447,6 +532,32 @@ private struct DashboardContentView: View {
                 )
                 .foregroundStyle(SpendScopeTheme.dashboardViolet)
                 .symbolSize(24)
+
+                if hoveredUsage?.id == item.id {
+                    RuleMark(x: .value("悬停日期", item.day))
+                        .foregroundStyle(SpendScopeTheme.dashboardViolet.opacity(0.28))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+
+                    PointMark(
+                        x: .value("悬停日期", item.day),
+                        y: .value("悬停 Token", item.total)
+                    )
+                    .foregroundStyle(Color.white)
+                    .symbolSize(86)
+
+                    PointMark(
+                        x: .value("悬停日期", item.day),
+                        y: .value("悬停 Token", item.total)
+                    )
+                    .foregroundStyle(SpendScopeTheme.dashboardViolet)
+                    .symbolSize(46)
+                    .annotation(
+                        position: Double(item.total) / Double(trendUpperBound) > 0.72 ? .bottom : .top,
+                        spacing: 8
+                    ) {
+                        trendHoverCard(item)
+                    }
+                }
             }
             .chartYAxis {
                 AxisMarks(position: .leading) { value in
@@ -470,6 +581,25 @@ private struct DashboardContentView: View {
                 }
             }
             .chartYScale(domain: 0...trendUpperBound)
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(SpendScopeTheme.dashboardPrimaryText.opacity(0.001))
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                updateHoveredUsage(
+                                    at: location,
+                                    proxy: proxy,
+                                    geometry: geometry
+                                )
+                            case .ended:
+                                hoveredUsageID = nil
+                            }
+                        }
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .dashboardPanel(padding: 14)
@@ -480,6 +610,7 @@ private struct DashboardContentView: View {
             ForEach(TrendRange.allCases) { range in
                 Button {
                     withAnimation(.easeOut(duration: 0.16)) {
+                        hoveredUsageID = nil
                         selectedRange = range
                     }
                 } label: {
@@ -512,6 +643,99 @@ private struct DashboardContentView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("趋势时间范围")
+    }
+
+    private func updateHoveredUsage(
+        at location: CGPoint,
+        proxy: ChartProxy,
+        geometry: GeometryProxy
+    ) {
+        guard let plotFrame = proxy.plotFrame else {
+            hoveredUsageID = nil
+            return
+        }
+
+        let frame = geometry[plotFrame]
+        guard frame.contains(location) else {
+            hoveredUsageID = nil
+            return
+        }
+
+        let plotX = location.x - frame.minX
+        hoveredUsageID = selectedUsage.compactMap { item -> (id: DailyUsage.ID, distance: CGFloat)? in
+            guard let itemX = proxy.position(forX: item.day) else { return nil }
+            return (item.id, abs(itemX - plotX))
+        }
+        .min { $0.distance < $1.distance }?
+        .id
+    }
+
+    private func trendHoverCard(_ item: DailyUsage) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(item.day)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+
+                Spacer(minLength: 8)
+
+                Text("总 Token")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                Text(TokenFormatter.compact(item.total))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+                    .monospacedDigit()
+            }
+
+            Rectangle()
+                .fill(SpendScopeTheme.dashboardBorder.opacity(0.8))
+                .frame(height: 1)
+
+            HStack(spacing: 10) {
+                trendHoverMetric("输入", value: item.uncachedInput, color: SpendScopeTheme.dashboardViolet)
+                trendHoverMetric("缓存", value: item.cachedInput, color: SpendScopeTheme.dashboardBlue)
+            }
+
+            HStack(spacing: 10) {
+                trendHoverMetric("输出", value: item.output, color: SpendScopeTheme.output)
+                trendHoverMetric("推理", value: item.reasoning, color: SpendScopeTheme.reasoning)
+            }
+        }
+        .frame(width: 174)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(
+            SpendScopeTheme.dashboardSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder)
+        }
+        .shadow(color: SpendScopeTheme.dashboardShadow, radius: 7, y: 3)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(item.day)，总 Token \(item.total)，输入 \(item.uncachedInput)，缓存 \(item.cachedInput)，输出 \(item.output)，推理 \(item.reasoning)"
+        )
+    }
+
+    private func trendHoverMetric(_ title: String, value: Int, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 5, height: 5)
+            Text(title)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            Spacer(minLength: 2)
+            Text(TokenFormatter.compact(value))
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.86))
+                .monospacedDigit()
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func trendSummary(_ title: String, value: Int) -> some View {

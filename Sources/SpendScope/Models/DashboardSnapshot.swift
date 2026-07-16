@@ -243,4 +243,26 @@ struct DailyUsage: Identifiable, Sendable {
     let id: String
     let day: String
     let total: Int
+    let uncachedInput: Int
+    let cachedInput: Int
+    let output: Int
+    let reasoning: Int
+
+    init(
+        id: String,
+        day: String,
+        total: Int,
+        uncachedInput: Int = 0,
+        cachedInput: Int = 0,
+        output: Int = 0,
+        reasoning: Int = 0
+    ) {
+        self.id = id
+        self.day = day
+        self.total = total
+        self.uncachedInput = uncachedInput
+        self.cachedInput = cachedInput
+        self.output = output
+        self.reasoning = reasoning
+    }
 }

@@ -103,13 +103,15 @@ final class DashboardQueryService: @unchecked Sendable {
     ) throws -> [DailyUsage] {
         guard !rows.isEmpty else { return [] }
 
-        var totals: [Date: Int64] = [:]
+        var totals: [Date: UsageAggregate] = [:]
         var earliestDay = minimumStart
         for row in rows {
             let date = Date(timeIntervalSince1970: TimeInterval(row.observedAtMilliseconds) / 1_000)
             let day = calendar.startOfDay(for: date)
             if day < earliestDay { earliestDay = day }
-            totals[day] = try checkedAdd(totals[day, default: 0], row.totalTokens, context: "daily.total")
+            var aggregate = totals[day, default: UsageAggregate()]
+            try aggregate.add(row, context: "daily")
+            totals[day] = aggregate
         }
 
         var result: [DailyUsage] = []
@@ -119,10 +121,15 @@ final class DashboardQueryService: @unchecked Sendable {
             guard let year = components.year, let month = components.month, let dayNumber = components.day else {
                 throw DashboardQueryError.invalidCalendarBoundary
             }
+            let aggregate = totals[day, default: UsageAggregate()]
             result.append(DailyUsage(
                 id: String(format: "%04d-%02d-%02d", year, month, dayNumber),
                 day: String(format: "%d/%d", month, dayNumber),
-                total: Int(clamping: totals[day, default: 0])
+                total: Int(clamping: aggregate.total),
+                uncachedInput: Int(clamping: aggregate.uncachedInput),
+                cachedInput: Int(clamping: aggregate.cachedInput),
+                output: Int(clamping: aggregate.visibleOutput),
+                reasoning: Int(clamping: aggregate.reasoning)
             ))
             guard let next = calendar.date(byAdding: .day, value: 1, to: day), next > day else {
                 throw DashboardQueryError.invalidCalendarBoundary
@@ -224,14 +231,20 @@ private struct UsageAggregate {
     var reasoning: Int64 = 0
     var total: Int64 = 0
 
+    init() {}
+
     init(rows: [StoredUsageQueryRow]) throws {
         for row in rows {
-            uncachedInput = try checkedAdd(uncachedInput, row.uncachedInputTokens, context: "usage.uncached")
-            cachedInput = try checkedAdd(cachedInput, row.cachedInputTokens, context: "usage.cached")
-            visibleOutput = try checkedAdd(visibleOutput, row.visibleOutputTokens, context: "usage.visible")
-            reasoning = try checkedAdd(reasoning, row.reasoningTokens, context: "usage.reasoning")
-            total = try checkedAdd(total, row.totalTokens, context: "usage.total")
+            try add(row, context: "usage")
         }
+    }
+
+    mutating func add(_ row: StoredUsageQueryRow, context: String) throws {
+        uncachedInput = try checkedAdd(uncachedInput, row.uncachedInputTokens, context: "\(context).uncached")
+        cachedInput = try checkedAdd(cachedInput, row.cachedInputTokens, context: "\(context).cached")
+        visibleOutput = try checkedAdd(visibleOutput, row.visibleOutputTokens, context: "\(context).visible")
+        reasoning = try checkedAdd(reasoning, row.reasoningTokens, context: "\(context).reasoning")
+        total = try checkedAdd(total, row.totalTokens, context: "\(context).total")
     }
 }
 

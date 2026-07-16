@@ -21,10 +21,18 @@ private extension DashboardSnapshot {
                 return nil
             }
             let total = 8_400_000 + (index % 10) * 650_000 + (index / 10) * 300_000
+            let uncachedInput = total * 38 / 100
+            let cachedInput = total * 52 / 100
+            let output = total * 7 / 100
+            let reasoning = total - uncachedInput - cachedInput - output
             return DailyUsage(
                 id: String(format: "%04d-%02d-%02d", year, month, day),
                 day: String(format: "%d/%d", month, day),
-                total: total
+                total: total,
+                uncachedInput: uncachedInput,
+                cachedInput: cachedInput,
+                output: output,
+                reasoning: reasoning
             )
         }
         return DashboardSnapshot(

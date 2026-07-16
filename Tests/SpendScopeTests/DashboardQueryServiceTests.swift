@@ -50,6 +50,18 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.dailyUsage.count, 31)
         XCTAssertEqual(snapshot.dailyUsage.map(\.id), snapshot.dailyUsage.map(\.id).sorted())
         XCTAssertTrue(snapshot.dailyUsage.contains { $0.total == 0 })
+        let todayUsage = try XCTUnwrap(snapshot.dailyUsage.first { $0.id == "2026-07-14" })
+        XCTAssertEqual(todayUsage.total, 162)
+        XCTAssertEqual(todayUsage.uncachedInput, 102)
+        XCTAssertEqual(todayUsage.cachedInput, 20)
+        XCTAssertEqual(todayUsage.output, 30)
+        XCTAssertEqual(todayUsage.reasoning, 10)
+        XCTAssertTrue(snapshot.dailyUsage.filter { $0.total == 0 }.allSatisfy {
+            $0.uncachedInput == 0
+                && $0.cachedInput == 0
+                && $0.output == 0
+                && $0.reasoning == 0
+        })
         XCTAssertEqual(snapshot.models.first?.name, "test-model")
         XCTAssertEqual(snapshot.models.reduce(0) { $0 + $1.share }, 1, accuracy: 0.000_001)
         XCTAssertTrue(snapshot.models.allSatisfy { $0.share.isFinite && $0.share >= 0 })

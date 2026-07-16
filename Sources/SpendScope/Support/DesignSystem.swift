@@ -19,7 +19,6 @@ enum SpendScopeTheme {
     static let dashboardBorder = Color(red: 0.14, green: 0.18, blue: 0.3).opacity(0.11)
     static let dashboardPrimaryText = Color(red: 0.045, green: 0.065, blue: 0.13)
     static let dashboardMutedText = Color(red: 0.38, green: 0.42, blue: 0.52)
-    static let dashboardRingTrack = Color(red: 0.9, green: 0.915, blue: 0.95)
     static let dashboardGrid = Color(red: 0.14, green: 0.18, blue: 0.3).opacity(0.09)
     static let dashboardViolet = Color(red: 0.43, green: 0.25, blue: 0.94)
     static let dashboardBlue = Color(red: 0.16, green: 0.48, blue: 0.94)
