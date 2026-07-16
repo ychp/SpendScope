@@ -103,13 +103,42 @@ struct UsageCalendarModel {
 
     static func intensity(total: Int, maximum: Int) -> Int {
         guard total > 0, maximum > 0 else { return 0 }
-        let normalized = log1p(Double(total)) / log1p(Double(maximum))
+        let normalized = sqrt(Double(total) / Double(maximum))
         switch normalized {
         case ..<0.25: return 1
         case ..<0.50: return 2
         case ..<0.75: return 3
         default: return 4
         }
+    }
+
+    static func intensityRange(level: Int, maximum: Int) -> ClosedRange<Int>? {
+        guard (1...4).contains(level), maximum > 0 else { return nil }
+
+        func firstTotal(atLeast targetLevel: Int) -> Int {
+            var lower = 1
+            var upper = maximum
+            while lower < upper {
+                let middle = lower + (upper - lower) / 2
+                if intensity(total: middle, maximum: maximum) >= targetLevel {
+                    upper = middle
+                } else {
+                    lower = middle + 1
+                }
+            }
+            return lower
+        }
+
+        let lowerBound = firstTotal(atLeast: level)
+        guard intensity(total: lowerBound, maximum: maximum) == level else {
+            return nil
+        }
+
+        let upperBound = level == 4
+            ? maximum
+            : firstTotal(atLeast: level + 1) - 1
+        guard lowerBound <= upperBound else { return nil }
+        return lowerBound...upperBound
     }
 
     static func date(forID id: String, calendar: Calendar) -> Date? {
@@ -164,6 +193,7 @@ struct UsageCalendarPanel: View {
 
     @State private var displayedMonth: Date
     @State private var hoveredUsageID: DailyUsage.ID?
+    @State private var hoveredLegendLevel: Int?
 
     init(usage: [DailyUsage], calendar: Calendar = .current, today: Date = Date()) {
         let model = UsageCalendarModel(usage: usage, calendar: calendar, today: today)
@@ -199,7 +229,7 @@ struct UsageCalendarPanel: View {
                 }
             }
 
-            heatLegend
+            heatLegend(maximum: maximum)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .dashboardPanel(padding: 14)
@@ -308,7 +338,7 @@ struct UsageCalendarPanel: View {
         }
     }
 
-    private var heatLegend: some View {
+    private func heatLegend(maximum: Int) -> some View {
         HStack(spacing: 7) {
             Spacer()
             Text("低")
@@ -319,6 +349,28 @@ struct UsageCalendarPanel: View {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(heatColor(level: level))
                     .frame(width: 16, height: 10)
+                    .contentShape(Rectangle())
+                    .onHover { active in
+                        if active {
+                            hoveredLegendLevel = level
+                        } else if hoveredLegendLevel == level {
+                            hoveredLegendLevel = nil
+                        }
+                    }
+                    .popover(
+                        isPresented: legendHoverBinding(for: level),
+                        attachmentAnchor: .rect(.bounds),
+                        arrowEdge: .bottom
+                    ) {
+                        UsageHeatLegendHoverCard(
+                            level: level,
+                            range: UsageCalendarModel.intensityRange(level: level, maximum: maximum),
+                            maximum: maximum,
+                            color: heatColor(level: level)
+                        )
+                        .padding(4)
+                    }
+                    .accessibilityLabel(legendAccessibilityLabel(level: level, maximum: maximum))
             }
 
             Text("高")
@@ -327,8 +379,7 @@ struct UsageCalendarPanel: View {
             Spacer()
         }
         .frame(height: 14)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("用量颜色，低到高")
+        .accessibilityElement(children: .contain)
     }
 
     private func dayFillColor(for cell: UsageCalendarCell, level: Int) -> Color {
@@ -373,9 +424,80 @@ struct UsageCalendarPanel: View {
         )
     }
 
+    private func legendHoverBinding(for level: Int) -> Binding<Bool> {
+        Binding(
+            get: { hoveredLegendLevel == level },
+            set: { isPresented in
+                if !isPresented, hoveredLegendLevel == level {
+                    hoveredLegendLevel = nil
+                }
+            }
+        )
+    }
+
+    private func legendAccessibilityLabel(level: Int, maximum: Int) -> String {
+        guard let range = UsageCalendarModel.intensityRange(level: level, maximum: maximum) else {
+            return "用量等级 \(level)，本月暂无对应区间"
+        }
+        return "用量等级 \(level)，\(range.lowerBound) 到 \(range.upperBound) Token"
+    }
+
     private func monthTitle(_ month: Date) -> String {
         let components = model.calendar.dateComponents([.year, .month], from: month)
         return "\(components.year ?? 0)年\(components.month ?? 0)月"
+    }
+}
+
+private struct UsageHeatLegendHoverCard: View {
+    let level: Int
+    let range: ClosedRange<Int>?
+    let maximum: Int
+    let color: Color
+
+    private var rangeText: String {
+        guard let range else { return "本月暂无对应区间" }
+        if range.lowerBound == range.upperBound {
+            return "\(TokenFormatter.compact(range.lowerBound)) Token"
+        }
+        return "\(TokenFormatter.compact(range.lowerBound)) – \(TokenFormatter.compact(range.upperBound)) Token"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(color)
+                    .frame(width: 16, height: 10)
+                Text("用量区间")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+            }
+
+            Text(rangeText)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                .monospacedDigit()
+
+            Text(maximum > 0
+                 ? "本月峰值 \(TokenFormatter.compact(maximum)) · 平衡分级"
+                 : "本月暂无 Token 用量")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+        }
+        .frame(width: 168, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(
+            SpendScopeTheme.dashboardSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder)
+        }
+        .shadow(color: SpendScopeTheme.dashboardShadow, radius: 7, y: 3)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("用量等级 \(level)，\(rangeText)")
     }
 }
 

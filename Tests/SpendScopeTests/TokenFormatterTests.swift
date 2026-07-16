@@ -122,11 +122,40 @@ final class TokenFormatterTests: XCTestCase {
         )
     }
 
-    func testUsageCalendarIntensityUsesLogarithmicFourLevelScale() {
+    func testUsageCalendarIntensityUsesBalancedSquareRootScale() {
         XCTAssertEqual(UsageCalendarModel.intensity(total: 0, maximum: 1_000_000), 0)
         XCTAssertEqual(UsageCalendarModel.intensity(total: 10, maximum: 1_000_000), 1)
-        XCTAssertEqual(UsageCalendarModel.intensity(total: 1_000, maximum: 1_000_000), 3)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 62_499, maximum: 1_000_000), 1)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 62_500, maximum: 1_000_000), 2)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 249_999, maximum: 1_000_000), 2)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 250_000, maximum: 1_000_000), 3)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 562_499, maximum: 1_000_000), 3)
+        XCTAssertEqual(UsageCalendarModel.intensity(total: 562_500, maximum: 1_000_000), 4)
         XCTAssertEqual(UsageCalendarModel.intensity(total: 1_000_000, maximum: 1_000_000), 4)
+    }
+
+    func testUsageCalendarIntensityRangesMatchEveryDisplayedLevel() throws {
+        let maximum = 1_000_000
+        let ranges = try (1...4).map { level in
+            try XCTUnwrap(UsageCalendarModel.intensityRange(level: level, maximum: maximum))
+        }
+
+        XCTAssertEqual(ranges.first?.lowerBound, 1)
+        XCTAssertEqual(ranges.last?.upperBound, maximum)
+
+        for (index, range) in ranges.enumerated() {
+            let level = index + 1
+            XCTAssertEqual(UsageCalendarModel.intensity(total: range.lowerBound, maximum: maximum), level)
+            XCTAssertEqual(UsageCalendarModel.intensity(total: range.upperBound, maximum: maximum), level)
+            if index > 0 {
+                XCTAssertEqual(ranges[index - 1].upperBound + 1, range.lowerBound)
+            }
+        }
+
+        XCTAssertNil(UsageCalendarModel.intensityRange(level: 1, maximum: 1))
+        XCTAssertEqual(UsageCalendarModel.intensityRange(level: 4, maximum: 1), 1...1)
+        XCTAssertNil(UsageCalendarModel.intensityRange(level: 5, maximum: maximum))
+        XCTAssertNil(UsageCalendarModel.intensityRange(level: 1, maximum: 0))
     }
 
     func testMenuQuotaResetTextUsesRelativeDescriptionAndLabeledFallback() {
