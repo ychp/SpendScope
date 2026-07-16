@@ -58,6 +58,28 @@ final class CodexEventDecoderTests: XCTestCase {
         XCTAssertEqual(snapshot.quotas.map(\.windowMinutes), [300, 10_080])
     }
 
+    func testDecodesDefaultCodexQuotaPool() throws {
+        let line = #"{"timestamp":"2026-07-16T10:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":25,"output_tokens":10,"reasoning_output_tokens":5}},"rate_limits":{"limit_id":"codex","plan_type":"plus","primary":{"used_percent":23.0,"window_minutes":10080,"resets_at":1784800000}}}}"#
+
+        guard case let .token(snapshot) = try decoder.decode(line: Data(line.utf8)) else {
+            return XCTFail("Expected token event")
+        }
+        XCTAssertEqual(snapshot.quotas.count, 1)
+        XCTAssertEqual(snapshot.quotas.first?.windowMinutes, 10_080)
+        XCTAssertEqual(snapshot.quotas.first?.usedPercent, 23)
+    }
+
+    func testModelSpecificQuotaPoolDoesNotOverrideDefaultQuota() throws {
+        let line = #"{"timestamp":"2026-07-16T10:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":25,"output_tokens":10,"reasoning_output_tokens":5}},"rate_limits":{"limit_id":"codex_bengalfox","limit_name":"GPT-5.3-Codex-Spark","plan_type":"plus","primary":{"used_percent":0.0,"window_minutes":10080,"resets_at":1784800000}}}}"#
+
+        guard case let .token(snapshot) = try decoder.decode(line: Data(line.utf8)) else {
+            return XCTFail("Expected token event")
+        }
+        XCTAssertEqual(snapshot.counters, TokenCounters(input: 100, cachedInput: 25, output: 10, reasoning: 5))
+        XCTAssertEqual(snapshot.planRaw, "plus")
+        XCTAssertTrue(snapshot.quotas.isEmpty)
+    }
+
     func testDecodesOnlyWhitelistedLifecycleEventsAndIgnoresMessages() throws {
         let started = #"{"timestamp":"2026-07-14T06:55:02.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","model_context_window":258400}}"#
         let message = #"{"timestamp":"2026-07-14T06:55:03.000Z","type":"event_msg","payload":{"type":"user_message","message":"must never enter the store"}}"#

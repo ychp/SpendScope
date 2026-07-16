@@ -44,12 +44,12 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertFalse(columns.contains("response"))
     }
 
-    func testMigrationCreatesExactVersionThreeStorageSurface() throws {
+    func testMigrationCreatesExactVersionFourStorageSurface() throws {
         let url = temporaryDatabaseURL()
         _ = try UsageStore(databaseURL: url)
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4])
         XCTAssertEqual(
             Set(try store.schemaColumns(table: "source_files")),
             Set([
@@ -328,7 +328,7 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.sourceFacts().lastSuccessfulRefreshMilliseconds, 3_000)
     }
 
-    func testExistingVersionOneIsRebuiltIntoVersionThreeStorage() throws {
+    func testExistingVersionOneIsRebuiltIntoVersionFourStorage() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)")
@@ -350,13 +350,13 @@ final class UsageStoreTests: XCTestCase {
 
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4])
         XCTAssertNil(try store.fileCheckpoint(fileID: "legacy"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("input_tokens"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("activity_committed_offset"))
     }
 
-    func testVersionTwoToThreeMigrationPreservesExistingUsageAndStartsBackfillAtZero() throws {
+    func testVersionTwoToFourMigrationClearsDerivedDataForSemanticRebuild() throws {
         let url = temporaryDatabaseURL()
         do {
             let store = try UsageStore(databaseURL: url)
@@ -369,18 +369,37 @@ final class UsageStoreTests: XCTestCase {
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "DROP TABLE activity_events")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN activity_committed_offset")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version = 3")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3])
-        XCTAssertEqual(try migrated.totalUsage(), 321)
-        XCTAssertEqual(try migrated.usageEventCount(), 1)
-        XCTAssertEqual(
-            try migrated.fileCheckpoint(fileID: "file-1")?.activityCommittedOffset,
-            0,
-            "Existing v2 files must be eligible for one historical activity backfill"
-        )
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4])
+        XCTAssertEqual(try migrated.totalUsage(), 0)
+        XCTAssertEqual(try migrated.usageEventCount(), 0)
+        XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
+    }
+
+    func testVersionThreeToFourMigrationClearsMixedQuotaSnapshots() throws {
+        let url = temporaryDatabaseURL()
+        do {
+            let store = try UsageStore(databaseURL: url)
+            try store.commit(ImportBatch(
+                file: .fixture(committedOffset: 10, activityCommittedOffset: 10),
+                usageEvents: [.fixture(fingerprint: "v3-usage", total: 321)],
+                quotaEvents: [.fixture(fingerprint: "v3-mixed-quota")],
+                stateEvents: [], sessions: [], threadCheckpoints: []
+            ))
+        }
+        let database = try SQLiteDatabase(url: url)
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version = 4")
+
+        let migrated = try UsageStore(databaseURL: url)
+
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4])
+        XCTAssertEqual(try migrated.totalUsage(), 0)
+        XCTAssertEqual(try migrated.usageEventCount(), 0)
+        XCTAssertEqual(try migrated.quotaEventCount(), 0)
+        XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
     }
 
     func testActivityEventsAreIdempotentPrivateAndRankedWithStableBoundaries() throws {

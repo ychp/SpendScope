@@ -761,10 +761,10 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 3 else {
+            guard versions.last ?? 0 <= 4 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(3) {
+            if versions.contains(4) {
                 try validateVersionTwoSchema()
                 try validateVersionThreeSchema()
                 return
@@ -780,10 +780,19 @@ final class UsageStore: @unchecked Sendable {
                 try database.execute(sql: "INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)")
                 try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (2)")
             }
-            for statement in Self.versionThreeStatements {
-                try database.execute(sql: statement)
+            if !versions.contains(3) {
+                for statement in Self.versionThreeStatements {
+                    try database.execute(sql: statement)
+                }
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (3)")
             }
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (3)")
+
+            // v4 changes quota semantics: only the default Codex pool contributes
+            // to the dashboard. v3 did not persist pool identity, so mixed legacy
+            // snapshots cannot be repaired in place. Clear derived imports and let
+            // the importer rebuild them from the untouched local rollout files.
+            try resetImportedDataInCurrentTransaction()
+            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (4)")
             try validateVersionTwoSchema()
             try validateVersionThreeSchema()
         }

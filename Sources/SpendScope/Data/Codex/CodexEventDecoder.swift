@@ -108,15 +108,17 @@ struct CodexEventDecoder {
                 )
             }
             let rateLimits = envelope.payload.rateLimits
-            let quotas = [rateLimits?.primary, rateLimits?.secondary]
-                .compactMap { $0 }
-                .map {
-                    RawQuotaWindow(
-                        windowMinutes: $0.windowMinutes,
-                        usedPercent: $0.usedPercent,
-                        resetsAtSeconds: $0.resetsAt
-                    )
-                }
+            let quotas = rateLimits?.suppliesDefaultCodexQuota == false
+                ? []
+                : [rateLimits?.primary, rateLimits?.secondary]
+                    .compactMap { $0 }
+                    .map {
+                        RawQuotaWindow(
+                            windowMinutes: $0.windowMinutes,
+                            usedPercent: $0.usedPercent,
+                            resetsAtSeconds: $0.resetsAt
+                        )
+                    }
             return .token(
                 .init(
                     observedAtMilliseconds: try milliseconds(from: envelope.timestamp),
@@ -307,14 +309,31 @@ private extension CodexEventDecoder {
     }
 
     struct RateLimits: Decodable {
+        let limitID: String?
+        let limitName: String?
         let planType: String?
         let primary: QuotaWindow?
         let secondary: QuotaWindow?
 
         enum CodingKeys: String, CodingKey {
+            case limitID = "limit_id"
+            case limitName = "limit_name"
             case planType = "plan_type"
             case primary
             case secondary
+        }
+
+        var suppliesDefaultCodexQuota: Bool {
+            guard let normalizedID = limitID?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(),
+                !normalizedID.isEmpty
+            else {
+                // Older rollout formats did not identify the pool. Preserve their
+                // quota history instead of treating the missing field as model-specific.
+                return true
+            }
+            return normalizedID == "codex"
         }
     }
 
