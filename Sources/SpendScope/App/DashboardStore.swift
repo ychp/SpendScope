@@ -265,6 +265,7 @@ final class DashboardStore {
     private(set) var state: DashboardLoadState = .loading
     private(set) var isRefreshing = false
     private(set) var isRebuildingData = false
+    private(set) var isAutomaticRefreshEnabled: Bool
     private(set) var sourceSummary: SourceSummary?
 
     private let client: any DashboardDataClient
@@ -283,12 +284,14 @@ final class DashboardStore {
     init(
         client: any DashboardDataClient,
         refreshInterval: Duration = .seconds(60),
+        automaticRefreshEnabled: Bool = true,
         sleeper: @escaping Sleeper = { duration in
             try await ContinuousClock().sleep(for: duration)
         }
     ) {
         self.client = client
         self.refreshInterval = refreshInterval
+        isAutomaticRefreshEnabled = automaticRefreshEnabled
         self.sleeper = sleeper
     }
 
@@ -307,7 +310,13 @@ final class DashboardStore {
         } catch {
             client = UnavailableDashboardDataClient()
         }
-        let store = DashboardStore(client: client)
+        let automaticRefreshEnabled = UserDefaults.standard.object(
+            forKey: AppPreferenceKeys.automaticRefreshEnabled
+        ) as? Bool ?? true
+        let store = DashboardStore(
+            client: client,
+            automaticRefreshEnabled: automaticRefreshEnabled
+        )
         Task { @MainActor [weak store] in
             await store?.start()
         }
@@ -422,6 +431,19 @@ final class DashboardStore {
         isRebuildingData = false
     }
 
+    func setAutomaticRefreshEnabled(_ isEnabled: Bool) {
+        guard isAutomaticRefreshEnabled != isEnabled else { return }
+        isAutomaticRefreshEnabled = isEnabled
+
+        if isEnabled {
+            guard hasStarted else { return }
+            launchAutomaticRefresh()
+        } else {
+            automaticRefreshTask?.cancel()
+            automaticRefreshTask = nil
+        }
+    }
+
     private func launchBackfill() {
         guard backfillTask == nil else { return }
         let client = self.client
@@ -444,7 +466,7 @@ final class DashboardStore {
     }
 
     private func launchAutomaticRefresh() {
-        guard automaticRefreshTask == nil else { return }
+        guard isAutomaticRefreshEnabled, automaticRefreshTask == nil else { return }
         let interval = refreshInterval
         let sleeper = self.sleeper
         automaticRefreshTask = Task { @MainActor [weak self] in

@@ -205,6 +205,57 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertEqual(sleepCount, 1)
     }
 
+    func testStartWithAutomaticRefreshDisabledStillLoadsWithoutLaunchingLoop() async {
+        let sleeper = SuspendedSleeper()
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(.fixture(todayTokens: 1), .fixture),
+            refreshResults: [.loaded(.fixture(todayTokens: 2), .fixture)],
+            backfillResult: .loaded(.fixture(todayTokens: 3), .fixture)
+        )
+        let store = DashboardStore(
+            client: client,
+            refreshInterval: .seconds(60),
+            automaticRefreshEnabled: false,
+            sleeper: { duration in try await sleeper.sleep(for: duration) }
+        )
+
+        await store.start()
+        await eventually { await client.backfillCount == 1 }
+
+        let loadCachedCount = await client.loadCachedCount
+        let refreshCount = await client.refreshCount
+        let sleepCount = await sleeper.callCount
+        XCTAssertFalse(store.isAutomaticRefreshEnabled)
+        XCTAssertEqual(loadCachedCount, 1)
+        XCTAssertEqual(refreshCount, 1)
+        XCTAssertEqual(sleepCount, 0)
+    }
+
+    func testAutomaticRefreshCanBeStoppedAndRestarted() async {
+        let sleeper = SuspendedSleeper()
+        let client = FakeDashboardDataClient(
+            loadResult: .empty(.fixture),
+            refreshResults: [.empty(.fixture)],
+            backfillResult: .empty(.fixture)
+        )
+        let store = DashboardStore(
+            client: client,
+            refreshInterval: .seconds(60),
+            sleeper: { duration in try await sleeper.sleep(for: duration) }
+        )
+
+        await store.start()
+        await eventually { await sleeper.callCount == 1 }
+
+        store.setAutomaticRefreshEnabled(false)
+        await eventually { await sleeper.cancellationCount == 1 }
+        XCTAssertFalse(store.isAutomaticRefreshEnabled)
+
+        store.setAutomaticRefreshEnabled(true)
+        await eventually { await sleeper.callCount == 2 }
+        XCTAssertTrue(store.isAutomaticRefreshEnabled)
+    }
+
     func testOlderBackfillResultDoesNotOverwriteNewerForegroundRefresh() async {
         let sleeper = SuspendedSleeper()
         let client = FakeDashboardDataClient(

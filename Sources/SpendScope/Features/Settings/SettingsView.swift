@@ -73,6 +73,7 @@ struct SettingsView: View {
     let store: DashboardStore
     let reminderController: UsageReminderController
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
+    @AppStorage(AppPreferenceKeys.automaticRefreshEnabled) private var automaticRefreshEnabled = true
     @AppStorage(AppPreferenceKeys.usageRemindersEnabled) private var usageRemindersEnabled = false
     @AppStorage(AppPreferenceKeys.remindsFiveHour) private var remindsFiveHour = true
     @AppStorage(AppPreferenceKeys.remindsWeekly) private var remindsWeekly = true
@@ -303,10 +304,20 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 settingsDivider
-                preferenceRow("自动刷新", detail: "在后台定时更新统计数据") {
-                    Text("每 60 秒")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                preferenceRow(
+                    "自动刷新",
+                    detail: automaticRefreshEnabled
+                        ? "在后台每 60 秒更新统计数据"
+                        : "已关闭，仍可启动时读取或手动刷新"
+                ) {
+                    HStack(spacing: 10) {
+                        Text(automaticRefreshEnabled ? "每 60 秒" : "已关闭")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Toggle("", isOn: automaticRefreshBinding)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
                 }
                 settingsDivider
                 settingsRow {
@@ -400,6 +411,16 @@ struct SettingsView: View {
                 .settingsCard()
             }
         }
+    }
+
+    private var automaticRefreshBinding: Binding<Bool> {
+        Binding(
+            get: { automaticRefreshEnabled },
+            set: { isEnabled in
+                automaticRefreshEnabled = isEnabled
+                store.setAutomaticRefreshEnabled(isEnabled)
+            }
+        )
     }
 
     private var privacyNotice: some View {
