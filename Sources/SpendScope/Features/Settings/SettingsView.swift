@@ -77,23 +77,25 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKeys.showsWeekly) private var showsWeekly = true
 
     var body: some View {
-        TabView {
-            generalSettings
-                .tabItem { Label("通用", systemImage: "gearshape.fill") }
-
-            planSettings
-                .tabItem { Label("套餐", systemImage: "shippingbox.fill") }
-
-            dataSettings
-                .tabItem { Label("数据", systemImage: "externaldrive.fill") }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                statusBarSettings
+                dataAndRefreshSettings
+                planAndBillingSettings
+                privacyNotice
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 22)
         }
-        .frame(width: 580, height: 660)
+        .scrollIndicators(.automatic)
+        .frame(width: 600, height: 660)
         .task { await store.start() }
     }
 
-    private var generalSettings: some View {
-        Form {
-            Section("状态栏") {
+    private var statusBarSettings: some View {
+        settingsSection("状态栏") {
+            VStack(spacing: 0) {
                 preferenceRow("实时预览", detail: "与状态栏使用同一套绘制样式") {
                     Image(nsImage: StatusItemRenderer().render(
                         statusItemPresentation,
@@ -105,6 +107,7 @@ struct SettingsView: View {
                     .accessibilityLabel("SpendScope 状态栏预览")
                     .accessibilityValue(statusItemPresentation.label)
                 }
+                settingsDivider
 
                 preferenceRow("展示模式", detail: "丰富显示进度与倒计时，经典使用额度环") {
                     Picker("", selection: $statusItemDisplayModeRaw) {
@@ -114,6 +117,7 @@ struct SettingsView: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                 }
+                settingsDivider
 
                 preferenceRow("额度口径", detail: "选择状态栏百分比的统计方式") {
                     Picker("", selection: $quotaDisplayRaw) {
@@ -123,6 +127,7 @@ struct SettingsView: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                 }
+                settingsDivider
 
                 preferenceRow("显示内容", detail: "不可用额度会自动隐藏，至少保留一项") {
                     HStack(spacing: 2) {
@@ -132,6 +137,7 @@ struct SettingsView: View {
                     .padding(2)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
                 }
+                settingsDivider
 
                 preferenceRow("重置倒计时", detail: "控制状态栏及悬浮提示中的倒计时") {
                     Toggle("", isOn: $showsResetCountdown)
@@ -139,15 +145,58 @@ struct SettingsView: View {
                         .toggleStyle(.switch)
                 }
             }
-
+            .padding(.horizontal, 12)
+            .settingsCard()
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .scrollIndicators(.hidden)
     }
 
-    private var planSettings: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private var dataAndRefreshSettings: some View {
+        settingsSection("数据与刷新") {
+            VStack(spacing: 0) {
+                healthRow("Codex CLI", health: store.sourceSummary?.cli)
+                settingsDivider
+                healthRow("Codex macOS", health: store.sourceSummary?.desktop)
+                settingsDivider
+                healthRow("线程索引", health: store.sourceSummary?.index)
+                settingsDivider
+                settingsRow {
+                    Text("最近成功刷新")
+                } control: {
+                    Text(lastRefreshText)
+                        .foregroundStyle(.secondary)
+                }
+                settingsDivider
+                settingsRow {
+                    Text("自动刷新")
+                } control: {
+                    Text("每 60 秒")
+                        .foregroundStyle(.secondary)
+                }
+                settingsDivider
+                settingsRow {
+                    settingLabel("手动刷新", detail: "立即重新读取本机 Codex 数据")
+                } control: {
+                    Button {
+                        Task { await store.refresh() }
+                    } label: {
+                        if store.isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Label("立即刷新", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(store.isRefreshing)
+                }
+            }
+            .padding(.horizontal, 12)
+            .settingsCard()
+        }
+    }
+
+    private var planAndBillingSettings: some View {
+        VStack(alignment: .leading, spacing: 18) {
             settingsSection("Codex 套餐") {
                 VStack(spacing: 0) {
                     ForEach(CodexPlanCatalog.plans) { plan in
@@ -193,64 +242,18 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .settingsCard()
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private var dataSettings: some View {
-        Form {
-            Section("数据源") {
-                healthRow("Codex CLI", health: store.sourceSummary?.cli)
-                healthRow("Codex macOS", health: store.sourceSummary?.desktop)
-                healthRow("线程索引", health: store.sourceSummary?.index)
-                settingsRow {
-                    Text("最近成功刷新")
-                } control: {
-                    Text(lastRefreshText)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("刷新") {
-                settingsRow {
-                    Text("自动刷新")
-                } control: {
-                    Text("每 60 秒")
-                        .foregroundStyle(.secondary)
-                }
-
-                settingsRow {
-                    settingLabel("手动刷新", detail: "立即重新读取本机 Codex 数据")
-                } control: {
-                    Button {
-                        Task { await store.refresh() }
-                    } label: {
-                        if store.isRefreshing {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Label("立即刷新", systemImage: "arrow.clockwise")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(store.isRefreshing)
-                }
-            }
-
-            Section {
-                Text("SpendScope 只读取本机 Codex 的安全统计字段，并将聚合数据保存在应用支持目录中。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+    private var privacyNotice: some View {
+        Label {
+            Text("SpendScope 只读取本机 Codex 的安全统计字段，并将聚合数据保存在应用支持目录中。")
+        } icon: {
+            Image(systemName: "lock.shield")
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .scrollIndicators(.hidden)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
     }
 
     private func planRow(_ plan: CodexPlan) -> some View {
@@ -374,6 +377,11 @@ struct SettingsView: View {
 
             content()
         }
+    }
+
+    private var settingsDivider: some View {
+        Divider()
+            .padding(.leading, Layout.labelWidth + Layout.columnSpacing)
     }
 
     private func multiSelectSegment(_ title: String, isOn: Binding<Bool>) -> some View {

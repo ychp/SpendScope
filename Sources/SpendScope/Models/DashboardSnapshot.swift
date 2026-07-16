@@ -7,6 +7,7 @@ struct DashboardSnapshot: Sendable {
     let quotas: [QuotaSnapshot]
     let models: [ModelUsage]
     let dailyUsage: [DailyUsage]
+    let activityRankings: ActivityRankingSnapshot
     let issues: [DashboardIssue]
 
     init(
@@ -16,6 +17,7 @@ struct DashboardSnapshot: Sendable {
         quotas: [QuotaSnapshot],
         models: [ModelUsage],
         dailyUsage: [DailyUsage],
+        activityRankings: ActivityRankingSnapshot = .empty,
         issues: [DashboardIssue] = []
     ) {
         self.planName = planName
@@ -24,6 +26,7 @@ struct DashboardSnapshot: Sendable {
         self.quotas = quotas
         self.models = models
         self.dailyUsage = dailyUsage
+        self.activityRankings = activityRankings
         self.issues = issues
     }
 
@@ -96,6 +99,50 @@ struct DashboardSnapshot: Sendable {
         )
     }
 
+}
+
+enum ActivityRange: String, CaseIterable, Identifiable, Sendable {
+    case sevenDays = "7 日"
+    case thirtyDays = "30 日"
+    case allTime = "累计"
+
+    static let defaultRange: ActivityRange = .sevenDays
+
+    var id: Self { self }
+}
+
+struct ActivityRankingEntry: Identifiable, Equatable, Sendable {
+    let name: String
+    let count: Int
+
+    var id: String { name }
+}
+
+struct ActivityRanking: Equatable, Sendable {
+    let skills: [ActivityRankingEntry]
+    let tools: [ActivityRankingEntry]
+
+    static let empty = ActivityRanking(skills: [], tools: [])
+}
+
+struct ActivityRankingSnapshot: Equatable, Sendable {
+    let sevenDays: ActivityRanking
+    let thirtyDays: ActivityRanking
+    let allTime: ActivityRanking
+
+    static let empty = ActivityRankingSnapshot(
+        sevenDays: .empty,
+        thirtyDays: .empty,
+        allTime: .empty
+    )
+
+    func ranking(for range: ActivityRange) -> ActivityRanking {
+        switch range {
+        case .sevenDays: sevenDays
+        case .thirtyDays: thirtyDays
+        case .allTime: allTime
+        }
+    }
 }
 
 enum DashboardIssue: Hashable, Sendable {

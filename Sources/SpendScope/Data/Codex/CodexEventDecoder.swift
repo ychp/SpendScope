@@ -1,6 +1,10 @@
 import Foundation
 
 struct CodexEventDecoder {
+    func isResponseItem(line: Data) -> Bool {
+        (try? JSONDecoder().decode(TopLevelDiscriminator.self, from: line).type) == "response_item"
+    }
+
     func decode(line: Data) throws -> CodexDecodedEvent? {
         let decoder = JSONDecoder()
         let discriminator = try decoder.decode(TopLevelDiscriminator.self, from: line)
@@ -48,9 +52,43 @@ struct CodexEventDecoder {
                 decoder: decoder
             )
 
+        case "response_item":
+            return try decodeResponseItem(line: line, decoder: decoder)
+
         default:
             return nil
         }
+    }
+
+    private func decodeResponseItem(
+        line: Data,
+        decoder: JSONDecoder
+    ) throws -> CodexDecodedEvent? {
+        let envelope = try decoder.decode(ResponseItemEnvelope.self, from: line)
+        guard envelope.payload.type == "function_call"
+                || envelope.payload.type == "custom_tool_call",
+              let timestamp = envelope.timestamp,
+              let name = envelope.payload.name,
+              !name.isEmpty else {
+            return nil
+        }
+
+        let input = envelope.payload.input ?? envelope.payload.arguments ?? ""
+        let skillNames = ActivityCallScanner.skillNames(in: input)
+        let toolNames: [String]
+        if envelope.payload.type == "custom_tool_call", name == "exec" {
+            let nestedNames = ActivityCallScanner.toolNames(in: input)
+            toolNames = nestedNames.isEmpty ? [name] : nestedNames
+        } else {
+            toolNames = [name]
+        }
+
+        return .activity(.init(
+            observedAtMilliseconds: try milliseconds(from: timestamp),
+            callID: envelope.payload.callID,
+            toolNames: toolNames,
+            skillNames: skillNames
+        ))
     }
 
     private func decodeEventMessage(
@@ -215,6 +253,27 @@ private extension CodexEventDecoder {
         let payload: LifecyclePayload
     }
 
+    struct ResponseItemEnvelope: Decodable {
+        let timestamp: String?
+        let payload: ResponseItemPayload
+    }
+
+    struct ResponseItemPayload: Decodable {
+        let type: String
+        let name: String?
+        let input: String?
+        let arguments: String?
+        let callID: String?
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case name
+            case input
+            case arguments
+            case callID = "call_id"
+        }
+    }
+
     struct LifecyclePayload: Decodable {
         let turnID: String?
         let reason: String?
@@ -269,5 +328,127 @@ private extension CodexEventDecoder {
             case windowMinutes = "window_minutes"
             case resetsAt = "resets_at"
         }
+    }
+}
+
+enum ActivityCallScanner {
+    static func toolNames(in source: String) -> [String] {
+        let searchable = codeRemovingStringsAndComments(source)
+        guard let expression = try? NSRegularExpression(
+            pattern: #"\btools\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*\("#
+        ) else {
+            return []
+        }
+        let range = NSRange(searchable.startIndex..., in: searchable)
+        return expression.matches(in: searchable, range: range).compactMap { match in
+            guard let swiftRange = Range(match.range(at: 1), in: searchable) else { return nil }
+            return String(searchable[swiftRange])
+        }
+    }
+
+    static func skillNames(in source: String) -> [String] {
+        guard let expression = try? NSRegularExpression(
+            pattern: #"/[^\s\"'`]+/SKILL\.md"#
+        ) else {
+            return []
+        }
+        let range = NSRange(source.startIndex..., in: source)
+        let names = expression.matches(in: source, range: range).compactMap { match -> String? in
+            guard let swiftRange = Range(match.range, in: source) else { return nil }
+            return canonicalSkillName(path: String(source[swiftRange]))
+        }
+        return Array(Set(names)).sorted()
+    }
+
+    private static func canonicalSkillName(path: String) -> String? {
+        let components = path.split(separator: "/").map(String.init)
+        guard components.last == "SKILL.md",
+              let skillsIndex = components.lastIndex(of: "skills"),
+              components.count >= 2 else {
+            return nil
+        }
+        let skill = components[components.count - 2]
+        guard skill != "SKILL.md", !skill.isEmpty else { return nil }
+
+        if components.contains("plugins"),
+           components.contains("cache"),
+           skillsIndex >= 2 {
+            let plugin = components[skillsIndex - 2]
+            if !plugin.isEmpty, plugin != ".system" {
+                return "\(plugin):\(skill)"
+            }
+        }
+        return skill
+    }
+
+    private static func codeRemovingStringsAndComments(_ source: String) -> String {
+        enum State {
+            case code
+            case singleQuoted
+            case doubleQuoted
+            case templateQuoted
+            case lineComment
+            case blockComment
+        }
+
+        let characters = Array(source)
+        var result = Array(repeating: Character(" "), count: characters.count)
+        var state = State.code
+        var index = 0
+        var escaped = false
+
+        while index < characters.count {
+            let current = characters[index]
+            let next = index + 1 < characters.count ? characters[index + 1] : nil
+
+            switch state {
+            case .code:
+                if current == "/", next == "/" {
+                    state = .lineComment
+                    index += 2
+                    continue
+                }
+                if current == "/", next == "*" {
+                    state = .blockComment
+                    index += 2
+                    continue
+                }
+                if current == "'" {
+                    state = .singleQuoted
+                } else if current == "\"" {
+                    state = .doubleQuoted
+                } else if current == "`" {
+                    state = .templateQuoted
+                } else {
+                    result[index] = current
+                }
+
+            case .singleQuoted, .doubleQuoted, .templateQuoted:
+                if escaped {
+                    escaped = false
+                } else if current == "\\" {
+                    escaped = true
+                } else if (state == .singleQuoted && current == "'")
+                            || (state == .doubleQuoted && current == "\"")
+                            || (state == .templateQuoted && current == "`") {
+                    state = .code
+                }
+
+            case .lineComment:
+                if current == "\n" {
+                    result[index] = current
+                    state = .code
+                }
+
+            case .blockComment:
+                if current == "*", next == "/" {
+                    state = .code
+                    index += 2
+                    continue
+                }
+            }
+            index += 1
+        }
+        return String(result)
     }
 }

@@ -36,6 +36,17 @@ final class DashboardQueryService: @unchecked Sendable {
             period(id: "allTime", title: "累计", rows: allRows)
         ]
         let quotaResult = try quotas(now: now, calendar: calendar)
+        let activityRankings = ActivityRankingSnapshot(
+            sevenDays: try activityRanking(
+                fromMilliseconds: milliseconds(for: sevenDayStart),
+                toMilliseconds: end
+            ),
+            thirtyDays: try activityRanking(
+                fromMilliseconds: milliseconds(for: thirtyDayStart),
+                toMilliseconds: end
+            ),
+            allTime: try activityRanking(fromMilliseconds: nil, toMilliseconds: end)
+        )
 
         return DashboardSnapshot(
             planName: resolvedPlanName(from: allRows),
@@ -49,7 +60,30 @@ final class DashboardQueryService: @unchecked Sendable {
                 through: todayStart,
                 calendar: calendar
             ),
+            activityRankings: activityRankings,
             issues: quotaResult.issues
+        )
+    }
+
+    private func activityRanking(
+        fromMilliseconds: Int64?,
+        toMilliseconds: Int64
+    ) throws -> ActivityRanking {
+        ActivityRanking(
+            skills: try store.activityCounts(
+                kind: .skill,
+                fromMilliseconds: fromMilliseconds,
+                toMilliseconds: toMilliseconds
+            ).map {
+                ActivityRankingEntry(name: $0.name, count: Int(clamping: $0.count))
+            },
+            tools: try store.activityCounts(
+                kind: .tool,
+                fromMilliseconds: fromMilliseconds,
+                toMilliseconds: toMilliseconds
+            ).map {
+                ActivityRankingEntry(name: $0.name, count: Int(clamping: $0.count))
+            }
         )
     }
 

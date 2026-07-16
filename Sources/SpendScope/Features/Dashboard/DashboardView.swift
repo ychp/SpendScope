@@ -93,6 +93,8 @@ struct DashboardView: View {
 private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
     @State private var selectedRange = TrendRange.defaultRange
+    @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
+    @State private var selectedActivityRange = ActivityRange.defaultRange
     @State private var hoveredUsageID: DailyUsage.ID?
 
     var body: some View {
@@ -102,7 +104,7 @@ private struct DashboardContentView: View {
             VStack(alignment: .leading, spacing: 14) {
                 dashboardHeader
                 overviewPanel.frame(height: 238)
-                trendRow.frame(maxWidth: .infinity, maxHeight: .infinity)
+                analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .padding(20)
         }
@@ -460,6 +462,117 @@ private struct DashboardContentView: View {
         selectedRange.select(from: snapshot.dailyUsage)
     }
 
+    private var selectedActivityRanking: ActivityRanking {
+        snapshot.activityRankings.ranking(for: selectedActivityRange)
+    }
+
+    private var analyticsPanel: some View {
+        VStack(spacing: 9) {
+            HStack(spacing: 10) {
+                analyticsTabSelector
+                Spacer()
+                if selectedAnalyticsTab == .activity {
+                    activityRangeSelector
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
+                }
+            }
+            .frame(height: 30)
+
+            Group {
+                switch selectedAnalyticsTab {
+                case .activity:
+                    ActivityRankingPanel(ranking: selectedActivityRanking)
+                case .trend:
+                    trendRow
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .dashboardPanel(padding: 10)
+    }
+
+    private var analyticsTabSelector: some View {
+        HStack(spacing: 2) {
+            ForEach(DashboardAnalyticsTab.allCases) { tab in
+                dashboardSelectorButton(
+                    title: tab.rawValue,
+                    isSelected: selectedAnalyticsTab == tab,
+                    width: tab == .activity ? 102 : 82
+                ) {
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        hoveredUsageID = nil
+                        selectedAnalyticsTab = tab
+                    }
+                }
+            }
+        }
+        .padding(3)
+        .background(
+            SpendScopeTheme.dashboardControlBackground,
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("看板内容")
+    }
+
+    private var activityRangeSelector: some View {
+        HStack(spacing: 2) {
+            ForEach(ActivityRange.allCases) { range in
+                dashboardSelectorButton(
+                    title: range.rawValue,
+                    isSelected: selectedActivityRange == range,
+                    width: 48
+                ) {
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        selectedActivityRange = range
+                    }
+                }
+            }
+        }
+        .padding(3)
+        .background(
+            SpendScopeTheme.dashboardControlBackground,
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("排行榜时间范围")
+    }
+
+    private func dashboardSelectorButton(
+        title: String,
+        isSelected: Bool,
+        width: CGFloat,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Color.white : SpendScopeTheme.dashboardMutedText)
+                .frame(width: width, height: 24)
+                .background {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(SpendScopeTheme.dashboardAccent)
+                            .shadow(
+                                color: SpendScopeTheme.dashboardAccent.opacity(0.24),
+                                radius: 5,
+                                y: 2
+                            )
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
     private var selectedTotal: Int {
         selectedUsage.reduce(0) { partial, item in
             let (sum, overflow) = partial.addingReportingOverflow(item.total)
@@ -484,8 +597,9 @@ private struct DashboardContentView: View {
 
     private var trendRow: some View {
         HStack(spacing: 14) {
-            UsageCalendarPanel(usage: snapshot.dailyUsage)
+            UsageCalendarPanel(usage: snapshot.dailyUsage, isEmbedded: true)
                 .frame(width: 300)
+                .padding(.horizontal, 4)
             trendPanel
         }
     }
@@ -610,7 +724,6 @@ private struct DashboardContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .dashboardPanel(padding: 14)
     }
 
     private var rangeSelector: some View {
@@ -689,4 +802,13 @@ private struct DashboardContentView: View {
                 .monospacedDigit()
         }
     }
+}
+
+private enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
+    case activity = "Skills / Tools"
+    case trend = "用量趋势"
+
+    static let defaultTab: DashboardAnalyticsTab = .activity
+
+    var id: Self { self }
 }

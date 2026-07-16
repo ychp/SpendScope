@@ -293,7 +293,8 @@ actor CodexImporter {
                 lastRecordAtMilliseconds: previousFile?.lastRecordAtMilliseconds,
                 lastSuccessAtMilliseconds: now,
                 formatStatus: "supported",
-                lastError: nil
+                lastError: nil,
+                activityCommittedOffset: 0
             )
             do {
                 try store.commit(ImportBatch(
@@ -329,10 +330,49 @@ actor CodexImporter {
         var usageEvents: [StoredUsageEvent] = []
         var quotaEvents: [StoredQuotaEvent] = []
         var stateEvents: [StoredSessionStateEvent] = []
+        var activityEvents: [StoredActivityEvent] = []
         var committedOffset = previousFile?.committedOffset ?? 0
+        var activityCommittedOffset = previousFile?.activityCommittedOffset ?? 0
         var lineIssue: ImportIssue?
 
+        let activityReadBatch: JSONLReadBatch?
+        do {
+            let initial = try reader.read(file: rollout.url, fromOffset: activityCommittedOffset)
+            activityReadBatch = initial.wasTruncated
+                ? try reader.read(file: rollout.url, fromOffset: 0)
+                : initial
+        } catch {
+            activityReadBatch = nil
+        }
+
+        if let activityReadBatch {
+            var activityContext = ActivityImportContext(
+                threadID: recoveredThreadID,
+                source: storedForThread?.sourceKind ?? sourceKind(from: rollout.thread?.sourceRaw),
+                turnID: storedForThread?.activeTurnID
+            )
+            for line in activityReadBatch.lines {
+                if let event = try? decoder.decode(line: line.data) {
+                    consumeActivity(
+                        event,
+                        lineOffset: line.endOffset,
+                        rollout: rollout,
+                        context: &activityContext,
+                        activityEvents: &activityEvents
+                    )
+                }
+            }
+            activityCommittedOffset = activityReadBatch.committedOffset
+        }
+
         for line in readBatch.lines {
+            // Activity records have their own best-effort scanner and checkpoint. Keeping them
+            // out of the usage decoder path ensures a future or malformed activity payload can
+            // never prevent token, quota, or session history from advancing.
+            if decoder.isResponseItem(line: line.data) {
+                committedOffset = line.endOffset
+                continue
+            }
             let event: CodexDecodedEvent?
             do {
                 event = try decoder.decode(line: line.data)
@@ -422,6 +462,7 @@ actor CodexImporter {
             lastSuccessAtMilliseconds: lineIssue == nil ? now : previousFile?.lastSuccessAtMilliseconds,
             formatStatus: lineIssue == nil ? "supported" : "error",
             lastError: lineIssue?.detail,
+            activityCommittedOffset: activityCommittedOffset,
             context: context
         )
 
@@ -431,6 +472,7 @@ actor CodexImporter {
                 usageEvents: usageEvents,
                 quotaEvents: quotaEvents,
                 stateEvents: stateEvents,
+                activityEvents: activityEvents,
                 sessions: sessions,
                 threadCheckpoints: threadCheckpoints
             ))
@@ -546,6 +588,75 @@ actor CodexImporter {
                 sourceFileID: rollout.fileID,
                 sourceOffset: lineOffset
             ))
+
+        case .activity:
+            break
+        }
+    }
+
+    private func consumeActivity(
+        _ event: CodexDecodedEvent,
+        lineOffset: Int64,
+        rollout: RolloutFile,
+        context: inout ActivityImportContext,
+        activityEvents: inout [StoredActivityEvent]
+    ) {
+        switch event {
+        case .session(let metadata):
+            context.threadID = metadata.threadID
+            context.source = metadata.source
+
+        case .turn(let turn):
+            context.turnID = turn.turnID
+
+        case .lifecycle(let lifecycle):
+            switch lifecycle.kind {
+            case .started:
+                context.turnID = lifecycle.turnID ?? context.turnID
+            case .completed, .interrupted:
+                if lifecycle.turnID == nil || lifecycle.turnID == context.turnID {
+                    context.turnID = nil
+                }
+            case .rolledBack:
+                break
+            }
+
+        case .activity(let snapshot):
+            guard let threadID = context.threadID else { return }
+            let callKey = snapshot.callID ?? "offset-\(lineOffset)"
+            for (index, name) in snapshot.toolNames.enumerated() where !name.isEmpty {
+                let canonical = "activity|tool|\(threadID)|\(snapshot.observedAtMilliseconds)|\(callKey)|\(name)|\(index)"
+                activityEvents.append(StoredActivityEvent(
+                    fingerprint: fingerprint(canonical),
+                    observedAtMilliseconds: snapshot.observedAtMilliseconds,
+                    threadID: threadID,
+                    turnID: context.turnID,
+                    kind: .tool,
+                    name: name,
+                    sourceKind: context.source,
+                    sourceFileID: rollout.fileID,
+                    sourceOffset: lineOffset
+                ))
+            }
+
+            let turnKey = context.turnID ?? "offset-\(lineOffset)"
+            for name in snapshot.skillNames where !name.isEmpty {
+                let canonical = "activity|skill|\(threadID)|\(turnKey)|\(name)"
+                activityEvents.append(StoredActivityEvent(
+                    fingerprint: fingerprint(canonical),
+                    observedAtMilliseconds: snapshot.observedAtMilliseconds,
+                    threadID: threadID,
+                    turnID: context.turnID,
+                    kind: .skill,
+                    name: name,
+                    sourceKind: context.source,
+                    sourceFileID: rollout.fileID,
+                    sourceOffset: lineOffset
+                ))
+            }
+
+        case .token:
+            break
         }
     }
 
@@ -636,6 +747,7 @@ actor CodexImporter {
         guard let previousFile,
               previousFile.fileSize == rollout.fileSize,
               previousFile.committedOffset == rollout.fileSize,
+              previousFile.activityCommittedOffset == rollout.fileSize,
               previousFile.path == rollout.url.path,
               previousFile.formatStatus == "supported",
               let storedSession else {
@@ -665,6 +777,7 @@ actor CodexImporter {
         lastSuccessAtMilliseconds: Int64?,
         formatStatus: String,
         lastError: String?,
+        activityCommittedOffset: Int64 = 0,
         context: ImportContext? = nil
     ) -> FileCheckpoint {
         FileCheckpoint(
@@ -684,7 +797,8 @@ actor CodexImporter {
             currentPlan: context?.currentPlan,
             counters: context?.counters,
             counterSegment: context?.counterSegment ?? 0,
-            lastTokenAtMilliseconds: context?.lastTokenAtMilliseconds
+            lastTokenAtMilliseconds: context?.lastTokenAtMilliseconds,
+            activityCommittedOffset: activityCommittedOffset
         )
     }
 
@@ -740,6 +854,12 @@ private struct ImportContext {
     var state: SessionStateSnapshot?
     var createdAtMilliseconds: Int64?
     var updatedAtMilliseconds: Int64?
+}
+
+private struct ActivityImportContext {
+    var threadID: String?
+    var source: CodexSourceKind
+    var turnID: String?
 }
 
 private struct ThreadArchiveFact {

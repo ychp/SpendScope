@@ -63,9 +63,22 @@ struct SessionLifecycleEvent: Equatable, Sendable {
     let turnID: String?
 }
 
+enum ActivityKind: String, Codable, Sendable {
+    case skill
+    case tool
+}
+
+struct ActivityCallSnapshot: Equatable, Sendable {
+    let observedAtMilliseconds: Int64
+    let callID: String?
+    let toolNames: [String]
+    let skillNames: [String]
+}
+
 enum CodexDecodedEvent: Equatable, Sendable {
     case session(SessionMetadata)
     case turn(TurnContext)
     case token(TokenCounterSnapshot)
     case lifecycle(SessionLifecycleEvent)
+    case activity(ActivityCallSnapshot)
 }

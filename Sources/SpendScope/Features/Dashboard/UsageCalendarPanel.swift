@@ -190,16 +190,23 @@ struct UsageCalendarPanel: View {
     let usage: [DailyUsage]
     let calendar: Calendar
     let today: Date
+    let isEmbedded: Bool
 
     @State private var displayedMonth: Date
     @State private var hoveredUsageID: DailyUsage.ID?
     @State private var hoveredLegendLevel: Int?
 
-    init(usage: [DailyUsage], calendar: Calendar = .current, today: Date = Date()) {
+    init(
+        usage: [DailyUsage],
+        calendar: Calendar = .current,
+        today: Date = Date(),
+        isEmbedded: Bool = false
+    ) {
         let model = UsageCalendarModel(usage: usage, calendar: calendar, today: today)
         self.usage = usage
         self.calendar = calendar
         self.today = today
+        self.isEmbedded = isEmbedded
         _displayedMonth = State(initialValue: model.latestMonth)
     }
 
@@ -219,6 +226,24 @@ struct UsageCalendarPanel: View {
             .compactMap(\.usage?.total)
             .max() ?? 0
 
+        Group {
+            if isEmbedded {
+                calendarContent(month: month, cells: cells, maximum: maximum)
+            } else {
+                calendarContent(month: month, cells: cells, maximum: maximum)
+                    .dashboardPanel(padding: 14)
+            }
+        }
+        .onChange(of: usage.first?.id) { _, _ in
+            displayedMonth = model.clampedMonth(displayedMonth)
+        }
+    }
+
+    private func calendarContent(
+        month: Date,
+        cells: [UsageCalendarCell],
+        maximum: Int
+    ) -> some View {
         VStack(spacing: 7) {
             calendarHeader(month)
             weekdayHeader
@@ -232,10 +257,6 @@ struct UsageCalendarPanel: View {
             heatLegend(maximum: maximum)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .dashboardPanel(padding: 14)
-        .onChange(of: usage.first?.id) { _, _ in
-            displayedMonth = model.clampedMonth(displayedMonth)
-        }
     }
 
     private func calendarHeader(_ month: Date) -> some View {

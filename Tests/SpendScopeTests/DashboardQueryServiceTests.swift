@@ -129,6 +129,54 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.models.isEmpty)
         XCTAssertTrue(snapshot.dailyUsage.isEmpty)
         XCTAssertEqual(snapshot.planName, "Free")
+        XCTAssertEqual(snapshot.activityRankings, .empty)
+    }
+
+    func testBuildsActivityRankingsForSevenThirtyAndAllTimeLocalDayBoundaries() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 14, hour: 12
+        )))
+        let todayStart = calendar.startOfDay(for: now)
+        let sevenDayStart = try XCTUnwrap(calendar.date(byAdding: .day, value: -6, to: todayStart))
+        let thirtyDayStart = try XCTUnwrap(calendar.date(byAdding: .day, value: -29, to: todayStart))
+        let store = try makeStore()
+        let activityEvents = [
+            activity("skill-today", kind: .skill, name: "swiftui-patterns", at: todayStart.addingTimeInterval(60)),
+            activity("skill-seven-edge", kind: .skill, name: "swiftui-patterns", at: sevenDayStart),
+            activity("skill-before-seven", kind: .skill, name: "imagegen", at: sevenDayStart.addingTimeInterval(-1)),
+            activity("skill-thirty-edge", kind: .skill, name: "imagegen", at: thirtyDayStart),
+            activity("skill-before-thirty", kind: .skill, name: "legacy-skill", at: thirtyDayStart.addingTimeInterval(-1)),
+            activity("tool-a-1", kind: .tool, name: "alpha", at: todayStart.addingTimeInterval(1)),
+            activity("tool-a-2", kind: .tool, name: "alpha", at: todayStart.addingTimeInterval(2)),
+            activity("tool-b", kind: .tool, name: "beta", at: todayStart.addingTimeInterval(3)),
+            activity("tool-c", kind: .tool, name: "charlie", at: todayStart.addingTimeInterval(4)),
+            activity("tool-d", kind: .tool, name: "delta", at: todayStart.addingTimeInterval(5)),
+            activity("tool-e", kind: .tool, name: "echo", at: todayStart.addingTimeInterval(6)),
+            activity("tool-f", kind: .tool, name: "foxtrot", at: todayStart.addingTimeInterval(7)),
+            activity("tool-g", kind: .tool, name: "golf", at: todayStart.addingTimeInterval(8)),
+            activity("tool-future", kind: .tool, name: "future", at: calendar.date(byAdding: .day, value: 1, to: todayStart)!)
+        ]
+        try store.commit(batch(events: [], quotas: [], activityEvents: activityEvents))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: calendar)
+        let sevenDays = snapshot.activityRankings.ranking(for: .sevenDays)
+        let thirtyDays = snapshot.activityRankings.ranking(for: .thirtyDays)
+        let allTime = snapshot.activityRankings.ranking(for: .allTime)
+
+        XCTAssertEqual(sevenDays.skills.map(\.name), ["swiftui-patterns"])
+        XCTAssertEqual(sevenDays.skills.map(\.count), [2])
+        XCTAssertEqual(thirtyDays.skills.map(\.name), ["imagegen", "swiftui-patterns"],
+                       "Ties use ascending normalized names")
+        XCTAssertEqual(thirtyDays.skills.map(\.count), [2, 2])
+        XCTAssertEqual(allTime.skills.map(\.name), ["imagegen", "swiftui-patterns", "legacy-skill"])
+        XCTAssertEqual(allTime.skills.map(\.count), [2, 2, 1])
+        XCTAssertEqual(sevenDays.tools.map(\.name), [
+            "alpha", "beta", "charlie", "delta", "echo", "foxtrot"
+        ], "Rankings are capped at Top 6 and ties are stable")
+        XCTAssertEqual(sevenDays.tools.first?.count, 2)
+        XCTAssertFalse(sevenDays.tools.contains { $0.name == "future" })
     }
 
     func testDisplaysProLiteAsPro5xAndProAsPro20x() throws {
@@ -295,9 +343,29 @@ final class DashboardQueryServiceTests: XCTestCase {
         )
     }
 
+    private func activity(
+        _ fingerprint: String,
+        kind: ActivityKind,
+        name: String,
+        at date: Date
+    ) -> StoredActivityEvent {
+        StoredActivityEvent(
+            fingerprint: fingerprint,
+            observedAtMilliseconds: Int64((date.timeIntervalSince1970 * 1_000).rounded()),
+            threadID: "thread-1",
+            turnID: "turn-1",
+            kind: kind,
+            name: name,
+            sourceKind: .cli,
+            sourceFileID: "file-1",
+            sourceOffset: 1
+        )
+    }
+
     private func batch(
         events: [StoredUsageEvent],
-        quotas: [StoredQuotaEvent]
+        quotas: [StoredQuotaEvent],
+        activityEvents: [StoredActivityEvent] = []
     ) -> ImportBatch {
         ImportBatch(
             file: FileCheckpoint(
@@ -309,6 +377,7 @@ final class DashboardQueryServiceTests: XCTestCase {
             usageEvents: events,
             quotaEvents: quotas,
             stateEvents: [],
+            activityEvents: activityEvents,
             sessions: [],
             threadCheckpoints: []
         )

@@ -16,6 +16,7 @@
 		A00000000000000000000007 /* MenuBarPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000009 /* MenuBarPopoverView.swift */; };
 		A00000000000000000000008 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000010 /* DashboardView.swift */; };
 		A00000000000000000000036 /* UsageCalendarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000036 /* UsageCalendarPanel.swift */; };
+		A00000000000000000000037 /* ActivityRankingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000037 /* ActivityRankingPanel.swift */; };
 		A00000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* SettingsView.swift */; };
 		A00000000000000000000012 /* CodexEventDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* CodexEventDecoderTests.swift */; };
 		A00000000000000000000013 /* CodexEventModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* CodexEventModels.swift */; };
@@ -65,6 +66,7 @@
 		B00000000000000000000009 /* MenuBarPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/MenuBar/MenuBarPopoverView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000010 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/DashboardView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000036 /* UsageCalendarPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/UsageCalendarPanel.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000037 /* ActivityRankingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/ActivityRankingPanel.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Settings/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000012 /* CodexEventDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/CodexEventDecoderTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000013 /* CodexEventModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexEventModels.swift; sourceTree = SOURCE_ROOT; };
@@ -130,6 +132,7 @@
 				B00000000000000000000009 /* MenuBarPopoverView.swift */,
 				B00000000000000000000010 /* DashboardView.swift */,
 				B00000000000000000000036 /* UsageCalendarPanel.swift */,
+				B00000000000000000000037 /* ActivityRankingPanel.swift */,
 				B00000000000000000000011 /* SettingsView.swift */,
 				B00000000000000000000013 /* CodexEventModels.swift */,
 				B00000000000000000000014 /* CodexEventDecoder.swift */,
@@ -284,6 +287,7 @@
 				A00000000000000000000007 /* MenuBarPopoverView.swift in Sources */,
 				A00000000000000000000008 /* DashboardView.swift in Sources */,
 				A00000000000000000000036 /* UsageCalendarPanel.swift in Sources */,
+				A00000000000000000000037 /* ActivityRankingPanel.swift in Sources */,
 				A00000000000000000000009 /* SettingsView.swift in Sources */,
 				A00000000000000000000013 /* CodexEventModels.swift in Sources */,
 				A00000000000000000000014 /* CodexEventDecoder.swift in Sources */,

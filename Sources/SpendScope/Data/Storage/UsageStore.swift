@@ -29,6 +29,23 @@ struct StoredSessionStateEvent: Sendable {
     let sourceOffset: Int64
 }
 
+struct StoredActivityEvent: Sendable {
+    let fingerprint: String
+    let observedAtMilliseconds: Int64
+    let threadID: String
+    let turnID: String?
+    let kind: ActivityKind
+    let name: String
+    let sourceKind: CodexSourceKind
+    let sourceFileID: String
+    let sourceOffset: Int64
+}
+
+struct StoredActivityCount: Equatable, Sendable {
+    let name: String
+    let count: Int64
+}
+
 struct StoredSession: Sendable {
     let threadID: String
     let sourceKind: CodexSourceKind
@@ -64,6 +81,7 @@ struct FileCheckpoint: Sendable {
     let counters: TokenCounters?
     let counterSegment: Int64
     let lastTokenAtMilliseconds: Int64?
+    let activityCommittedOffset: Int64
 
     init(
         fileID: String,
@@ -82,7 +100,8 @@ struct FileCheckpoint: Sendable {
         currentPlan: PlanResolution? = nil,
         counters: TokenCounters? = nil,
         counterSegment: Int64 = 0,
-        lastTokenAtMilliseconds: Int64? = nil
+        lastTokenAtMilliseconds: Int64? = nil,
+        activityCommittedOffset: Int64 = 0
     ) {
         self.fileID = fileID
         self.deviceID = deviceID
@@ -101,6 +120,7 @@ struct FileCheckpoint: Sendable {
         self.counters = counters
         self.counterSegment = counterSegment
         self.lastTokenAtMilliseconds = lastTokenAtMilliseconds
+        self.activityCommittedOffset = activityCommittedOffset
     }
 }
 
@@ -118,8 +138,27 @@ struct ImportBatch: Sendable {
     let usageEvents: [StoredUsageEvent]
     let quotaEvents: [StoredQuotaEvent]
     let stateEvents: [StoredSessionStateEvent]
+    let activityEvents: [StoredActivityEvent]
     let sessions: [StoredSession]
     let threadCheckpoints: [ThreadCheckpoint]
+
+    init(
+        file: FileCheckpoint,
+        usageEvents: [StoredUsageEvent],
+        quotaEvents: [StoredQuotaEvent],
+        stateEvents: [StoredSessionStateEvent],
+        activityEvents: [StoredActivityEvent] = [],
+        sessions: [StoredSession],
+        threadCheckpoints: [ThreadCheckpoint]
+    ) {
+        self.file = file
+        self.usageEvents = usageEvents
+        self.quotaEvents = quotaEvents
+        self.stateEvents = stateEvents
+        self.activityEvents = activityEvents
+        self.sessions = sessions
+        self.threadCheckpoints = threadCheckpoints
+    }
 }
 
 struct StoredHourlyUsage: Equatable, Sendable {
@@ -185,6 +224,9 @@ final class UsageStore: @unchecked Sendable {
             for event in batch.stateEvents {
                 try insertSessionStateEvent(event)
             }
+            for event in batch.activityEvents {
+                try insertActivityEvent(event)
+            }
             for session in batch.sessions {
                 try upsertSession(session)
             }
@@ -220,6 +262,10 @@ final class UsageStore: @unchecked Sendable {
 
     func sessionStateEventCount() throws -> Int64 {
         try count(table: "session_state_events")
+    }
+
+    func activityEventCount() throws -> Int64 {
+        try count(table: "activity_events")
     }
 
     func fileCheckpoint(fileID: String) throws -> FileCheckpoint? {
@@ -260,8 +306,47 @@ final class UsageStore: @unchecked Sendable {
             currentPlan: try planResolution(from: row),
             counters: counters,
             counterSegment: try row.requiredInt64("counter_segment"),
-            lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms")
+            lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms"),
+            activityCommittedOffset: try row.requiredInt64("activity_committed_offset")
         )
+    }
+
+    func activityCounts(
+        kind: ActivityKind,
+        fromMilliseconds: Int64? = nil,
+        toMilliseconds: Int64? = nil,
+        limit: Int = 6
+    ) throws -> [StoredActivityCount] {
+        guard limit > 0 else { return [] }
+        var predicates = ["kind = ?"]
+        var bindings: [SQLiteValue] = [.text(kind.rawValue)]
+        if let fromMilliseconds {
+            predicates.append("observed_at_ms >= ?")
+            bindings.append(.integer(fromMilliseconds))
+        }
+        if let toMilliseconds {
+            predicates.append("observed_at_ms < ?")
+            bindings.append(.integer(toMilliseconds))
+        }
+        bindings.append(.integer(Int64(limit)))
+        let rows = try database.query(
+            sql: """
+            SELECT name, COUNT(*) AS count
+            FROM activity_events
+            WHERE \(predicates.joined(separator: " AND "))
+            GROUP BY name
+            ORDER BY count DESC, name ASC
+            LIMIT ?
+            """,
+            bindings: bindings
+        )
+        return try rows.map { values in
+            let row = SQLiteRow(table: "activity_events", values: values)
+            return StoredActivityCount(
+                name: try row.requiredString("name"),
+                count: try row.requiredInt64("count")
+            )
+        }
     }
 
     func resetImportedData() throws {
@@ -676,30 +761,38 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 2 else {
+            guard versions.last ?? 0 <= 3 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(2) {
+            if versions.contains(3) {
                 try validateVersionTwoSchema()
+                try validateVersionThreeSchema()
                 return
             }
 
-            if versions.contains(1) {
-                try dropVersionOneStorage()
+            if !versions.contains(2) {
+                if versions.contains(1) {
+                    try dropVersionOneStorage()
+                }
+                for statement in Self.versionTwoStatements {
+                    try database.execute(sql: statement)
+                }
+                try database.execute(sql: "INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)")
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (2)")
             }
-            for statement in Self.versionTwoStatements {
+            for statement in Self.versionThreeStatements {
                 try database.execute(sql: statement)
             }
-            try database.execute(sql: "INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)")
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (2)")
+            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (3)")
             try validateVersionTwoSchema()
+            try validateVersionThreeSchema()
         }
     }
 
     private func dropVersionOneStorage() throws {
         for table in [
             "source_status", "sessions", "session_state_events", "quota_snapshots",
-            "hourly_usage", "usage_events", "thread_checkpoints", "source_files"
+            "activity_events", "hourly_usage", "usage_events", "thread_checkpoints", "source_files"
         ] {
             try database.execute(sql: "DROP TABLE IF EXISTS \(table)")
         }
@@ -708,7 +801,7 @@ final class UsageStore: @unchecked Sendable {
     private func resetImportedDataInCurrentTransaction() throws {
         for table in [
             "source_status", "sessions", "session_state_events", "quota_snapshots",
-            "hourly_usage", "usage_events", "thread_checkpoints", "source_files"
+            "activity_events", "hourly_usage", "usage_events", "thread_checkpoints", "source_files"
         ] {
             try database.execute(sql: "DELETE FROM \(table)")
         }
@@ -848,6 +941,24 @@ final class UsageStore: @unchecked Sendable {
         )
     }
 
+    private func insertActivityEvent(_ event: StoredActivityEvent) throws {
+        try database.execute(
+            sql: """
+            INSERT INTO activity_events(
+              fingerprint, observed_at_ms, thread_id, turn_id, kind, name,
+              source_kind, source_file_id, source_offset
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint) DO NOTHING
+            """,
+            bindings: [
+                .text(event.fingerprint), .integer(event.observedAtMilliseconds),
+                .text(event.threadID), event.turnID.sqliteValue, .text(event.kind.rawValue),
+                .text(event.name), .text(event.sourceKind.rawValue),
+                .text(event.sourceFileID), .integer(event.sourceOffset)
+            ]
+        )
+    }
+
     private func upsertSession(_ session: StoredSession) throws {
         try database.execute(
             sql: """
@@ -911,7 +1022,9 @@ final class UsageStore: @unchecked Sendable {
     private func upsertFileCheckpoint(_ checkpoint: FileCheckpoint) throws {
         guard checkpoint.fileSize >= 0,
               checkpoint.committedOffset >= 0,
-              checkpoint.committedOffset <= checkpoint.fileSize else {
+              checkpoint.committedOffset <= checkpoint.fileSize,
+              checkpoint.activityCommittedOffset >= 0,
+              checkpoint.activityCommittedOffset <= checkpoint.fileSize else {
             throw UsageStoreError.invalidFileCheckpoint(
                 fileSize: checkpoint.fileSize,
                 committedOffset: checkpoint.committedOffset
@@ -924,8 +1037,8 @@ final class UsageStore: @unchecked Sendable {
               thread_id, last_record_at_ms, last_success_at_ms, format_status, last_error,
               current_model, plan, plan_raw, plan_is_inferred,
               input_tokens, cached_input_tokens, output_tokens, reasoning_tokens,
-              counter_segment, last_token_at_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              counter_segment, last_token_at_ms, activity_committed_offset
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_id) DO UPDATE SET
               device_id = excluded.device_id, inode = excluded.inode, path = excluded.path,
               file_size = excluded.file_size, committed_offset = excluded.committed_offset,
@@ -940,7 +1053,8 @@ final class UsageStore: @unchecked Sendable {
               output_tokens = excluded.output_tokens,
               reasoning_tokens = excluded.reasoning_tokens,
               counter_segment = excluded.counter_segment,
-              last_token_at_ms = excluded.last_token_at_ms
+              last_token_at_ms = excluded.last_token_at_ms,
+              activity_committed_offset = excluded.activity_committed_offset
             """,
             bindings: [
                 .text(checkpoint.fileID), .integer(checkpoint.deviceID), .integer(checkpoint.inode),
@@ -957,7 +1071,8 @@ final class UsageStore: @unchecked Sendable {
                 (checkpoint.counters?.output).sqliteValue,
                 (checkpoint.counters?.reasoning).sqliteValue,
                 .integer(checkpoint.counterSegment),
-                checkpoint.lastTokenAtMilliseconds.sqliteValue
+                checkpoint.lastTokenAtMilliseconds.sqliteValue,
+                .integer(checkpoint.activityCommittedOffset)
             ]
         )
     }
@@ -1108,6 +1223,19 @@ final class UsageStore: @unchecked Sendable {
         """
     ]
 
+    private static let versionThreeStatements = [
+        "ALTER TABLE source_files ADD COLUMN activity_committed_offset INTEGER NOT NULL DEFAULT 0",
+        """
+        CREATE TABLE activity_events(
+          fingerprint TEXT PRIMARY KEY, observed_at_ms INTEGER NOT NULL,
+          thread_id TEXT NOT NULL, turn_id TEXT, kind TEXT NOT NULL, name TEXT NOT NULL,
+          source_kind TEXT NOT NULL, source_file_id TEXT NOT NULL, source_offset INTEGER NOT NULL
+        )
+        """,
+        "CREATE INDEX activity_events_time_idx ON activity_events(observed_at_ms)",
+        "CREATE INDEX activity_events_ranking_idx ON activity_events(kind, observed_at_ms, name)"
+    ]
+
     private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
         try SQLitePlanResolution.optional(from: row)
     }
@@ -1147,6 +1275,32 @@ final class UsageStore: @unchecked Sendable {
             ),
             ("thread_checkpoints", ["plan", "plan_raw", "plan_is_inferred"]),
             ("sessions", ["archive_observed_at_ms"])
+        ]
+        for requirement in requiredColumns {
+            let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")
+            let existing = try Set(rows.map {
+                try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+            })
+            let missing = requirement.columns.filter { !existing.contains($0) }
+            if !missing.isEmpty {
+                throw UsageStoreError.rebuildRequired(
+                    table: requirement.table,
+                    missingColumns: missing
+                )
+            }
+        }
+    }
+
+    private func validateVersionThreeSchema() throws {
+        let requiredColumns: [(table: String, columns: [String])] = [
+            ("source_files", ["activity_committed_offset"]),
+            (
+                "activity_events",
+                [
+                    "fingerprint", "observed_at_ms", "thread_id", "turn_id", "kind", "name",
+                    "source_kind", "source_file_id", "source_offset"
+                ]
+            )
         ]
         for requirement in requiredColumns {
             let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")

@@ -326,6 +326,32 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertEqual(TrendRange.defaultRange, .sevenDays)
     }
 
+    func testActivityRangesExposeExpectedLabelsDefaultAndIndependentSnapshots() {
+        XCTAssertEqual(ActivityRange.allCases.map(\.rawValue), ["7 日", "30 日", "累计"])
+        XCTAssertEqual(ActivityRange.defaultRange, .sevenDays)
+        let seven = ActivityRanking(
+            skills: [.init(name: "seven-skill", count: 7)],
+            tools: [.init(name: "seven-tool", count: 7)]
+        )
+        let thirty = ActivityRanking(
+            skills: [.init(name: "thirty-skill", count: 30)],
+            tools: []
+        )
+        let all = ActivityRanking(
+            skills: [],
+            tools: [.init(name: "all-tool", count: 99)]
+        )
+        let snapshot = ActivityRankingSnapshot(
+            sevenDays: seven,
+            thirtyDays: thirty,
+            allTime: all
+        )
+
+        XCTAssertEqual(snapshot.ranking(for: .sevenDays), seven)
+        XCTAssertEqual(snapshot.ranking(for: .thirtyDays), thirty)
+        XCTAssertEqual(snapshot.ranking(for: .allTime), all)
+    }
+
     func testTrendRangesSelectLatestUsage() {
         let history = makeDailyUsage(count: 45)
 

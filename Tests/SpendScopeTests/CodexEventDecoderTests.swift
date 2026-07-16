@@ -99,4 +99,90 @@ final class CodexEventDecoderTests: XCTestCase {
         XCTAssertNil(try decoder.decode(line: Data(unknownMessage.utf8)))
         XCTAssertNil(try decoder.decode(line: Data(message.utf8)))
     }
+
+    func testDecodesDirectToolCallAndCanonicalizesLoadedLocalSkill() throws {
+        let data = try responseItem(
+            type: "function_call",
+            name: "exec_command",
+            arguments: "sed -n 1,200p /Users/example/.agents/skills/ai-code-review/SKILL.md",
+            callID: "call-direct"
+        )
+
+        XCTAssertEqual(
+            try decoder.decode(line: data),
+            .activity(.init(
+                observedAtMilliseconds: 1_784_012_110_000,
+                callID: "call-direct",
+                toolNames: ["exec_command"],
+                skillNames: ["ai-code-review"]
+            ))
+        )
+    }
+
+    func testCustomExecExtractsLogicalToolsAndIgnoresStringsCommentsAndDuplicatesSkills() throws {
+        let input = """
+        const ignored = "tools.fake({})";
+        // await tools.commented({});
+        /* tools.also_commented({}) */
+        const first = await tools.exec_command({cmd: "pwd"});
+        const second = await tools.view_image({path: "/tmp/image.png"});
+        const pathA = "/Users/example/.codex/plugins/cache/openai-curated-remote/build-macos-apps/0.1.4/skills/swiftui-patterns/SKILL.md";
+        const pathB = "/Users/example/.codex/plugins/cache/openai-curated-remote/build-macos-apps/0.1.4/skills/swiftui-patterns/SKILL.md";
+        const systemPath = "/Users/example/.codex/skills/.system/imagegen/SKILL.md";
+        """
+        let data = try responseItem(
+            type: "custom_tool_call",
+            name: "exec",
+            input: input,
+            callID: "call-exec"
+        )
+
+        XCTAssertEqual(
+            try decoder.decode(line: data),
+            .activity(.init(
+                observedAtMilliseconds: 1_784_012_110_000,
+                callID: "call-exec",
+                toolNames: ["exec_command", "view_image"],
+                skillNames: ["build-macos-apps:swiftui-patterns", "imagegen"]
+            ))
+        )
+    }
+
+    func testCustomExecFallsBackToExecAndMessagesNeverCreateSkillEvents() throws {
+        let execData = try responseItem(
+            type: "custom_tool_call",
+            name: "exec",
+            input: "return 42;",
+            callID: "call-fallback"
+        )
+        let message = #"{"timestamp":"2026-07-14T06:55:10.000Z","type":"response_item","payload":{"type":"message","text":"/Users/example/.agents/skills/secret/SKILL.md"}}"#
+
+        guard case let .activity(snapshot) = try decoder.decode(line: execData) else {
+            return XCTFail("Expected activity event")
+        }
+        XCTAssertEqual(snapshot.toolNames, ["exec"])
+        XCTAssertTrue(snapshot.skillNames.isEmpty)
+        XCTAssertNil(try decoder.decode(line: Data(message.utf8)))
+    }
+
+    private func responseItem(
+        type: String,
+        name: String,
+        input: String? = nil,
+        arguments: String? = nil,
+        callID: String
+    ) throws -> Data {
+        var payload: [String: Any] = [
+            "type": type,
+            "name": name,
+            "call_id": callID
+        ]
+        if let input { payload["input"] = input }
+        if let arguments { payload["arguments"] = arguments }
+        return try JSONSerialization.data(withJSONObject: [
+            "timestamp": "2026-07-14T06:55:10.000Z",
+            "type": "response_item",
+            "payload": payload
+        ])
+    }
 }

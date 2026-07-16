@@ -44,12 +44,12 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertFalse(columns.contains("response"))
     }
 
-    func testMigrationCreatesExactVersionTwoStorageSurface() throws {
+    func testMigrationCreatesExactVersionThreeStorageSurface() throws {
         let url = temporaryDatabaseURL()
         _ = try UsageStore(databaseURL: url)
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3])
         XCTAssertEqual(
             Set(try store.schemaColumns(table: "source_files")),
             Set([
@@ -57,7 +57,8 @@ final class UsageStoreTests: XCTestCase {
                 "generation", "thread_id", "last_record_at_ms", "last_success_at_ms",
                 "format_status", "last_error", "current_model", "plan", "plan_raw",
                 "plan_is_inferred", "input_tokens", "cached_input_tokens", "output_tokens",
-                "reasoning_tokens", "counter_segment", "last_token_at_ms"
+                "reasoning_tokens", "counter_segment", "last_token_at_ms",
+                "activity_committed_offset"
             ])
         )
         XCTAssertEqual(
@@ -78,10 +79,18 @@ final class UsageStoreTests: XCTestCase {
             ])
         )
         XCTAssertEqual(
+            Set(try store.schemaColumns(table: "activity_events")),
+            Set([
+                "fingerprint", "observed_at_ms", "thread_id", "turn_id", "kind", "name",
+                "source_kind", "source_file_id", "source_offset"
+            ])
+        )
+        XCTAssertEqual(
             Set(try store.schemaTables()),
             Set([
                 "schema_migrations", "source_files", "thread_checkpoints", "usage_events",
-                "hourly_usage", "quota_snapshots", "session_state_events", "sessions", "source_status"
+                "hourly_usage", "quota_snapshots", "session_state_events", "sessions",
+                "source_status", "activity_events"
             ])
         )
     }
@@ -319,7 +328,7 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.sourceFacts().lastSuccessfulRefreshMilliseconds, 3_000)
     }
 
-    func testExistingVersionOneIsRebuiltIntoVersionTwoStorage() throws {
+    func testExistingVersionOneIsRebuiltIntoVersionThreeStorage() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)")
@@ -341,9 +350,86 @@ final class UsageStoreTests: XCTestCase {
 
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3])
         XCTAssertNil(try store.fileCheckpoint(fileID: "legacy"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("input_tokens"))
+        XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("activity_committed_offset"))
+    }
+
+    func testVersionTwoToThreeMigrationPreservesExistingUsageAndStartsBackfillAtZero() throws {
+        let url = temporaryDatabaseURL()
+        do {
+            let store = try UsageStore(databaseURL: url)
+            try store.commit(ImportBatch(
+                file: .fixture(committedOffset: 10, activityCommittedOffset: 10),
+                usageEvents: [.fixture(fingerprint: "preserved-v2-usage", total: 321)],
+                quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+            ))
+        }
+        let database = try SQLiteDatabase(url: url)
+        try database.execute(sql: "DROP TABLE activity_events")
+        try database.execute(sql: "ALTER TABLE source_files DROP COLUMN activity_committed_offset")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version = 3")
+
+        let migrated = try UsageStore(databaseURL: url)
+
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3])
+        XCTAssertEqual(try migrated.totalUsage(), 321)
+        XCTAssertEqual(try migrated.usageEventCount(), 1)
+        XCTAssertEqual(
+            try migrated.fileCheckpoint(fileID: "file-1")?.activityCommittedOffset,
+            0,
+            "Existing v2 files must be eligible for one historical activity backfill"
+        )
+    }
+
+    func testActivityEventsAreIdempotentPrivateAndRankedWithStableBoundaries() throws {
+        let store = try makeStore()
+        let events = [
+            StoredActivityEvent.fixture(
+                fingerprint: "skill-a-1", observedAtMilliseconds: 1_000,
+                kind: .skill, name: "alpha"
+            ),
+            StoredActivityEvent.fixture(
+                fingerprint: "skill-a-2", observedAtMilliseconds: 2_000,
+                kind: .skill, name: "alpha"
+            ),
+            StoredActivityEvent.fixture(
+                fingerprint: "skill-b", observedAtMilliseconds: 2_000,
+                kind: .skill, name: "beta"
+            ),
+            StoredActivityEvent.fixture(
+                fingerprint: "tool-z", observedAtMilliseconds: 3_000,
+                kind: .tool, name: "zeta"
+            )
+        ]
+        let batch = ImportBatch(
+            file: .fixture(committedOffset: 10, activityCommittedOffset: 10),
+            usageEvents: [], quotaEvents: [], stateEvents: [],
+            activityEvents: events, sessions: [], threadCheckpoints: []
+        )
+
+        try store.commit(batch)
+        try store.commit(batch)
+
+        XCTAssertEqual(try store.activityEventCount(), 4)
+        XCTAssertEqual(
+            try store.activityCounts(
+                kind: .skill, fromMilliseconds: 1_000, toMilliseconds: 3_000
+            ),
+            [StoredActivityCount(name: "alpha", count: 2), StoredActivityCount(name: "beta", count: 1)]
+        )
+        XCTAssertTrue(try store.activityCounts(
+            kind: .tool, fromMilliseconds: nil, toMilliseconds: 3_000
+        ).isEmpty, "Upper time boundary must stay exclusive")
+        XCTAssertEqual(try store.fileCheckpoint(fileID: batch.file.fileID)?.activityCommittedOffset, 10)
+
+        let columns = try store.schemaColumns(table: "activity_events")
+        XCTAssertFalse(columns.contains("arguments"))
+        XCTAssertFalse(columns.contains("input"))
+        XCTAssertFalse(columns.contains("output"))
+        XCTAssertFalse(columns.contains("prompt"))
+        XCTAssertFalse(columns.contains("path"))
     }
 
     func testFailureRollsBackEventsAggregateSessionsAndCheckpoints() throws {
@@ -567,6 +653,27 @@ private extension StoredSessionStateEvent {
     }
 }
 
+private extension StoredActivityEvent {
+    static func fixture(
+        fingerprint: String,
+        observedAtMilliseconds: Int64,
+        kind: ActivityKind,
+        name: String
+    ) -> StoredActivityEvent {
+        StoredActivityEvent(
+            fingerprint: fingerprint,
+            observedAtMilliseconds: observedAtMilliseconds,
+            threadID: "thread-1",
+            turnID: "turn-1",
+            kind: kind,
+            name: name,
+            sourceKind: .cli,
+            sourceFileID: "file-1",
+            sourceOffset: 120
+        )
+    }
+}
+
 private extension StoredSession {
     static func fixture(
         threadID: String = "thread-1",
@@ -604,7 +711,8 @@ private extension FileCheckpoint {
         threadID: String? = "thread-1",
         lastRecordAtMilliseconds: Int64? = 2_000,
         formatStatus: String = "supported",
-        lastError: String? = nil
+        lastError: String? = nil,
+        activityCommittedOffset: Int64 = 0
     ) -> FileCheckpoint {
         FileCheckpoint(
             fileID: fileID,
@@ -618,7 +726,8 @@ private extension FileCheckpoint {
             lastRecordAtMilliseconds: lastRecordAtMilliseconds,
             lastSuccessAtMilliseconds: 3_000,
             formatStatus: formatStatus,
-            lastError: lastError
+            lastError: lastError,
+            activityCommittedOffset: activityCommittedOffset
         )
     }
 }

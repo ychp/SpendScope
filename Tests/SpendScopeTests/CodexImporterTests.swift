@@ -31,6 +31,72 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.sessionStateEventCount(), 2)
     }
 
+    func testActivityHistoryBackfillUsesIndependentCheckpointAndIsIdempotent() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic"),
+            .started,
+            .activity,
+            .completed
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(rootURL: fixture.codexRoot, store: store)
+        _ = await importer.refresh(scope: .history)
+        XCTAssertEqual(try store.activityEventCount(), 2)
+
+        let database = try SQLiteDatabase(url: fixture.databaseURL)
+        try database.execute(sql: "DELETE FROM activity_events")
+        try database.execute(sql: "UPDATE source_files SET activity_committed_offset = 0")
+
+        let backfill = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+        let checkpoint = try XCTUnwrap(try store.fileCheckpoint(fileID: try XCTUnwrap(
+            CodexSourceDiscovery().discover(rootURL: fixture.codexRoot).rollouts.first?.fileID
+        )))
+
+        XCTAssertTrue(backfill.isSuccessful)
+        XCTAssertEqual(backfill.processedFileCount, 1)
+        XCTAssertEqual(checkpoint.committedOffset, try fixture.rolloutSize())
+        XCTAssertEqual(checkpoint.activityCommittedOffset, try fixture.rolloutSize())
+        XCTAssertEqual(try store.activityEventCount(), 2)
+        let skills = try store.activityCounts(
+            kind: .skill, fromMilliseconds: nil, toMilliseconds: nil, limit: 6
+        )
+        let tools = try store.activityCounts(
+            kind: .tool, fromMilliseconds: nil, toMilliseconds: nil, limit: 6
+        )
+        XCTAssertEqual(skills.map(\.name), ["ai-code-review"])
+        XCTAssertEqual(skills.map(\.count), [1])
+        XCTAssertEqual(tools.map(\.name), ["exec_command"])
+        XCTAssertEqual(tools.map(\.count), [1])
+
+        let repeated = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+        XCTAssertEqual(repeated.skippedFileCount, 1)
+        XCTAssertEqual(try store.activityEventCount(), 2)
+    }
+
+    func testMalformedActivityPayloadDoesNotBlockUsageImport() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic")
+        ])
+        try fixture.appendRaw(#"{"timestamp":"not-a-date","type":"response_item","payload":{"type":"function_call","name":"exec_command"}}"# + "\n")
+        try fixture.append(.token(
+            input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus"
+        ))
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+
+        let result = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+
+        XCTAssertTrue(result.isSuccessful)
+        XCTAssertTrue(result.issues.isEmpty)
+        XCTAssertEqual(try store.totalUsage(), 120)
+        XCTAssertEqual(try store.activityEventCount(), 0)
+        let fileID = try XCTUnwrap(try store.sessions().first?.sourceFileID)
+        let checkpoint = try XCTUnwrap(try store.fileCheckpoint(fileID: fileID))
+        XCTAssertEqual(checkpoint.committedOffset, try fixture.rolloutSize())
+        XCTAssertEqual(checkpoint.activityCommittedOffset, try fixture.rolloutSize())
+    }
+
     func testAppendAddsOnlyPositiveDeltaAndArchiveMoveDoesNotDuplicate() async throws {
         let fixture = try CodexFixture.make(events: [
             .sessionCLI,
@@ -515,6 +581,7 @@ private final class CodexFixture: @unchecked Sendable {
         case turn(model: String)
         case started
         case completed
+        case activity
         case unknown
         case token(
             input: Int64,
@@ -547,6 +614,10 @@ private final class CodexFixture: @unchecked Sendable {
                 return """
                 {"timestamp":"2026-07-14T01:02:05.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1"}}
                 """
+            case .activity:
+                return #"""
+                {"timestamp":"2026-07-14T01:02:04.000Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call-activity","arguments":"{\"cmd\":\"sed -n '1,200p' /Users/example/.agents/skills/ai-code-review/SKILL.md\"}"}}
+                """#
             case .unknown:
                 return """
                 {"type":"future_event","payload":{"synthetic":true}}
