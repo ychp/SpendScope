@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum SpendScopeTheme {
@@ -7,15 +8,16 @@ enum SpendScopeTheme {
     static let popoverSecondary = Color(red: 0.31, green: 0.64, blue: 1.00)
     static let output = Color.orange
     static let reasoning = Color.cyan
-    static let cardBackground = Color(nsColor: .controlBackgroundColor).opacity(0.82)
+    static let glassTint = Color.white.opacity(0.30)
+    static let glassTintStrong = Color.white.opacity(0.46)
 
-    // Dashboard-only light palette. The main canvas is true white; cool
-    // surfaces and restrained blue accents provide the visual depth.
-    static let dashboardBackground = Color.white
-    static let dashboardSurface = Color.white
-    static let dashboardSurfaceStrong = Color(red: 0.972, green: 0.982, blue: 0.998)
-    static let dashboardTile = Color.white
-    static let dashboardControlBackground = Color(red: 0.94, green: 0.965, blue: 0.995)
+    // Dashboard-only light palette. System materials provide the blur while
+    // translucent tints preserve hierarchy and chart contrast.
+    static let dashboardBackground = Color.clear
+    static let dashboardSurface = Color.white.opacity(0.42)
+    static let dashboardSurfaceStrong = Color(red: 0.972, green: 0.982, blue: 0.998).opacity(0.56)
+    static let dashboardTile = Color.white.opacity(0.52)
+    static let dashboardControlBackground = Color(red: 0.90, green: 0.94, blue: 0.99).opacity(0.70)
     static let dashboardBorder = Color(red: 0.08, green: 0.25, blue: 0.48).opacity(0.10)
     static let dashboardPrimaryText = Color(red: 0.045, green: 0.065, blue: 0.13)
     static let dashboardMutedText = Color(red: 0.38, green: 0.42, blue: 0.52)
@@ -29,17 +31,49 @@ enum SpendScopeTheme {
     static let dashboardShadow = Color(red: 0.09, green: 0.12, blue: 0.22).opacity(0.08)
 }
 
+struct SpendScopeVisualEffect: NSViewRepresentable {
+    enum Style {
+        case window
+        case popover
+    }
+
+    let style: Style
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        configure(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        configure(nsView)
+    }
+
+    private func configure(_ view: NSVisualEffectView) {
+        view.material = style == .window ? .underWindowBackground : .popover
+        view.blendingMode = style == .window ? .behindWindow : .withinWindow
+        view.state = .active
+        view.isEmphasized = true
+    }
+}
+
 struct DashboardCard: ViewModifier {
     let padding: CGFloat
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
         content
             .padding(padding)
-            .background(SpendScopeTheme.cardBackground, in: RoundedRectangle(cornerRadius: 16))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.primary.opacity(0.08))
+            .background {
+                shape
+                    .fill(.thinMaterial)
+                    .overlay { shape.fill(SpendScopeTheme.glassTint) }
             }
+            .overlay {
+                shape.stroke(Color.white.opacity(0.52), lineWidth: 1)
+            }
+            .shadow(color: Color.black.opacity(0.06), radius: 14, y: 5)
     }
 }
 
@@ -53,15 +87,30 @@ extension View {
         cornerRadius: CGFloat = 16,
         strong: Bool = false
     ) -> some View {
-        self
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        return self
             .padding(padding)
-            .background(
-                strong ? SpendScopeTheme.dashboardSurfaceStrong : SpendScopeTheme.dashboardSurface,
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            )
+            .background {
+                shape
+                    .fill(.thinMaterial)
+                    .overlay {
+                        shape.fill(
+                            strong
+                                ? SpendScopeTheme.glassTintStrong
+                                : SpendScopeTheme.glassTint
+                        )
+                    }
+            }
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(SpendScopeTheme.dashboardBorder, lineWidth: 1)
+                shape.stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.72), SpendScopeTheme.dashboardBorder],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
             }
             .shadow(color: SpendScopeTheme.dashboardShadow, radius: 12, y: 5)
     }

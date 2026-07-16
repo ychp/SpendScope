@@ -102,6 +102,10 @@ struct SettingsView: View {
         }
         .scrollIndicators(.automatic)
         .frame(width: 600, height: 660)
+        .background {
+            SpendScopeVisualEffect(style: .window)
+                .ignoresSafeArea()
+        }
         .task {
             await store.start()
             await reminderController.refreshAuthorizationStatus()
@@ -704,13 +708,23 @@ struct SettingsView: View {
 
 private extension View {
     func settingsCard() -> some View {
-        background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+
+        return background {
+            shape
+                .fill(.thinMaterial)
+                .overlay { shape.fill(Color.white.opacity(0.28)) }
         }
+        .overlay {
+            shape.stroke(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.62), Color(nsColor: .separatorColor).opacity(0.34)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+        }
+        .shadow(color: Color.black.opacity(0.035), radius: 9, y: 3)
     }
 }

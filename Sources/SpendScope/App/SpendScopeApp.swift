@@ -71,6 +71,11 @@ private final class AppWindowLevelView: NSView {
     private func updateWindowLevel() {
         guard let window else { return }
         window.level = level
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.titlebarAppearsTransparent = true
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
 

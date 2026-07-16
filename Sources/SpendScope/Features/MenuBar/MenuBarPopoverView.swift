@@ -142,6 +142,10 @@ struct MenuBarPopoverView: View {
         }
         .padding(14)
         .frame(width: 390)
+        .background {
+            SpendScopeVisualEffect(style: .popover)
+                .ignoresSafeArea()
+        }
         .task { await store.start() }
     }
 

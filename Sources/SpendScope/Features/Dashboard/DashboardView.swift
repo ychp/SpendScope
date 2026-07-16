@@ -46,6 +46,10 @@ struct DashboardView: View {
             }
         }
         .task { await store.start() }
+        .background {
+            SpendScopeVisualEffect(style: .window)
+                .ignoresSafeArea()
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -138,6 +142,18 @@ private struct DashboardContentView: View {
                     center: .topLeading,
                     startRadius: 12,
                     endRadius: 560
+                )
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                RadialGradient(
+                    colors: [
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(0.055),
+                        .clear
+                    ],
+                    center: .bottomTrailing,
+                    startRadius: 10,
+                    endRadius: 480
                 )
                 .allowsHitTesting(false)
             }
