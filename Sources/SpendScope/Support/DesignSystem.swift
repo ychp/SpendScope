@@ -10,18 +10,22 @@ enum SpendScopeTheme {
     static let cardBackground = Color(nsColor: .controlBackgroundColor).opacity(0.82)
 
     // Dashboard-only light palette. The main canvas is true white; cool
-    // surfaces and restrained violet-blue accents provide the visual depth.
+    // surfaces and restrained blue accents provide the visual depth.
     static let dashboardBackground = Color.white
     static let dashboardSurface = Color.white
-    static let dashboardSurfaceStrong = Color(red: 0.975, green: 0.98, blue: 0.995)
+    static let dashboardSurfaceStrong = Color(red: 0.972, green: 0.982, blue: 0.998)
     static let dashboardTile = Color.white
-    static let dashboardControlBackground = Color(red: 0.95, green: 0.955, blue: 0.975)
-    static let dashboardBorder = Color(red: 0.14, green: 0.18, blue: 0.3).opacity(0.11)
+    static let dashboardControlBackground = Color(red: 0.94, green: 0.965, blue: 0.995)
+    static let dashboardBorder = Color(red: 0.08, green: 0.25, blue: 0.48).opacity(0.10)
     static let dashboardPrimaryText = Color(red: 0.045, green: 0.065, blue: 0.13)
     static let dashboardMutedText = Color(red: 0.38, green: 0.42, blue: 0.52)
-    static let dashboardGrid = Color(red: 0.14, green: 0.18, blue: 0.3).opacity(0.09)
-    static let dashboardViolet = Color(red: 0.43, green: 0.25, blue: 0.94)
-    static let dashboardBlue = Color(red: 0.16, green: 0.48, blue: 0.94)
+    static let dashboardGrid = Color(red: 0.08, green: 0.25, blue: 0.48).opacity(0.08)
+    static let dashboardAccent = Color(red: 0.12, green: 0.43, blue: 0.92)
+    static let dashboardAccentSecondary = Color(red: 0.16, green: 0.65, blue: 0.94)
+
+    // Token categories keep their own colors so charts and detail rows remain scannable.
+    static let dashboardInput = Color(red: 0.43, green: 0.25, blue: 0.94)
+    static let dashboardCachedInput = Color(red: 0.16, green: 0.48, blue: 0.94)
     static let dashboardShadow = Color(red: 0.09, green: 0.12, blue: 0.22).opacity(0.08)
 }
 

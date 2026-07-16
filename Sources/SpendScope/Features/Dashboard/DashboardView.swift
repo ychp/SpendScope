@@ -115,8 +115,8 @@ private struct DashboardContentView: View {
             .overlay(alignment: .topLeading) {
                 RadialGradient(
                     colors: [
-                        SpendScopeTheme.dashboardViolet.opacity(0.075),
-                        SpendScopeTheme.dashboardBlue.opacity(0.025),
+                        SpendScopeTheme.dashboardAccent.opacity(0.075),
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(0.025),
                         .clear
                     ],
                     center: .topLeading,
@@ -170,7 +170,7 @@ private struct DashboardContentView: View {
     }
 
     private func quotaColor(for quota: QuotaSnapshot) -> Color {
-        quota.id == "7d" ? SpendScopeTheme.dashboardViolet : SpendScopeTheme.dashboardBlue
+        quota.id == "7d" ? SpendScopeTheme.dashboardAccent : SpendScopeTheme.dashboardAccentSecondary
     }
 
     private var quotaRingGroup: some View {
@@ -323,10 +323,10 @@ private struct DashboardContentView: View {
             HStack(spacing: 8) {
                 Image(systemName: periodIcon(for: period))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(SpendScopeTheme.dashboardViolet)
+                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
                     .frame(width: 26, height: 26)
                     .background(
-                        SpendScopeTheme.dashboardViolet.opacity(0.10),
+                        SpendScopeTheme.dashboardAccent.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                     )
                 Text(period.title)
@@ -370,7 +370,7 @@ private struct DashboardContentView: View {
                     "输入",
                     value: period.uncachedInput,
                     share: period.share(of: period.uncachedInput),
-                    color: SpendScopeTheme.dashboardViolet
+                    color: SpendScopeTheme.dashboardInput
                 )
                 .padding(.trailing, 10)
 
@@ -380,7 +380,7 @@ private struct DashboardContentView: View {
                     "缓存",
                     value: period.cachedInput,
                     share: period.share(of: period.cachedInput),
-                    color: SpendScopeTheme.dashboardBlue
+                    color: SpendScopeTheme.dashboardCachedInput
                 )
                 .padding(.leading, 10)
             }
@@ -517,8 +517,8 @@ private struct DashboardContentView: View {
                 .foregroundStyle(
                     LinearGradient(
                         colors: [
-                            SpendScopeTheme.dashboardViolet.opacity(0.34),
-                            SpendScopeTheme.dashboardBlue.opacity(0.05)
+                            SpendScopeTheme.dashboardAccent.opacity(0.34),
+                            SpendScopeTheme.dashboardAccentSecondary.opacity(0.05)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -530,7 +530,7 @@ private struct DashboardContentView: View {
                     x: .value("日期", item.day),
                     y: .value("Token", item.total)
                 )
-                .foregroundStyle(SpendScopeTheme.dashboardViolet)
+                .foregroundStyle(SpendScopeTheme.dashboardAccent)
                 .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                 .interpolationMethod(.monotone)
 
@@ -538,12 +538,12 @@ private struct DashboardContentView: View {
                     x: .value("日期", item.day),
                     y: .value("Token", item.total)
                 )
-                .foregroundStyle(SpendScopeTheme.dashboardViolet)
+                .foregroundStyle(SpendScopeTheme.dashboardAccent)
                 .symbolSize(24)
 
                 if hoveredUsage?.id == item.id {
                     RuleMark(x: .value("悬停日期", item.day))
-                        .foregroundStyle(SpendScopeTheme.dashboardViolet.opacity(0.28))
+                        .foregroundStyle(SpendScopeTheme.dashboardAccent.opacity(0.28))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
                     PointMark(
@@ -557,7 +557,7 @@ private struct DashboardContentView: View {
                         x: .value("悬停日期", item.day),
                         y: .value("悬停 Token", item.total)
                     )
-                    .foregroundStyle(SpendScopeTheme.dashboardViolet)
+                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
                     .symbolSize(46)
                     .annotation(
                         position: Double(item.total) / Double(trendUpperBound) > 0.72 ? .bottom : .top,
@@ -631,8 +631,8 @@ private struct DashboardContentView: View {
                         .background {
                             if selectedRange == range {
                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(SpendScopeTheme.dashboardViolet)
-                                    .shadow(color: SpendScopeTheme.dashboardViolet.opacity(0.24), radius: 5, y: 2)
+                                    .fill(SpendScopeTheme.dashboardAccent)
+                                    .shadow(color: SpendScopeTheme.dashboardAccent.opacity(0.24), radius: 5, y: 2)
                             }
                         }
                 }
@@ -685,7 +685,7 @@ private struct DashboardContentView: View {
                 .foregroundStyle(SpendScopeTheme.dashboardMutedText)
             Text(TokenFormatter.compact(value))
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(SpendScopeTheme.dashboardViolet)
+                .foregroundStyle(SpendScopeTheme.dashboardAccent)
                 .monospacedDigit()
         }
     }

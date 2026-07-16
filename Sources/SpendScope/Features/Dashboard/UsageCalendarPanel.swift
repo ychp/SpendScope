@@ -276,7 +276,7 @@ struct UsageCalendarPanel: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(
                         cell.isToday
-                            ? (level >= 3 ? Color.white.opacity(0.94) : SpendScopeTheme.dashboardViolet)
+                            ? (level >= 3 ? Color.white.opacity(0.94) : SpendScopeTheme.dashboardAccent)
                             : SpendScopeTheme.dashboardBorder.opacity(0.55),
                         lineWidth: cell.isToday ? 1.5 : 0.7
                     )
@@ -339,7 +339,7 @@ struct UsageCalendarPanel: View {
             return SpendScopeTheme.dashboardControlBackground.opacity(0.42)
         }
         guard level > 0 else {
-            return SpendScopeTheme.dashboardViolet.opacity(0.055)
+            return SpendScopeTheme.dashboardAccent.opacity(0.055)
         }
         return heatColor(level: level)
     }
@@ -359,7 +359,7 @@ struct UsageCalendarPanel: View {
         case 3: opacity = 0.46
         default: opacity = 0.82
         }
-        return SpendScopeTheme.dashboardViolet.opacity(opacity)
+        return SpendScopeTheme.dashboardAccent.opacity(opacity)
     }
 
     private func hoverBinding(for id: DailyUsage.ID) -> Binding<Bool> {
@@ -406,8 +406,8 @@ struct DailyUsageHoverCard: View {
                 .frame(height: 1)
 
             HStack(spacing: 10) {
-                metric("输入", value: usage.uncachedInput, color: SpendScopeTheme.dashboardViolet)
-                metric("缓存", value: usage.cachedInput, color: SpendScopeTheme.dashboardBlue)
+                metric("输入", value: usage.uncachedInput, color: SpendScopeTheme.dashboardInput)
+                metric("缓存", value: usage.cachedInput, color: SpendScopeTheme.dashboardCachedInput)
             }
 
             HStack(spacing: 10) {
