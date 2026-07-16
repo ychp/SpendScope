@@ -27,6 +27,14 @@ SpendScope 以只读方式流式扫描 Codex rollout JSONL 并识别记录类型
 - 缺失或已经过期的额度快照不会推断为满额，只显示为空并等待 Codex 产生新观测。
 - 当前工程面向本机开发运行，正式分发所需的开发者身份签名、强化运行时、公证和安装包流程尚未完成。
 
+## GitHub 免费发布（未签名）
+
+仓库提供一个手动触发的 GitHub Actions 工作流：`Publish unsigned macOS release`。它会在 macOS runner 上运行测试、构建 Release 应用、制作可拖拽安装的 `SpendScope-macOS-unsigned.dmg` 并创建 GitHub Release，同时附带 SHA-256 校验文件。
+
+在 GitHub 仓库的 **Actions** 页面选择该工作流，点击 **Run workflow**，填入标签（如 `v0.1.0`）和标题即可。首次发布会创建对应的 tag；若 tag 已有 Release，则替换其中的两个发布附件。
+
+这是免费的临时分发方式。用户打开 DMG 后，将 SpendScope 拖进“应用程序”快捷方式即可安装。产物没有 Developer ID 签名和 Apple 公证，首次打开时需要在 Finder 中右键应用并选择“打开”后确认。请勿把它描述为已签名或已公证的正式安装包。
+
 ## 技术说明
 
 - Xcode 26.6

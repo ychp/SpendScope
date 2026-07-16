@@ -1,0 +1,87 @@
+name: Publish unsigned macOS release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (for example v0.1.0)"
+        required: true
+        type: string
+      title:
+        description: "Release title"
+        required: true
+        default: "SpendScope"
+        type: string
+      prerelease:
+        description: "Mark this as a pre-release"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Test, package, and publish
+    # SpendScope is developed with Xcode 26 and uses Swift 6 language features.
+    runs-on: macos-26
+    env:
+      DERIVED_DATA: ${{ github.workspace }}/DerivedData
+      ARTIFACT_NAME: SpendScope-macOS-unsigned.dmg
+      TAG: ${{ inputs.tag }}
+      TITLE: ${{ inputs.title }}
+      PRERELEASE: ${{ inputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Run tests
+        run: >-
+          xcodebuild
+          -project SpendScope.xcodeproj
+          -scheme SpendScope
+          -configuration Debug
+          -destination 'platform=macOS'
+          -derivedDataPath "$DERIVED_DATA"
+          CODE_SIGNING_ALLOWED=NO
+          test
+
+      - name: Build Release app
+        run: >-
+          xcodebuild
+          -project SpendScope.xcodeproj
+          -scheme SpendScope
+          -configuration Release
+          -destination 'platform=macOS'
+          -derivedDataPath "$DERIVED_DATA"
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+      - name: Create unsigned DMG
+        run: |
+          APP_PATH="$DERIVED_DATA/Build/Products/Release/SpendScope.app"
+          test -d "$APP_PATH"
+          mkdir -p dist dmg-root
+          ditto "$APP_PATH" "dmg-root/SpendScope.app"
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname "SpendScope" -srcfolder dmg-root -ov -format UDZO "dist/$ARTIFACT_NAME"
+          shasum -a 256 "dist/$ARTIFACT_NAME" > "dist/$ARTIFACT_NAME.sha256"
+
+      - name: Publish GitHub Release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "dist/$ARTIFACT_NAME" "dist/$ARTIFACT_NAME.sha256" --clobber
+          else
+            prerelease_flag=()
+            if [[ "$PRERELEASE" == "true" ]]; then
+              prerelease_flag=(--prerelease)
+            fi
+            gh release create "$TAG" "dist/$ARTIFACT_NAME" "dist/$ARTIFACT_NAME.sha256" \
+              --title "$TITLE" --generate-notes "${prerelease_flag[@]}"
+          fi
