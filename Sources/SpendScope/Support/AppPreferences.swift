@@ -2,6 +2,7 @@ import SwiftUI
 
 enum AppPreferenceKeys {
     static let keepsDashboardOnTop = "dashboard.keepsOnTop"
+    static let dashboardCloseBehavior = "dashboard.closeBehavior"
     static let automaticRefreshEnabled = "data.automaticRefreshEnabled"
     static let usageRemindersEnabled = "usageReminders.enabled"
     static let remindsFiveHour = "usageReminders.quotas.fiveHour"
@@ -17,6 +18,30 @@ enum AppPreferenceKeys {
     static let showsWeekly = "menuBar.showsWeekly"
     static let automaticallyChecksForUpdates = "updates.automaticallyChecks"
     static let automaticallyDownloadsUpdates = "updates.automaticallyDownloads"
+}
+
+enum DashboardCloseBehavior: String, CaseIterable, Identifiable, Sendable {
+    case closeDashboard
+    case quitApplication
+
+    var id: Self { self }
+
+    var terminatesApplication: Bool {
+        self == .quitApplication
+    }
+
+    static func resolved(from rawValue: String) -> Self {
+        Self(rawValue: rawValue) ?? .closeDashboard
+    }
+
+    static func load(from defaults: UserDefaults = .standard) -> Self {
+        guard let rawValue = defaults.string(
+            forKey: AppPreferenceKeys.dashboardCloseBehavior
+        ) else {
+            return .closeDashboard
+        }
+        return resolved(from: rawValue)
+    }
 }
 
 enum QuotaDisplayPreference: String, CaseIterable, Identifiable, Sendable {

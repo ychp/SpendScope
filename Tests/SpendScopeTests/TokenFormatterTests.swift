@@ -79,6 +79,37 @@ private extension DashboardSnapshot {
 }
 
 final class TokenFormatterTests: XCTestCase {
+    func testDashboardCloseBehaviorResolvesStoredPreferenceAndUsesSafeFallback() {
+        XCTAssertEqual(
+            DashboardCloseBehavior.resolved(
+                from: DashboardCloseBehavior.quitApplication.rawValue
+            ),
+            .quitApplication
+        )
+        XCTAssertTrue(DashboardCloseBehavior.quitApplication.terminatesApplication)
+        XCTAssertFalse(DashboardCloseBehavior.closeDashboard.terminatesApplication)
+        XCTAssertEqual(
+            DashboardCloseBehavior.resolved(from: "unsupported-value"),
+            .closeDashboard
+        )
+
+        let suiteName = "DashboardCloseBehaviorTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(DashboardCloseBehavior.load(from: defaults), .closeDashboard)
+        defaults.set(
+            DashboardCloseBehavior.quitApplication.rawValue,
+            forKey: AppPreferenceKeys.dashboardCloseBehavior
+        )
+        XCTAssertEqual(DashboardCloseBehavior.load(from: defaults), .quitApplication)
+        defaults.set(
+            DashboardCloseBehavior.closeDashboard.rawValue,
+            forKey: AppPreferenceKeys.dashboardCloseBehavior
+        )
+        XCTAssertEqual(DashboardCloseBehavior.load(from: defaults), .closeDashboard)
+    }
+
     func testUsageCalendarBuildsMondayFirstSixWeekGrid() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))

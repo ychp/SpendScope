@@ -35,6 +35,13 @@ open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
 
+verify_app() {
+  if ! pgrep -f -x "$APP_BINARY" >/dev/null; then
+    echo "error: freshly built app is not running at $APP_BINARY" >&2
+    exit 1
+  fi
+}
+
 case "$MODE" in
   run)
     open_app
@@ -53,8 +60,8 @@ case "$MODE" in
   --verify|verify)
     open_app
     sleep 2
-    pgrep -x "$APP_NAME" >/dev/null
-    echo "$APP_NAME is running."
+    verify_app
+    echo "$APP_NAME is running from $APP_BUNDLE."
     ;;
   *)
     echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2

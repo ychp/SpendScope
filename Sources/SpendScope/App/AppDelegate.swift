@@ -31,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         usageReminderController.applicationDidBecomeActive()
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func updateSceneActions(
         openDashboard: @escaping () -> Void,
         openSettings: @escaping () -> Void

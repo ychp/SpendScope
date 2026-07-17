@@ -74,6 +74,8 @@ struct SettingsView: View {
     let reminderController: UsageReminderController
     let updateService: AppUpdateService
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
+    @AppStorage(AppPreferenceKeys.dashboardCloseBehavior)
+    private var dashboardCloseBehaviorRaw = DashboardCloseBehavior.closeDashboard.rawValue
     @AppStorage(AppPreferenceKeys.automaticRefreshEnabled) private var automaticRefreshEnabled = true
     @AppStorage(AppPreferenceKeys.usageRemindersEnabled) private var usageRemindersEnabled = false
     @AppStorage(AppPreferenceKeys.remindsFiveHour) private var remindsFiveHour = true
@@ -131,9 +133,41 @@ struct SettingsView: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
+                settingsDivider
+                preferenceRow("关闭按钮", detail: dashboardCloseBehaviorDetail) {
+                    segmentedGroup {
+                        selectionSegment(
+                            "仅关闭看板",
+                            isSelected: dashboardCloseBehavior == .closeDashboard
+                        ) {
+                            dashboardCloseBehaviorRaw = DashboardCloseBehavior
+                                .closeDashboard.rawValue
+                        }
+                        selectionSegment(
+                            "退出程序",
+                            isSelected: dashboardCloseBehavior == .quitApplication
+                        ) {
+                            dashboardCloseBehaviorRaw = DashboardCloseBehavior
+                                .quitApplication.rawValue
+                        }
+                    }
+                }
             }
             .padding(.horizontal, Layout.cardHorizontalPadding)
             .settingsCard()
+        }
+    }
+
+    private var dashboardCloseBehavior: DashboardCloseBehavior {
+        DashboardCloseBehavior.resolved(from: dashboardCloseBehaviorRaw)
+    }
+
+    private var dashboardCloseBehaviorDetail: String {
+        switch dashboardCloseBehavior {
+        case .closeDashboard:
+            "关闭后仍可从状态栏再次打开看板"
+        case .quitApplication:
+            "点击看板关闭按钮时退出 SpendScope"
         }
     }
 

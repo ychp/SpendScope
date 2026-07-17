@@ -17,6 +17,7 @@ struct SpendScopeApp: App {
                         )
                     )
                 )
+                .background(DashboardWindowCloseBehaviorBridge())
                 .background(StatusItemSceneBridge(appDelegate: appDelegate))
         }
         .defaultSize(width: 920, height: 620)
@@ -92,6 +93,52 @@ private struct AppWindowLevelBridge: NSViewRepresentable {
     func updateNSView(_ nsView: AppWindowLevelView, context: Context) {
         nsView.level = level
     }
+}
+
+private final class DashboardWindowCloseObserverView: NSView {
+    private weak var observedWindow: NSWindow?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observeCurrentWindow()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func observeCurrentWindow() {
+        guard observedWindow !== window else { return }
+        if let observedWindow {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSWindow.willCloseNotification,
+                object: observedWindow
+            )
+        }
+
+        observedWindow = window
+        guard let window else { return }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
+    }
+
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard DashboardCloseBehavior.load().terminatesApplication else { return }
+        NSApp.terminate(nil)
+    }
+}
+
+private struct DashboardWindowCloseBehaviorBridge: NSViewRepresentable {
+    func makeNSView(context: Context) -> DashboardWindowCloseObserverView {
+        DashboardWindowCloseObserverView()
+    }
+
+    func updateNSView(_ nsView: DashboardWindowCloseObserverView, context: Context) {}
 }
 
 private struct StatusItemSceneBridge: View {
