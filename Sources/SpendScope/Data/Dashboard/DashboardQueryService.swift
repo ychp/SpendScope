@@ -58,6 +58,10 @@ final class DashboardQueryService: @unchecked Sendable {
         ]
         let quotaResult = try quotas(now: now, calendar: calendar)
         let activityRankings = ActivityRankingSnapshot(
+            today: try activityRanking(
+                fromMilliseconds: milliseconds(for: todayStart),
+                toMilliseconds: end
+            ),
             sevenDays: try activityRanking(
                 fromMilliseconds: milliseconds(for: sevenDayStart),
                 toMilliseconds: end
@@ -69,6 +73,7 @@ final class DashboardQueryService: @unchecked Sendable {
             allTime: try activityRanking(fromMilliseconds: nil, toMilliseconds: end)
         )
         let projectUsage = ProjectUsageSnapshot(
+            today: try projectRanking(from: todayRows),
             sevenDays: try projectRanking(from: sevenDayRows),
             thirtyDays: try projectRanking(from: thirtyDayRows),
             allTime: try projectRanking(from: allRows.filter { $0.observedAtMilliseconds < end })

@@ -359,8 +359,12 @@ final class DashboardSnapshotTests: XCTestCase {
     }
 
     func testActivityRangesExposeExpectedLabelsDefaultAndIndependentSnapshots() {
-        XCTAssertEqual(ActivityRange.allCases.map(\.rawValue), ["7 日", "30 日", "累计"])
+        XCTAssertEqual(ActivityRange.allCases.map(\.rawValue), ["今日", "7 日", "30 日", "累计"])
         XCTAssertEqual(ActivityRange.defaultRange, .sevenDays)
+        let today = ActivityRanking(
+            skills: [.init(name: "today-skill", count: 1)],
+            tools: [.init(name: "today-tool", count: 1)]
+        )
         let seven = ActivityRanking(
             skills: [.init(name: "seven-skill", count: 7)],
             tools: [.init(name: "seven-tool", count: 7)]
@@ -374,11 +378,13 @@ final class DashboardSnapshotTests: XCTestCase {
             tools: [.init(name: "all-tool", count: 99)]
         )
         let snapshot = ActivityRankingSnapshot(
+            today: today,
             sevenDays: seven,
             thirtyDays: thirty,
             allTime: all
         )
 
+        XCTAssertEqual(snapshot.ranking(for: .today), today)
         XCTAssertEqual(snapshot.ranking(for: .sevenDays), seven)
         XCTAssertEqual(snapshot.ranking(for: .thirtyDays), thirty)
         XCTAssertEqual(snapshot.ranking(for: .allTime), all)

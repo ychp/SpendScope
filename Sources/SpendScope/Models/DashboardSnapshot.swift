@@ -106,6 +106,7 @@ struct DashboardSnapshot: Sendable {
 }
 
 enum ActivityRange: String, CaseIterable, Identifiable, Sendable {
+    case today = "今日"
     case sevenDays = "7 日"
     case thirtyDays = "30 日"
     case allTime = "累计"
@@ -130,11 +131,13 @@ struct ActivityRanking: Equatable, Sendable {
 }
 
 struct ActivityRankingSnapshot: Equatable, Sendable {
+    let today: ActivityRanking
     let sevenDays: ActivityRanking
     let thirtyDays: ActivityRanking
     let allTime: ActivityRanking
 
     static let empty = ActivityRankingSnapshot(
+        today: .empty,
         sevenDays: .empty,
         thirtyDays: .empty,
         allTime: .empty
@@ -142,6 +145,7 @@ struct ActivityRankingSnapshot: Equatable, Sendable {
 
     func ranking(for range: ActivityRange) -> ActivityRanking {
         switch range {
+        case .today: today
         case .sevenDays: sevenDays
         case .thirtyDays: thirtyDays
         case .allTime: allTime
@@ -165,11 +169,13 @@ struct ProjectUsageRanking: Equatable, Sendable {
 }
 
 struct ProjectUsageSnapshot: Equatable, Sendable {
+    let today: ProjectUsageRanking
     let sevenDays: ProjectUsageRanking
     let thirtyDays: ProjectUsageRanking
     let allTime: ProjectUsageRanking
 
     static let empty = ProjectUsageSnapshot(
+        today: .empty,
         sevenDays: .empty,
         thirtyDays: .empty,
         allTime: .empty
@@ -177,6 +183,7 @@ struct ProjectUsageSnapshot: Equatable, Sendable {
 
     func ranking(for range: ActivityRange) -> ProjectUsageRanking {
         switch range {
+        case .today: today
         case .sevenDays: sevenDays
         case .thirtyDays: thirtyDays
         case .allTime: allTime

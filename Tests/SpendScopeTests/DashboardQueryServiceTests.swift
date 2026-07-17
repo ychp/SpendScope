@@ -155,7 +155,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.projectUsage, .empty)
     }
 
-    func testBuildsProjectUsageForSevenThirtyAndAllTimeRanges() throws {
+    func testBuildsProjectUsageForTodaySevenThirtyAndAllTimeRanges() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
         let now = try XCTUnwrap(calendar.date(from: DateComponents(
@@ -180,10 +180,13 @@ final class DashboardQueryServiceTests: XCTestCase {
         ], quotas: []))
 
         let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: calendar)
+        let today = snapshot.projectUsage.ranking(for: .today)
         let sevenDays = snapshot.projectUsage.ranking(for: .sevenDays)
         let thirtyDays = snapshot.projectUsage.ranking(for: .thirtyDays)
         let allTime = snapshot.projectUsage.ranking(for: .allTime)
 
+        XCTAssertEqual(today.entries.map(\.id), ["project-a"])
+        XCTAssertEqual(today.totalTokens, 100)
         XCTAssertEqual(sevenDays.entries.map(\.id), ["project-a"])
         XCTAssertEqual(sevenDays.totalTokens, 120)
         XCTAssertEqual(sevenDays.entries.first?.share, 1)
@@ -221,7 +224,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(allTime.entries.last?.tokens, 1)
     }
 
-    func testBuildsActivityRankingsForSevenThirtyAndAllTimeLocalDayBoundaries() throws {
+    func testBuildsActivityRankingsForTodaySevenThirtyAndAllTimeLocalDayBoundaries() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
         let now = try XCTUnwrap(calendar.date(from: DateComponents(
@@ -258,10 +261,15 @@ final class DashboardQueryServiceTests: XCTestCase {
         try store.commit(batch(events: [], quotas: [], activityEvents: activityEvents))
 
         let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: calendar)
+        let today = snapshot.activityRankings.ranking(for: .today)
         let sevenDays = snapshot.activityRankings.ranking(for: .sevenDays)
         let thirtyDays = snapshot.activityRankings.ranking(for: .thirtyDays)
         let allTime = snapshot.activityRankings.ranking(for: .allTime)
 
+        XCTAssertEqual(today.skills.map(\.name), ["swiftui-patterns"])
+        XCTAssertEqual(today.skills.map(\.count), [1])
+        XCTAssertEqual(today.tools.count, 20)
+        XCTAssertFalse(today.tools.contains { $0.name == "future" })
         XCTAssertEqual(sevenDays.skills.map(\.name), ["swiftui-patterns"])
         XCTAssertEqual(sevenDays.skills.map(\.count), [2])
         XCTAssertEqual(thirtyDays.skills.map(\.name), ["imagegen", "swiftui-patterns"],
