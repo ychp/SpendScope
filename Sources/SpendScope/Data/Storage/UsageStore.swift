@@ -482,7 +482,7 @@ final class UsageStore: @unchecked Sendable {
             sql: """
             SELECT fingerprint, observed_at_ms, thread_id, model, plan, plan_raw, plan_is_inferred,
                    uncached_input_tokens, cached_input_tokens, visible_output_tokens,
-                   reasoning_tokens, total_tokens, project_id, project_name
+                   reasoning_tokens, total_tokens, project_id, project_name, repository_id
             FROM usage_events\(whereClause)
             ORDER BY observed_at_ms, fingerprint
             """,
@@ -792,13 +792,14 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 6 else {
+            guard versions.last ?? 0 <= 8 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(6) {
+            if versions.contains(8) {
                 try validateVersionTwoSchema()
                 try validateVersionThreeSchema()
                 try validateVersionFiveSchema()
+                try validateVersionSevenSchema()
                 return
             }
 
@@ -837,15 +838,33 @@ final class UsageStore: @unchecked Sendable {
                 try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (5)")
             }
 
-            // v6 identifies cumulative usage snapshots by thread, counter segment,
-            // and counters instead of their rewritten timestamp. Existing derived
-            // rows must be rebuilt so copied parent history receives the new stable
-            // fingerprints and collapses across rollout files.
+            if !versions.contains(6) {
+                // v6 identifies cumulative usage snapshots by thread, counter segment,
+                // and counters instead of their rewritten timestamp. Existing derived
+                // rows must be rebuilt so copied parent history receives the new stable
+                // fingerprints and collapses across rollout files.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (6)")
+            }
+
+            if !versions.contains(7) {
+                for statement in Self.versionSevenStatements {
+                    try database.execute(sql: statement)
+                }
+                // v7 enriches path-based project identity with a Git repository fingerprint.
+                // Rebuild from local rollouts so all available working directories are inspected.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (7)")
+            }
+
+            // v8 reads the repository URL embedded in session metadata. Rebuild so deleted
+            // worktrees can recover their repository identity without filesystem access.
             try resetImportedDataInCurrentTransaction()
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (6)")
+            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (8)")
             try validateVersionTwoSchema()
             try validateVersionThreeSchema()
             try validateVersionFiveSchema()
+            try validateVersionSevenSchema()
         }
     }
 
@@ -875,8 +894,8 @@ final class UsageStore: @unchecked Sendable {
               fingerprint, observed_at_ms, thread_id, source_kind, model, plan, plan_raw,
               plan_is_inferred, uncached_input_tokens, cached_input_tokens,
               visible_output_tokens, reasoning_tokens, total_tokens, source_file_id, source_offset,
-              project_id, project_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              project_id, project_name, repository_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(fingerprint) DO NOTHING
             """,
             bindings: [
@@ -886,7 +905,8 @@ final class UsageStore: @unchecked Sendable {
                 .integer(event.usage.uncachedInput), .integer(event.usage.cachedInput),
                 .integer(event.usage.visibleOutput), .integer(event.usage.reasoning),
                 .integer(total), .text(event.sourceFileID), .integer(event.sourceOffset),
-                .text(event.project.id), .text(event.project.name)
+                .text(event.project.id), .text(event.project.name),
+                event.project.repositoryID.sqliteValue
             ]
         )
     }
@@ -1100,8 +1120,8 @@ final class UsageStore: @unchecked Sendable {
               current_model, plan, plan_raw, plan_is_inferred,
               input_tokens, cached_input_tokens, output_tokens, reasoning_tokens,
               counter_segment, last_token_at_ms, activity_committed_offset,
-              project_id, project_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              project_id, project_name, repository_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_id) DO UPDATE SET
               device_id = excluded.device_id, inode = excluded.inode, path = excluded.path,
               file_size = excluded.file_size, committed_offset = excluded.committed_offset,
@@ -1119,7 +1139,8 @@ final class UsageStore: @unchecked Sendable {
               last_token_at_ms = excluded.last_token_at_ms,
               activity_committed_offset = excluded.activity_committed_offset,
               project_id = excluded.project_id,
-              project_name = excluded.project_name
+              project_name = excluded.project_name,
+              repository_id = excluded.repository_id
             """,
             bindings: [
                 .text(checkpoint.fileID), .integer(checkpoint.deviceID), .integer(checkpoint.inode),
@@ -1139,7 +1160,8 @@ final class UsageStore: @unchecked Sendable {
                 checkpoint.lastTokenAtMilliseconds.sqliteValue,
                 .integer(checkpoint.activityCommittedOffset),
                 checkpoint.project.map(\.id).sqliteValue,
-                checkpoint.project.map(\.name).sqliteValue
+                checkpoint.project.map(\.name).sqliteValue,
+                checkpoint.project.flatMap(\.repositoryID).sqliteValue
             ]
         )
     }
@@ -1311,6 +1333,11 @@ final class UsageStore: @unchecked Sendable {
         "CREATE INDEX usage_events_project_time_idx ON usage_events(project_id, observed_at_ms)"
     ]
 
+    private static let versionSevenStatements = [
+        "ALTER TABLE source_files ADD COLUMN repository_id TEXT",
+        "ALTER TABLE usage_events ADD COLUMN repository_id TEXT"
+    ]
+
     private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
         try SQLitePlanResolution.optional(from: row)
     }
@@ -1319,7 +1346,11 @@ final class UsageStore: @unchecked Sendable {
         guard let id = try row.optionalString("project_id"),
               let name = try row.optionalString("project_name"),
               !id.isEmpty, !name.isEmpty else { return nil }
-        return ProjectIdentity(id: id, name: name)
+        return ProjectIdentity(
+            id: id,
+            name: name,
+            repositoryID: try row.optionalString("repository_id")
+        )
     }
 
     private func storedSession(from row: SQLiteRow) throws -> StoredSession {
@@ -1403,6 +1434,26 @@ final class UsageStore: @unchecked Sendable {
         let requiredColumns: [(table: String, columns: [String])] = [
             ("source_files", ["project_id", "project_name"]),
             ("usage_events", ["project_id", "project_name"])
+        ]
+        for requirement in requiredColumns {
+            let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")
+            let existing = try Set(rows.map {
+                try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+            })
+            let missing = requirement.columns.filter { !existing.contains($0) }
+            if !missing.isEmpty {
+                throw UsageStoreError.rebuildRequired(
+                    table: requirement.table,
+                    missingColumns: missing
+                )
+            }
+        }
+    }
+
+    private func validateVersionSevenSchema() throws {
+        let requiredColumns: [(table: String, columns: [String])] = [
+            ("source_files", ["repository_id"]),
+            ("usage_events", ["repository_id"])
         ]
         for requirement in requiredColumns {
             let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")

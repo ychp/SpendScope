@@ -224,6 +224,52 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(allTime.entries.last?.tokens, 1)
     }
 
+    func testProjectUsageGroupsByNameThenGitRepositoryIdentity() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let observedAt = now.addingTimeInterval(-1)
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage(
+                "same-repo-a",
+                at: observedAt,
+                total: 100,
+                project: ProjectIdentity(id: "path-a", name: "Shop", repositoryID: "repo-1")
+            ),
+            usage(
+                "same-repo-b",
+                at: observedAt,
+                total: 50,
+                project: ProjectIdentity(id: "path-b", name: "Shop", repositoryID: "repo-1")
+            ),
+            usage(
+                "same-path-changed-remote",
+                at: observedAt,
+                total: 10,
+                project: ProjectIdentity(id: "path-a", name: "Shop", repositoryID: "repo-3")
+            ),
+            usage(
+                "different-repo",
+                at: observedAt,
+                total: 30,
+                project: ProjectIdentity(id: "path-c", name: "Shop", repositoryID: "repo-2")
+            ),
+            usage(
+                "different-name",
+                at: observedAt,
+                total: 20,
+                project: ProjectIdentity(id: "path-d", name: "ShopCopy", repositoryID: "repo-1")
+            )
+        ], quotas: []))
+
+        let ranking = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
+            .projectUsage.ranking(for: .allTime)
+
+        XCTAssertEqual(ranking.projectCount, 3)
+        XCTAssertEqual(ranking.entries.filter { $0.name == "Shop" }.map(\.tokens), [160, 30])
+        XCTAssertEqual(ranking.entries.first { $0.tokens == 160 }?.id, "path-a")
+        XCTAssertEqual(ranking.entries.first { $0.name == "ShopCopy" }?.tokens, 20)
+    }
+
     func testBuildsActivityRankingsForTodaySevenThirtyAndAllTimeLocalDayBoundaries() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))

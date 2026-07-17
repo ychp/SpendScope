@@ -104,13 +104,13 @@ xattr -dr com.apple.quarantine /Applications/SpendScope.app
 | 可见输出 | 回复中可见内容使用的输出 Token |
 | 推理 | 模型内部推理使用的 Token |
 | Skills / Tools | 本机记录中识别出的调用次数 |
-| 项目用量 | 按 Codex 会话工作目录汇总的 Token 用量 |
+| 项目用量 | 优先按项目名汇总；同名目录通过 Git 仓库指纹识别，属于同一仓库时合并统计 |
 
 每日用量按 UTC 日期归属，以尽量与 Codex 个人资料中的每日统计保持一致。由于 SpendScope 统计本地记录，而 Codex 个人资料使用服务端汇总并可能进行显示取整，两处数字不一定完全相同。已删除、未同步到本机或无法识别的历史记录也不会出现在 SpendScope 中。
 
 ## 数据与隐私
 
-SpendScope 只读取统计所需的本机 Codex 字段，例如 Token 计数、额度窗口、模型、套餐、会话来源、工作目录以及 Skills / Tools 调用标识。
+SpendScope 只读取统计所需的本机 Codex 字段，例如 Token 计数、额度窗口、模型、套餐、会话来源、工作目录以及 Skills / Tools 调用标识。识别同名项目时还会读取 Git remote、根提交或公共 Git 目录，并且只保存由这些信息生成的哈希指纹，不保存原始 Git 地址或项目路径。
 
 它不会读取、保存或上传以下内容：
 

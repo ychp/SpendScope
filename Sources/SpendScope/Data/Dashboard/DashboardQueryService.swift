@@ -98,20 +98,46 @@ final class DashboardQueryService: @unchecked Sendable {
     }
 
     private func projectRanking(from rows: [StoredUsageQueryRow]) throws -> ProjectUsageRanking {
-        var totals: [String: (name: String, tokens: Int64)] = [:]
+        var identityGraph = ProjectUsageIdentityGraph()
+        for row in rows {
+            let pathNode = ProjectUsageIdentityNode(
+                name: row.project.name,
+                identity: "path:\(row.project.id)"
+            )
+            identityGraph.add(pathNode)
+            if let repositoryID = row.project.repositoryID {
+                identityGraph.union(
+                    pathNode,
+                    ProjectUsageIdentityNode(
+                        name: row.project.name,
+                        identity: "repository:\(repositoryID)"
+                    )
+                )
+            }
+        }
+
+        var totals: [ProjectUsageIdentityNode: ProjectUsageAccumulator] = [:]
         var overall: Int64 = 0
         for row in rows {
-            let current = totals[row.project.id] ?? (row.project.name, 0)
-            totals[row.project.id] = (
-                current.name,
-                try checkedAdd(current.tokens, row.totalTokens, context: "project.total")
+            let pathNode = ProjectUsageIdentityNode(
+                name: row.project.name,
+                identity: "path:\(row.project.id)"
+            )
+            let key = identityGraph.root(of: pathNode)
+            let current = totals[key] ?? ProjectUsageAccumulator(
+                representativePathID: row.project.id,
+                tokens: 0
+            )
+            totals[key] = ProjectUsageAccumulator(
+                representativePathID: min(current.representativePathID, row.project.id),
+                tokens: try checkedAdd(current.tokens, row.totalTokens, context: "project.total")
             )
             overall = try checkedAdd(overall, row.totalTokens, context: "projects.total")
         }
         guard overall > 0 else { return .empty }
 
-        let ordered = totals.map { id, value in
-            (id: id, name: value.name, tokens: value.tokens)
+        let ordered = totals.map { key, value in
+            (id: value.representativePathID, name: key.name, tokens: value.tokens)
         }.sorted { left, right in
             if left.tokens != right.tokens { return left.tokens > right.tokens }
             if left.name != right.name { return left.name < right.name }
@@ -301,6 +327,42 @@ final class DashboardQueryService: @unchecked Sendable {
         let value = milliseconds(for: date)
         return value == Int64.max ? value : value + 1
     }
+}
+
+private struct ProjectUsageIdentityNode: Hashable {
+    let name: String
+    let identity: String
+}
+
+private struct ProjectUsageIdentityGraph {
+    private var parents: [ProjectUsageIdentityNode: ProjectUsageIdentityNode] = [:]
+
+    mutating func add(_ node: ProjectUsageIdentityNode) {
+        if parents[node] == nil { parents[node] = node }
+    }
+
+    mutating func union(_ left: ProjectUsageIdentityNode, _ right: ProjectUsageIdentityNode) {
+        add(left)
+        add(right)
+        let leftRoot = root(of: left)
+        let rightRoot = root(of: right)
+        if leftRoot != rightRoot {
+            parents[rightRoot] = leftRoot
+        }
+    }
+
+    mutating func root(of node: ProjectUsageIdentityNode) -> ProjectUsageIdentityNode {
+        add(node)
+        guard let parent = parents[node], parent != node else { return node }
+        let resolved = root(of: parent)
+        parents[node] = resolved
+        return resolved
+    }
+}
+
+private struct ProjectUsageAccumulator {
+    let representativePathID: String
+    let tokens: Int64
 }
 
 enum DashboardQueryError: Error, Equatable {

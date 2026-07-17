@@ -26,12 +26,18 @@ struct CodexEventDecoder {
             } else {
                 source = .unknown
             }
+            let project = ProjectIdentity.resolve(cwd: envelope.payload.cwd)?.associating(
+                repositoryID: GitRepositoryIdentityResolver.repositoryID(
+                    repositoryURL: envelope.payload.git?.repositoryURL
+                )
+            )
             return .session(
                 .init(
                     threadID: threadID,
                     source: source,
                     formatVersion: formatVersion,
-                    project: ProjectIdentity.resolve(cwd: envelope.payload.cwd)
+                    project: project,
+                    workingDirectory: envelope.payload.cwd
                 )
             )
 
@@ -206,6 +212,7 @@ private extension CodexEventDecoder {
         let originator: String?
         let cliVersion: String?
         let cwd: String?
+        let git: GitMetadata?
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -214,6 +221,7 @@ private extension CodexEventDecoder {
             originator = try container.decodeIfPresent(String.self, forKey: .originator)
             cliVersion = try container.decodeIfPresent(String.self, forKey: .cliVersion)
             cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
+            git = try container.decodeIfPresent(GitMetadata.self, forKey: .git)
         }
 
         enum CodingKeys: String, CodingKey {
@@ -221,7 +229,16 @@ private extension CodexEventDecoder {
             case source
             case originator
             case cwd
+            case git
             case cliVersion = "cli_version"
+        }
+    }
+
+    struct GitMetadata: Decodable {
+        let repositoryURL: String?
+
+        enum CodingKeys: String, CodingKey {
+            case repositoryURL = "repository_url"
         }
     }
 

@@ -23,6 +23,22 @@ final class CodexEventDecoderTests: XCTestCase {
         XCTAssertFalse(metadata.project?.id.contains("/Users/example") ?? true)
     }
 
+    func testSessionUsesEmbeddedGitRepositoryWhenWorkingDirectoryNoLongerExists() throws {
+        let session = #"{"type":"session_meta","payload":{"id":"thread-worktree","source":"cli","cli_version":"1.0.0","cwd":"/deleted/worktree/SpendScope","git":{"commit_hash":"abc123","repository_url":"git@github.com:ychp/SpendScope.git"}}}"#
+
+        guard case let .session(metadata) = try decoder.decode(line: Data(session.utf8)) else {
+            return XCTFail("Expected session metadata")
+        }
+
+        XCTAssertEqual(metadata.project?.name, "SpendScope")
+        XCTAssertEqual(
+            metadata.project?.repositoryID,
+            GitRepositoryIdentityResolver.repositoryID(
+                repositoryURL: "git@github.com:ychp/SpendScope.git"
+            )
+        )
+    }
+
     func testSessionSourceObjectIsIgnoredWhileDesktopOriginatorRemainsAuthoritative() throws {
         let session = #"{"type":"session_meta","payload":{"id":"thread-object-desktop","source":{"subagent":true},"originator":"Codex Desktop","cli_version":"1.0.0"}}"#
 
@@ -217,5 +233,126 @@ final class CodexEventDecoderTests: XCTestCase {
             "type": "response_item",
             "payload": payload
         ])
+    }
+}
+
+final class GitRepositoryIdentityResolverTests: XCTestCase {
+    private let resolver = GitRepositoryIdentityResolver()
+
+    func testHungGitCommandTimesOutWithoutBlockingRepositoryDetection() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let executable = root.appending(path: "slow-git")
+        try Data("#!/bin/sh\nexec /bin/sleep 5\n".utf8).write(to: executable)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: executable.path
+        )
+        let resolver = GitRepositoryIdentityResolver(
+            executableURL: executable,
+            commandTimeout: .milliseconds(50)
+        )
+        let startedAt = Date()
+
+        XCTAssertNil(resolver.repositoryID(forWorkingDirectory: root.path))
+        XCTAssertLessThan(Date().timeIntervalSince(startedAt), 1)
+    }
+
+    func testLinkedWorktreesWithTheSameProjectNameShareRepositoryIdentity() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = root.appending(path: "main/Shop")
+        let worktree = root.appending(path: "secondary/Shop")
+        try createRepository(at: repository, content: "main")
+        try FileManager.default.createDirectory(
+            at: worktree.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try runGit(["-C", repository.path, "worktree", "add", "-q", "-b", "test-worktree", worktree.path])
+
+        let repositoryID = try XCTUnwrap(
+            resolver.repositoryID(forWorkingDirectory: repository.path)
+        )
+        let worktreeID = try XCTUnwrap(
+            resolver.repositoryID(forWorkingDirectory: worktree.path)
+        )
+
+        XCTAssertEqual(repository.lastPathComponent, worktree.lastPathComponent)
+        XCTAssertEqual(repositoryID, worktreeID)
+    }
+
+    func testMovedRepositoryKeepsIdentityWhileUnrelatedSameNameRepositoryDoesNotMatch() throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = root.appending(path: "before/Shop")
+        let moved = root.appending(path: "after/Shop")
+        let unrelated = root.appending(path: "other/Shop")
+        try createRepository(at: original, content: "original")
+        let originalID = try XCTUnwrap(
+            resolver.repositoryID(forWorkingDirectory: original.path)
+        )
+
+        try FileManager.default.createDirectory(
+            at: moved.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.moveItem(at: original, to: moved)
+        try createRepository(at: unrelated, content: "unrelated")
+
+        XCTAssertEqual(
+            resolver.repositoryID(forWorkingDirectory: moved.path),
+            originalID
+        )
+        XCTAssertNotEqual(
+            resolver.repositoryID(forWorkingDirectory: unrelated.path),
+            originalID
+        )
+    }
+
+    private func createRepository(at url: URL, content: String) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try runGit(["init", "-q", url.path])
+        try Data(content.utf8).write(to: url.appending(path: "fixture.txt"))
+        try runGit(["-C", url.path, "add", "fixture.txt"])
+        try runGit([
+            "-C", url.path,
+            "-c", "user.name=SpendScope Tests",
+            "-c", "user.email=spendscope-tests@example.invalid",
+            "commit", "-q", "-m", "fixture"
+        ])
+    }
+
+    @discardableResult
+    private func runGit(_ arguments: [String]) throws -> String {
+        let process = Process()
+        let output = Pipe()
+        let errors = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        process.standardOutput = output
+        process.standardError = errors
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let detail = String(
+                data: errors.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            ) ?? "git failed"
+            throw NSError(
+                domain: "GitRepositoryIdentityResolverTests",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: detail]
+            )
+        }
+        return String(
+            data: output.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private func temporaryDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appending(path: "SpendScope-GitIdentityTests-\(UUID().uuidString)")
     }
 }

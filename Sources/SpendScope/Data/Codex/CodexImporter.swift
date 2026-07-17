@@ -38,7 +38,9 @@ actor CodexImporter {
     private let discovery: CodexSourceDiscovery
     private let reader: IncrementalJSONLReader
     private let decoder: CodexEventDecoder
+    private let repositoryResolver: any RepositoryIdentityResolving
     private let calendar: Calendar
+    private var resolvedProjects: [String: ProjectIdentity] = [:]
 
     init(
         rootURL: URL,
@@ -46,6 +48,7 @@ actor CodexImporter {
         discovery: CodexSourceDiscovery = CodexSourceDiscovery(),
         reader: IncrementalJSONLReader = IncrementalJSONLReader(),
         decoder: CodexEventDecoder = CodexEventDecoder(),
+        repositoryResolver: any RepositoryIdentityResolving = GitRepositoryIdentityResolver(),
         calendar: Calendar = .current
     ) {
         self.rootURL = rootURL
@@ -53,6 +56,7 @@ actor CodexImporter {
         self.discovery = discovery
         self.reader = reader
         self.decoder = decoder
+        self.repositoryResolver = repositoryResolver
         self.calendar = calendar
     }
 
@@ -519,7 +523,7 @@ actor CodexImporter {
             }
             context.threadID = metadata.threadID
             context.source = metadata.source
-            if let project = metadata.project { context.project = project }
+            if let project = resolvedProject(from: metadata) { context.project = project }
 
         case .turn(let turn):
             guard context.threadID != nil else { throw ImportContextIssue.missingThread }
@@ -698,6 +702,21 @@ actor CodexImporter {
             createdAtMilliseconds: matchingIndex?.createdAtMilliseconds ?? storedSession?.createdAtMilliseconds,
             updatedAtMilliseconds: matchingIndex?.updatedAtMilliseconds ?? storedSession?.updatedAtMilliseconds
         )
+    }
+
+    private func resolvedProject(from metadata: SessionMetadata) -> ProjectIdentity? {
+        guard let project = metadata.project else { return nil }
+        if project.repositoryID != nil {
+            resolvedProjects[project.id] = project
+            return project
+        }
+        if let cached = resolvedProjects[project.id] { return cached }
+        let repositoryID = metadata.workingDirectory.flatMap {
+            repositoryResolver.repositoryID(forWorkingDirectory: $0)
+        }
+        let resolved = project.associating(repositoryID: repositoryID)
+        resolvedProjects[project.id] = resolved
+        return resolved
     }
 
     private func makeContext(

@@ -32,6 +32,54 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.sessionStateEventCount(), 2)
     }
 
+    func testImporterPersistsRepositoryIdentityResolvedFromSessionWorkingDirectory() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic"),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(
+            rootURL: fixture.codexRoot,
+            store: store,
+            repositoryResolver: FixedRepositoryIdentityResolver(repositoryID: "repository-1")
+        )
+
+        let result = await importer.refresh(scope: .history)
+
+        XCTAssertTrue(result.isSuccessful)
+        XCTAssertEqual(try store.usageEvents().first?.project.repositoryID, "repository-1")
+        XCTAssertEqual(
+            try store.fileCheckpoint(fileID: try XCTUnwrap(result.discoveredFileIDs?.first))?
+                .project?.repositoryID,
+            "repository-1"
+        )
+    }
+
+    func testImporterPrefersEmbeddedRepositoryIdentityOverWorkingDirectoryFallback() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLIWithRepository,
+            .turn(model: "gpt-synthetic"),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(
+            rootURL: fixture.codexRoot,
+            store: store,
+            repositoryResolver: FixedRepositoryIdentityResolver(repositoryID: "fallback-repository")
+        )
+
+        let result = await importer.refresh(scope: .history)
+
+        XCTAssertTrue(result.isSuccessful)
+        XCTAssertEqual(
+            try store.usageEvents().first?.project.repositoryID,
+            GitRepositoryIdentityResolver.repositoryID(
+                repositoryURL: "git@github.com:ychp/SpendScope.git"
+            )
+        )
+    }
+
     func testRebuildFromLocalDataClearsAllImportedRowsAndRescansHistory() async throws {
         let fixture = try CodexFixture.make(events: [
             .sessionCLI,
@@ -551,6 +599,14 @@ final class CodexImporterTests: XCTestCase {
     }
 }
 
+private struct FixedRepositoryIdentityResolver: RepositoryIdentityResolving {
+    let repositoryID: String?
+
+    func repositoryID(forWorkingDirectory workingDirectory: String) -> String? {
+        repositoryID
+    }
+}
+
 private final class CodexFixture: @unchecked Sendable {
     static let threadID = "00000000-0000-0000-0000-000000000001"
 
@@ -685,6 +741,7 @@ private final class CodexFixture: @unchecked Sendable {
     enum Event {
         case sessionDesktop
         case sessionCLI
+        case sessionCLIWithRepository
         case turn(model: String)
         case started
         case completed
@@ -708,6 +765,10 @@ private final class CodexFixture: @unchecked Sendable {
             case .sessionCLI:
                 return """
                 {"type":"session_meta","payload":{"id":"\(CodexFixture.threadID)","source":"cli","cli_version":"1.0.0","cwd":"/synthetic/SpendScopeFixture"}}
+                """
+            case .sessionCLIWithRepository:
+                return """
+                {"type":"session_meta","payload":{"id":"\(CodexFixture.threadID)","source":"cli","cli_version":"1.0.0","cwd":"/synthetic/SpendScopeFixture","git":{"commit_hash":"abc123","repository_url":"git@github.com:ychp/SpendScope.git"}}}
                 """
             case let .turn(model):
                 return """
