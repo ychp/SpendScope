@@ -414,21 +414,23 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 GitHub Actions 手动发布流程：
 
-1. 在 macOS 26 runner 上运行测试。
-2. 使用 `ARCHS='arm64 x86_64'` 和 `ONLY_ACTIVE_ARCH=NO` 构建 Release。
-3. 使用 `lipo` 校验两种架构。
-4. 创建包含 `SpendScope.app` 与 Applications 快捷方式的压缩 DMG。
-5. 为对应源码生成 ZIP 和 tar.gz。
-6. 生成 `SHA256SUMS.txt`。
-7. 创建或更新 GitHub Release 并上传所有附件。
+1. 校验语义化版本标签与工程 `MARKETING_VERSION` 一致。
+2. 在 macOS 26 runner 上运行测试。
+3. 使用 `ARCHS='arm64 x86_64'` 和 `ONLY_ACTIVE_ARCH=NO` 构建 Release。
+4. 使用 `lipo` 校验两种架构。
+5. 创建包含 `SpendScope.app` 与 Applications 快捷方式的压缩 DMG。
+6. 为 DMG 生成独立 SHA-256 校验文件，文件内容只引用 DMG 文件名，便于下载后直接校验。
+7. 根据手动输入的版本亮点生成结构化中文版本说明，包含安装、芯片支持、未签名打开方式、附件、已知限制和完整变更链接。
+8. 创建或更新 GitHub Release，标题固定为 `SpendScope v<版本号>`。
 
 当前产物：
 
 - `SpendScope-macOS-unsigned.dmg`
 - `SpendScope-macOS-unsigned.dmg.sha256`
-- `SpendScope-v<版本号>-source.zip`
-- `SpendScope-v<版本号>-source.tar.gz`
-- `SHA256SUMS.txt`
+- GitHub 自动生成的 `Source code (zip)`
+- GitHub 自动生成的 `Source code (tar.gz)`
+
+GitHub 已为每个 Release 标签自动提供 ZIP 和 tar.gz 源码快照，因此工作流不再上传重复的自定义源码包，也不再生成与 DMG 独立校验文件内容重叠的 `SHA256SUMS.txt`。更新已有 Release 时会清理这些旧附件。
 
 当前 DMG 未使用 Developer ID 签名或 Apple 公证。用户首次打开可能需要右键选择“打开”，或对可信下载执行：
 

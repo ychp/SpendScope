@@ -4,16 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to create (for example v0.1.0)"
+        description: "Release tag（例如 v0.2.0，需与项目版本一致）"
         required: true
         type: string
-      title:
-        description: "Release title"
+      highlights:
+        description: "版本亮点，多条请用 | 分隔"
         required: true
-        default: "SpendScope"
         type: string
       prerelease:
-        description: "Mark this as a pre-release"
+        description: "标记为预发布版本"
         required: true
         default: false
         type: boolean
@@ -30,7 +29,8 @@ jobs:
       DERIVED_DATA: ${{ github.workspace }}/DerivedData
       ARTIFACT_NAME: SpendScope-macOS-unsigned.dmg
       TAG: ${{ inputs.tag }}
-      TITLE: ${{ inputs.title }}
+      RELEASE_HIGHLIGHTS: ${{ inputs.highlights }}
+      RELEASE_NOTES_FILE: ${{ runner.temp }}/SpendScope-release-notes.md
       PRERELEASE: ${{ inputs.prerelease }}
       GH_TOKEN: ${{ github.token }}
 
@@ -42,6 +42,29 @@ jobs:
 
       - name: Show Xcode version
         run: xcodebuild -version
+
+      - name: Validate release version
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "Invalid tag: $TAG. Expected a semantic version such as v0.2.0 or v0.2.0-beta.1."
+            exit 1
+          fi
+
+          xcodebuild \
+            -project SpendScope.xcodeproj \
+            -scheme SpendScope \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            -showBuildSettings \
+            > "$RUNNER_TEMP/SpendScope-build-settings.txt"
+          project_version="$(awk '/ MARKETING_VERSION = / { print $3; exit }' "$RUNNER_TEMP/SpendScope-build-settings.txt")"
+          tag_version="${TAG#v}"
+          tag_version="${tag_version%%-*}"
+          if [[ -z "$project_version" || "$project_version" != "$tag_version" ]]; then
+            echo "Tag version $tag_version does not match MARKETING_VERSION ${project_version:-<missing>}."
+            exit 1
+          fi
 
       - name: Run tests
         run: >-
@@ -78,32 +101,56 @@ jobs:
           ditto "$APP_PATH" "dmg-root/SpendScope.app"
           ln -s /Applications dmg-root/Applications
           hdiutil create -volname "SpendScope" -srcfolder dmg-root -ov -format UDZO "dist/$ARTIFACT_NAME"
-          shasum -a 256 "dist/$ARTIFACT_NAME" > "dist/$ARTIFACT_NAME.sha256"
+          (
+            cd dist
+            shasum -a 256 "$ARTIFACT_NAME" > "$ARTIFACT_NAME.sha256"
+          )
 
-      - name: Create source archives
+      - name: Generate release notes
         run: |
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            SOURCE_REF="$TAG"
-          else
-            SOURCE_REF="$GITHUB_SHA"
-          fi
-          git archive --format=zip --prefix="SpendScope-$TAG/" --output="dist/SpendScope-$TAG-source.zip" "$SOURCE_REF"
-          git archive --format=tar.gz --prefix="SpendScope-$TAG/" --output="dist/SpendScope-$TAG-source.tar.gz" "$SOURCE_REF"
-          shasum -a 256 \
-            "dist/$ARTIFACT_NAME" \
-            "dist/SpendScope-$TAG-source.zip" \
-            "dist/SpendScope-$TAG-source.tar.gz" \
-            > "dist/SHA256SUMS.txt"
+          ./script/generate_release_notes.sh \
+            "$TAG" \
+            "$RELEASE_NOTES_FILE" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
 
       - name: Publish GitHub Release
         run: |
+          release_title="SpendScope $TAG"
+          assets=(
+            "dist/$ARTIFACT_NAME"
+            "dist/$ARTIFACT_NAME.sha256"
+          )
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
-          else
-            prerelease_flag=()
-            if [[ "$PRERELEASE" == "true" ]]; then
-              prerelease_flag=(--prerelease)
+            legacy_assets=(
+              "SpendScope-$TAG-source.zip"
+              "SpendScope-$TAG-source.tar.gz"
+              "SHA256SUMS.txt"
+            )
+            for legacy_asset in "${legacy_assets[@]}"; do
+              if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fqx "$legacy_asset"; then
+                gh release delete-asset "$TAG" "$legacy_asset" --yes
+              fi
+            done
+
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" \
+              --title "$release_title" \
+              --notes-file "$RELEASE_NOTES_FILE" \
+              --prerelease="$PRERELEASE"
+            if [[ "$PRERELEASE" != "true" ]]; then
+              gh release edit "$TAG" --latest
             fi
-            gh release create "$TAG" dist/* \
-              --title "$TITLE" --generate-notes "${prerelease_flag[@]}"
+          else
+            release_flags=(
+              --target "$GITHUB_SHA"
+              --title "$release_title"
+              --notes-file "$RELEASE_NOTES_FILE"
+            )
+            if [[ "$PRERELEASE" == "true" ]]; then
+              release_flags+=(--prerelease --latest=false)
+            else
+              release_flags+=(--latest)
+            fi
+            gh release create "$TAG" "${assets[@]}" "${release_flags[@]}"
           fi
