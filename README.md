@@ -29,13 +29,13 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ### 状态栏
 
-![SpendScope 状态栏，显示 Codex 额度和重置倒计时](docs/images/spendscope-status-bar.jpg)
+![SpendScope 状态栏，显示 Codex 额度和重置倒计时](docs/images/spendscope-status-bar.png)
 
 状态栏可以直接显示 5 小时或 7 天额度、已用/剩余比例和重置倒计时。不可用的额度会自动隐藏，显示内容和统计口径都可以在设置中调整。
 
 ### 状态栏弹窗
 
-![SpendScope 状态栏弹窗，展示今日 Token、额度和 Token 构成](docs/images/spendscope-popover.jpg)
+![SpendScope 状态栏弹窗，展示今日 Token、额度和 Token 构成](docs/images/spendscope-popover.png)
 
 点击状态栏即可查看今日 Token、5 小时与 7 天额度、重置时间和 Token 构成，也可以在这里刷新数据、打开详细看板、进入设置或检查软件更新。
 
@@ -47,7 +47,7 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ### 设置
 
-![SpendScope 完整设置页面，展示全部配置选项](docs/images/spendscope-settings-full.jpg)
+![SpendScope 完整设置页面，展示全部配置选项](docs/images/spendscope-settings.png)
 
 设置页完整包含看板置顶、状态栏展示、额度口径、重置倒计时、用量提醒、数据来源、自动刷新、数据重建、软件更新、Codex 套餐和其他计费方式等配置。
 
