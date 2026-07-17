@@ -121,15 +121,18 @@ struct MenuBarPopoverView: View {
     @Environment(\.openSettings) private var openSettings
 
     let store: DashboardStore
+    let updateService: AppUpdateService
     private let onOpenDashboard: (() -> Void)?
     private let onOpenSettings: (() -> Void)?
 
     init(
         store: DashboardStore,
+        updateService: AppUpdateService,
         onOpenDashboard: (() -> Void)? = nil,
         onOpenSettings: (() -> Void)? = nil
     ) {
         self.store = store
+        self.updateService = updateService
         self.onOpenDashboard = onOpenDashboard
         self.onOpenSettings = onOpenSettings
     }
@@ -138,6 +141,7 @@ struct MenuBarPopoverView: View {
         VStack(spacing: 12) {
             header
             popoverContent
+            updateStatus
             footerActions
         }
         .padding(14)
@@ -147,6 +151,98 @@ struct MenuBarPopoverView: View {
                 .ignoresSafeArea()
         }
         .task { await store.start() }
+    }
+
+    private var updateStatus: some View {
+        HStack(spacing: 8) {
+            Image(systemName: updateStatusSymbol)
+                .foregroundStyle(updateStatusColor)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(updateStatusTitle)
+                    .font(.caption.weight(.medium))
+                Text(verbatim: "当前版本 v\(updateService.currentVersion)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            updateStatusControl
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    @ViewBuilder
+    private var updateStatusControl: some View {
+        switch updateService.state {
+        case .checking:
+            ProgressView()
+                .controlSize(.small)
+        case .available:
+            HStack(spacing: 6) {
+                Button("手动下载") { updateService.openReleasePage() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                Button("更新") {
+                    Task { await updateService.updateNow() }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        case .downloading:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("下载中")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .ready:
+            Button("打开安装包") {
+                Task { await updateService.updateNow() }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        case .idle, .upToDate, .failed:
+            Button("检查更新") {
+                Task { await updateService.checkForUpdates() }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+    }
+
+    private var updateStatusTitle: String {
+        switch updateService.state {
+        case .idle: "软件更新"
+        case .checking: "正在检查更新"
+        case .upToDate: "已是最新版本"
+        case .available(let release): "新版本 v\(release.version) 可用"
+        case .downloading(let release): "正在下载 v\(release.version)"
+        case .ready(let release, _): "v\(release.version) 已下载"
+        case .failed: "暂时无法检查更新"
+        }
+    }
+
+    private var updateStatusSymbol: String {
+        switch updateService.state {
+        case .available, .ready: "arrow.down.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .upToDate: "checkmark.circle.fill"
+        case .idle, .checking, .downloading: "arrow.triangle.2.circlepath"
+        }
+    }
+
+    private var updateStatusColor: Color {
+        switch updateService.state {
+        case .available, .ready: SpendScopeTheme.accent
+        case .failed: .orange
+        case .upToDate: .green
+        case .idle, .checking, .downloading: .secondary
+        }
     }
 
     @ViewBuilder

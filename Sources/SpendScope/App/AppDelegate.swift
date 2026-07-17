@@ -4,6 +4,7 @@ import UserNotifications
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = DashboardStore.live()
+    let updateService = AppUpdateService()
     lazy var usageReminderController = UsageReminderController(store: store)
 
     private var statusItemController: StatusItemController?
@@ -18,10 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         statusItemController = StatusItemController(
             store: store,
+            updateService: updateService,
             onOpenDashboard: { [weak self] in self?.openDashboard() },
             onOpenSettings: { [weak self] in self?.openSettings() }
         )
         usageReminderController.start()
+        updateService.start()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {

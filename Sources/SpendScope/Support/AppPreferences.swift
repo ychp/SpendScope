@@ -15,6 +15,8 @@ enum AppPreferenceKeys {
     static let quotaDisplay = "menuBar.quotaDisplay"
     static let showsFiveHour = "menuBar.showsFiveHour"
     static let showsWeekly = "menuBar.showsWeekly"
+    static let automaticallyChecksForUpdates = "updates.automaticallyChecks"
+    static let automaticallyDownloadsUpdates = "updates.automaticallyDownloads"
 }
 
 enum QuotaDisplayPreference: String, CaseIterable, Identifiable, Sendable {

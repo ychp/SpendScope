@@ -72,6 +72,7 @@ struct SettingsView: View {
 
     let store: DashboardStore
     let reminderController: UsageReminderController
+    let updateService: AppUpdateService
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
     @AppStorage(AppPreferenceKeys.automaticRefreshEnabled) private var automaticRefreshEnabled = true
     @AppStorage(AppPreferenceKeys.usageRemindersEnabled) private var usageRemindersEnabled = false
@@ -94,6 +95,7 @@ struct SettingsView: View {
                 statusBarSettings
                 usageReminderSettings
                 dataAndRefreshSettings
+                softwareUpdateSettings
                 planAndBillingSettings
                 privacyNotice
             }
@@ -410,6 +412,140 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .settingsCard()
             }
+        }
+    }
+
+    private var softwareUpdateSettings: some View {
+        settingsSection("软件更新") {
+            VStack(spacing: 0) {
+                preferenceRow("当前版本", detail: updateStatusDetail) {
+                    Label(updateStatusText, systemImage: updateStatusSymbol)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(updateStatusColor)
+                }
+                settingsDivider
+                preferenceRow("自动检查更新", detail: "启动后自动检查 GitHub 最新正式版") {
+                    Toggle("", isOn: automaticallyChecksForUpdatesBinding)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+                settingsDivider
+                preferenceRow("自动下载更新", detail: "发现新版本后在后台下载并校验 DMG") {
+                    Toggle("", isOn: automaticallyDownloadsUpdatesBinding)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .disabled(!updateService.automaticallyChecksForUpdates)
+                }
+                settingsDivider
+                settingsRow {
+                    settingLabel("手动更新", detail: "立即检查，或前往 Releases 自行下载")
+                } control: {
+                    HStack(spacing: 8) {
+                        Button("手动下载") {
+                            updateService.openReleasePage()
+                        }
+                        .buttonStyle(.bordered)
+
+                        updateActionButton
+                    }
+                }
+            }
+            .padding(.horizontal, Layout.cardHorizontalPadding)
+            .settingsCard()
+        }
+    }
+
+    @ViewBuilder
+    private var updateActionButton: some View {
+        switch updateService.state {
+        case .checking:
+            Button(action: {}) {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(true)
+        case .available:
+            Button("下载更新") {
+                Task { await updateService.updateNow() }
+            }
+            .buttonStyle(.borderedProminent)
+        case .downloading:
+            Button(action: {}) {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("下载中")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(true)
+        case .ready:
+            Button("打开安装包") {
+                Task { await updateService.updateNow() }
+            }
+            .buttonStyle(.borderedProminent)
+        case .idle, .upToDate, .failed:
+            Button("检查更新") {
+                Task { await updateService.checkForUpdates() }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var automaticallyChecksForUpdatesBinding: Binding<Bool> {
+        Binding(
+            get: { updateService.automaticallyChecksForUpdates },
+            set: { updateService.setAutomaticallyChecksForUpdates($0) }
+        )
+    }
+
+    private var automaticallyDownloadsUpdatesBinding: Binding<Bool> {
+        Binding(
+            get: { updateService.automaticallyDownloadsUpdates },
+            set: { updateService.setAutomaticallyDownloadsUpdates($0) }
+        )
+    }
+
+    private var updateStatusText: String {
+        switch updateService.state {
+        case .idle: "v\(updateService.currentVersion)"
+        case .checking: "正在检查"
+        case .upToDate: "v\(updateService.currentVersion) · 最新"
+        case .available(let release): "v\(release.version) 可用"
+        case .downloading(let release): "正在下载 v\(release.version)"
+        case .ready(let release, _): "v\(release.version) 已下载"
+        case .failed: "检查失败"
+        }
+    }
+
+    private var updateStatusDetail: String {
+        switch updateService.state {
+        case .idle: "尚未检查更新"
+        case .checking: "正在连接 GitHub Releases"
+        case .upToDate(let checkedAt): "最近检查：\(checkedAt.formatted(date: .omitted, time: .shortened))"
+        case .available: "可自动下载更新，或前往 Releases 手动下载"
+        case .downloading: "下载完成后会校验安装包完整性"
+        case .ready: "打开 DMG 后将 SpendScope 拖入“应用程序”"
+        case .failed(let message): message
+        }
+    }
+
+    private var updateStatusSymbol: String {
+        switch updateService.state {
+        case .available, .ready: "arrow.down.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .upToDate: "checkmark.circle.fill"
+        case .idle, .checking, .downloading: "arrow.triangle.2.circlepath"
+        }
+    }
+
+    private var updateStatusColor: Color {
+        switch updateService.state {
+        case .available, .ready: Color.accentColor
+        case .failed: .orange
+        case .upToDate: .green
+        case .idle, .checking, .downloading: .secondary
         }
     }
 

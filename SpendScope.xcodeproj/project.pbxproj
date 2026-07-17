@@ -21,6 +21,8 @@
 		A00000000000000000000039 /* UsageReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000039 /* UsageReminder.swift */; };
 		A00000000000000000000040 /* UsageReminderController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000040 /* UsageReminderController.swift */; };
 		A00000000000000000000041 /* UsageReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000041 /* UsageReminderTests.swift */; };
+		A00000000000000000000042 /* AppUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000042 /* AppUpdateService.swift */; };
+		A00000000000000000000043 /* AppUpdateServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000043 /* AppUpdateServiceTests.swift */; };
 		A00000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* SettingsView.swift */; };
 		A00000000000000000000012 /* CodexEventDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* CodexEventDecoderTests.swift */; };
 		A00000000000000000000013 /* CodexEventModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* CodexEventModels.swift */; };
@@ -75,6 +77,8 @@
 		B00000000000000000000039 /* UsageReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Support/UsageReminder.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000040 /* UsageReminderController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/App/UsageReminderController.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000041 /* UsageReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/UsageReminderTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000042 /* AppUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Support/AppUpdateService.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000043 /* AppUpdateServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/AppUpdateServiceTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Settings/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000012 /* CodexEventDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/CodexEventDecoderTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000013 /* CodexEventModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexEventModels.swift; sourceTree = SOURCE_ROOT; };
@@ -144,6 +148,7 @@
 				B00000000000000000000038 /* ProjectUsagePanel.swift */,
 				B00000000000000000000039 /* UsageReminder.swift */,
 				B00000000000000000000040 /* UsageReminderController.swift */,
+				B00000000000000000000042 /* AppUpdateService.swift */,
 				B00000000000000000000011 /* SettingsView.swift */,
 				B00000000000000000000013 /* CodexEventModels.swift */,
 				B00000000000000000000014 /* CodexEventDecoder.swift */,
@@ -178,6 +183,7 @@
 				B00000000000000000000030 /* SessionQueryServiceTests.swift */,
 				B00000000000000000000032 /* DashboardStoreTests.swift */,
 				B00000000000000000000041 /* UsageReminderTests.swift */,
+				B00000000000000000000043 /* AppUpdateServiceTests.swift */,
 			);
 			name = Tests;
 			sourceTree = "<group>";
@@ -303,6 +309,7 @@
 				A00000000000000000000038 /* ProjectUsagePanel.swift in Sources */,
 				A00000000000000000000039 /* UsageReminder.swift in Sources */,
 				A00000000000000000000040 /* UsageReminderController.swift in Sources */,
+				A00000000000000000000042 /* AppUpdateService.swift in Sources */,
 				A00000000000000000000009 /* SettingsView.swift in Sources */,
 				A00000000000000000000013 /* CodexEventModels.swift in Sources */,
 				A00000000000000000000014 /* CodexEventDecoder.swift in Sources */,
@@ -336,6 +343,7 @@
 				A00000000000000000000030 /* SessionQueryServiceTests.swift in Sources */,
 				A00000000000000000000032 /* DashboardStoreTests.swift in Sources */,
 				A00000000000000000000041 /* UsageReminderTests.swift in Sources */,
+				A00000000000000000000043 /* AppUpdateServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

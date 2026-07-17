@@ -24,7 +24,8 @@ struct SpendScopeApp: App {
         Settings {
             SettingsView(
                 store: appDelegate.store,
-                reminderController: appDelegate.usageReminderController
+                reminderController: appDelegate.usageReminderController,
+                updateService: appDelegate.updateService
             )
                 .preferredColorScheme(.light)
                 .background(

@@ -358,6 +358,7 @@ struct StatusItemRenderer {
 @MainActor
 final class StatusItemController: NSObject {
     private let store: DashboardStore
+    private let updateService: AppUpdateService
     private let defaults: UserDefaults
     private let renderer = StatusItemRenderer()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -372,11 +373,13 @@ final class StatusItemController: NSObject {
 
     init(
         store: DashboardStore,
+        updateService: AppUpdateService,
         defaults: UserDefaults = .standard,
         onOpenDashboard: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void
     ) {
         self.store = store
+        self.updateService = updateService
         self.defaults = defaults
         self.onOpenDashboard = onOpenDashboard
         self.onOpenSettings = onOpenSettings
@@ -470,6 +473,7 @@ final class StatusItemController: NSObject {
 
         let content = MenuBarPopoverView(
             store: store,
+            updateService: updateService,
             onOpenDashboard: { [weak self] in
                 self?.closePopover()
                 self?.onOpenDashboard()
