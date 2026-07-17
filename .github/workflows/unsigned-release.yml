@@ -30,7 +30,7 @@ jobs:
       ARTIFACT_NAME: SpendScope-macOS-unsigned.dmg
       TAG: ${{ inputs.tag }}
       RELEASE_HIGHLIGHTS: ${{ inputs.highlights }}
-      RELEASE_NOTES_FILE: ${{ runner.temp }}/SpendScope-release-notes.md
+      RELEASE_NOTES_FILE: ${{ github.workspace }}/SpendScope-release-notes.md
       PRERELEASE: ${{ inputs.prerelease }}
       GH_TOKEN: ${{ github.token }}
 
