@@ -552,7 +552,7 @@ actor CodexImporter {
                     usageEvents.append(StoredUsageEvent(
                         fingerprint: fingerprint(canonicalUsage(
                             threadID: threadID,
-                            snapshot: snapshot,
+                            counterSegment: context.counterSegment,
                             counters: counters
                         )),
                         observedAtMilliseconds: snapshot.observedAtMilliseconds,
@@ -836,10 +836,10 @@ actor CodexImporter {
 
     private func canonicalUsage(
         threadID: String,
-        snapshot: TokenCounterSnapshot,
+        counterSegment: Int64,
         counters: TokenCounters
     ) -> String {
-        "usage|\(threadID)|\(snapshot.observedAtMilliseconds)|\(counters.input)|\(counters.cachedInput)|\(counters.output)|\(counters.reasoning)"
+        "usage-v2|\(threadID)|\(counterSegment)|\(counters.input)|\(counters.cachedInput)|\(counters.output)|\(counters.reasoning)"
     }
 
     private func canonicalQuota(

@@ -290,6 +290,54 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.usageEventCount(), 1)
     }
 
+    func testCopiedParentHistoryWithRewrittenTimestampsIsDeduplicated() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic"),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus"),
+            .token(input: 200, cached: 80, output: 40, reasoning: 10, plan: "plus", second: 7)
+        ])
+        try fixture.setRolloutModificationDate(Date(timeIntervalSince1970: 1_000))
+        let child = try fixture.duplicateRollout(
+            named: "child-with-copied-history.jsonl",
+            modificationDate: Date(timeIntervalSince1970: 2_000)
+        )
+        let childThreadID = "00000000-0000-0000-0000-000000000002"
+        let copiedHistory = """
+        {"timestamp":"2026-07-15T02:00:00.000Z","type":"session_meta","payload":{"id":"\(childThreadID)","source":{"subagent":{"thread_spawn":{"parent_thread_id":"\(CodexFixture.threadID)"}}},"cli_version":"1.0.0","cwd":"/synthetic/SpendScopeFixture"}}
+        {"timestamp":"2026-07-15T02:00:00.001Z","type":"session_meta","payload":{"id":"\(CodexFixture.threadID)","source":"vscode","cli_version":"1.0.0","cwd":"/synthetic/SpendScopeFixture"}}
+        {"type":"turn_context","payload":{"turn_id":"copied-turn","model":"gpt-synthetic"}}
+        {"timestamp":"2026-07-15T02:00:00.002Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"reasoning_output_tokens":5}}}}
+        {"timestamp":"2026-07-15T02:00:00.003Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":80,"output_tokens":40,"reasoning_output_tokens":10}}}}
+        {"timestamp":"2026-07-15T02:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":50,"cached_input_tokens":20,"output_tokens":10,"reasoning_output_tokens":2}}}}
+        {"timestamp":"2026-07-15T02:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"reasoning_output_tokens":5}}}}
+        """ + "\n"
+        try Data(copiedHistory.utf8).write(to: child)
+
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let result = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+
+        XCTAssertTrue(result.isSuccessful, "copied history import issues: \(result.issues)")
+        XCTAssertEqual(try store.totalUsage(), 360)
+        XCTAssertEqual(try store.usageEventCount(), 4)
+    }
+
+    func testCounterRollbackKeepsLegitimateRepeatedCounterSnapshot() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turn(model: "gpt-synthetic"),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus"),
+            .token(input: 200, cached: 80, output: 40, reasoning: 10, plan: "plus", second: 7),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus", second: 8)
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+
+        _ = await CodexImporter(rootURL: fixture.codexRoot, store: store).refresh(scope: .history)
+
+        XCTAssertEqual(try store.totalUsage(), 360)
+        XCTAssertEqual(try store.usageEventCount(), 3)
+    }
+
     func testExactFileThreadMappingSurvivesOtherRolloutWinningSessionThenRestart() async throws {
         let fixture = try CodexFixture.make(events: [
             .sessionCLI,

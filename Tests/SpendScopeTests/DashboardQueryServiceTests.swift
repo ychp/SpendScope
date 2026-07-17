@@ -3,6 +3,28 @@ import XCTest
 @testable import SpendScope
 
 final class DashboardQueryServiceTests: XCTestCase {
+    func testDailyUsageUsesCodexUTCDateWithoutChangingLocalTodayWindow() throws {
+        var localCalendar = Calendar(identifier: .gregorian)
+        localCalendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(localCalendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 12, hour: 12
+        )))
+        let eventDate = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-11T16:05:00Z"))
+        let store = try makeStore()
+        try store.commit(batch(events: [usage("utc-boundary", at: eventDate, total: 100)], quotas: []))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(
+            now: now,
+            calendar: localCalendar,
+            usageCalendar: CodexUsageCalendar.utc
+        )
+
+        XCTAssertEqual(snapshot.periods.first?.total, 100, "北京时间仍属于 7 月 12 日的今日用量")
+        XCTAssertEqual(snapshot.dailyUsage.first { $0.id == "2026-07-11" }?.total, 100)
+        XCTAssertEqual(snapshot.dailyUsage.first { $0.id == "2026-07-12" }?.total, 0)
+        XCTAssertEqual(CodexUsageCalendar.utc.timeZone.secondsFromGMT(), 0)
+    }
+
     func testBuildsLocalDayPeriodsTrendModelsQuotasAndDeterministicPlan() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))

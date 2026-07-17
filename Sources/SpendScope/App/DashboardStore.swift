@@ -44,6 +44,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
     private let queryService: DashboardQueryService
     private let now: @Sendable () -> Date
     private let calendar: Calendar
+    private let usageCalendar: Calendar
     private let beforeImport: @Sendable (ImportScope) async -> Void
     private let beforeQuery: @Sendable () async -> Void
     private var operationIsRunning = false
@@ -54,6 +55,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         databaseURL: URL,
         now: @escaping @Sendable () -> Date = Date.init,
         calendar: Calendar = .current,
+        usageCalendar: Calendar = CodexUsageCalendar.utc,
         fileManager: FileManager = .default,
         beforeImport: @escaping @Sendable (ImportScope) async -> Void = { _ in },
         beforeQuery: @escaping @Sendable () async -> Void = {}
@@ -72,6 +74,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         queryService = DashboardQueryService(store: store)
         self.now = now
         self.calendar = calendar
+        self.usageCalendar = usageCalendar
         self.beforeImport = beforeImport
         self.beforeQuery = beforeQuery
     }
@@ -171,7 +174,11 @@ actor LiveDashboardDataClient: DashboardDataClient {
     private func makeResult(importResult: ImportResult?) async throws -> DashboardDataResult {
         await beforeQuery()
         try Task.checkCancellation()
-        let snapshot = try queryService.snapshot(now: now(), calendar: calendar)
+        let snapshot = try queryService.snapshot(
+            now: now(),
+            calendar: calendar,
+            usageCalendar: usageCalendar
+        )
         let facts = try store.sourceFacts()
         let summary = SourceSummary(
             cli: facts.hasCLIData ? .connected : .missing,

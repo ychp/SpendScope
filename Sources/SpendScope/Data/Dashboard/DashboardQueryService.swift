@@ -1,5 +1,15 @@
 import Foundation
 
+enum CodexUsageCalendar {
+    static var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        if let utc = TimeZone(secondsFromGMT: 0) {
+            calendar.timeZone = utc
+        }
+        return calendar
+    }
+}
+
 final class DashboardQueryService: @unchecked Sendable {
     private let store: UsageStore
 
@@ -7,11 +17,22 @@ final class DashboardQueryService: @unchecked Sendable {
         self.store = store
     }
 
-    func snapshot(now: Date, calendar: Calendar) throws -> DashboardSnapshot {
+    func snapshot(
+        now: Date,
+        calendar: Calendar,
+        usageCalendar: Calendar? = nil
+    ) throws -> DashboardSnapshot {
         let todayStart = calendar.startOfDay(for: now)
+        let resolvedUsageCalendar = usageCalendar ?? calendar
+        let usageTodayStart = resolvedUsageCalendar.startOfDay(for: now)
         guard
             let sevenDayStart = calendar.date(byAdding: .day, value: -6, to: todayStart),
-            let thirtyDayStart = calendar.date(byAdding: .day, value: -29, to: todayStart)
+            let thirtyDayStart = calendar.date(byAdding: .day, value: -29, to: todayStart),
+            let usageThirtyDayStart = resolvedUsageCalendar.date(
+                byAdding: .day,
+                value: -29,
+                to: usageTodayStart
+            )
         else {
             throw DashboardQueryError.invalidCalendarBoundary
         }
@@ -61,9 +82,9 @@ final class DashboardQueryService: @unchecked Sendable {
             models: try models(from: sevenDayRows),
             dailyUsage: try dailyUsage(
                 from: trendRows,
-                minimumStart: thirtyDayStart,
-                through: todayStart,
-                calendar: calendar
+                minimumStart: usageThirtyDayStart,
+                through: usageTodayStart,
+                calendar: resolvedUsageCalendar
             ),
             activityRankings: activityRankings,
             projectUsage: projectUsage,

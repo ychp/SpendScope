@@ -59,12 +59,12 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertFalse(columns.contains("response"))
     }
 
-    func testMigrationCreatesExactVersionFiveStorageSurface() throws {
+    func testMigrationCreatesExactVersionSixStorageSurface() throws {
         let url = temporaryDatabaseURL()
         _ = try UsageStore(databaseURL: url)
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5, 6])
         XCTAssertEqual(
             Set(try store.schemaColumns(table: "source_files")),
             Set([
@@ -347,7 +347,7 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.sourceFacts().lastSuccessfulRefreshMilliseconds, 3_000)
     }
 
-    func testExistingVersionOneIsRebuiltIntoVersionFiveStorage() throws {
+    func testExistingVersionOneIsRebuiltIntoVersionSixStorage() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)")
@@ -369,13 +369,13 @@ final class UsageStoreTests: XCTestCase {
 
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5, 6])
         XCTAssertNil(try store.fileCheckpoint(fileID: "legacy"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("input_tokens"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("activity_committed_offset"))
     }
 
-    func testVersionTwoToFiveMigrationClearsDerivedDataForSemanticRebuild() throws {
+    func testVersionTwoToSixMigrationClearsDerivedDataForSemanticRebuild() throws {
         let url = temporaryDatabaseURL()
         do {
             let store = try UsageStore(databaseURL: url)
@@ -393,17 +393,17 @@ final class UsageStoreTests: XCTestCase {
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_name")
         try database.execute(sql: "DROP TABLE activity_events")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN activity_committed_offset")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4, 5)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4, 5, 6)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
     }
 
-    func testVersionThreeToFiveMigrationClearsDerivedSnapshots() throws {
+    func testVersionThreeToSixMigrationClearsDerivedSnapshots() throws {
         let url = temporaryDatabaseURL()
         do {
             let store = try UsageStore(databaseURL: url)
@@ -420,14 +420,35 @@ final class UsageStoreTests: XCTestCase {
         try database.execute(sql: "ALTER TABLE usage_events DROP COLUMN project_name")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_id")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_name")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (4, 5)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (4, 5, 6)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertEqual(try migrated.quotaEventCount(), 0)
+        XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
+    }
+
+    func testVersionFiveToSixMigrationClearsTimestampBasedFingerprints() throws {
+        let url = temporaryDatabaseURL()
+        do {
+            let store = try UsageStore(databaseURL: url)
+            try store.commit(ImportBatch(
+                file: .fixture(committedOffset: 10, activityCommittedOffset: 10),
+                usageEvents: [.fixture(fingerprint: "legacy-timestamp-fingerprint", total: 321)],
+                quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+            ))
+        }
+        let database = try SQLiteDatabase(url: url)
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version = 6")
+
+        let migrated = try UsageStore(databaseURL: url)
+
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6])
+        XCTAssertEqual(try migrated.totalUsage(), 0)
+        XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
     }
 

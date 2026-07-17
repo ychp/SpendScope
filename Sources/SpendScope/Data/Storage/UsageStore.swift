@@ -792,10 +792,10 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 5 else {
+            guard versions.last ?? 0 <= 6 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(5) {
+            if versions.contains(6) {
                 try validateVersionTwoSchema()
                 try validateVersionThreeSchema()
                 try validateVersionFiveSchema()
@@ -827,13 +827,22 @@ final class UsageStore: @unchecked Sendable {
                 try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (4)")
             }
 
-            for statement in Self.versionFiveStatements {
-                try database.execute(sql: statement)
+            if !versions.contains(5) {
+                for statement in Self.versionFiveStatements {
+                    try database.execute(sql: statement)
+                }
+                // v5 adds project identity to usage events. Rebuild from untouched
+                // rollouts so historical events receive the correct project as well.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (5)")
             }
-            // v5 adds project identity to usage events. Rebuild from untouched
-            // rollouts so historical events receive the correct project as well.
+
+            // v6 identifies cumulative usage snapshots by thread, counter segment,
+            // and counters instead of their rewritten timestamp. Existing derived
+            // rows must be rebuilt so copied parent history receives the new stable
+            // fingerprints and collapses across rollout files.
             try resetImportedDataInCurrentTransaction()
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (5)")
+            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (6)")
             try validateVersionTwoSchema()
             try validateVersionThreeSchema()
             try validateVersionFiveSchema()
