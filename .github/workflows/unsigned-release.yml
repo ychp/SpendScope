@@ -63,12 +63,17 @@ jobs:
           -destination 'platform=macOS'
           -derivedDataPath "$DERIVED_DATA"
           CODE_SIGNING_ALLOWED=NO
+          ARCHS='arm64 x86_64'
+          ONLY_ACTIVE_ARCH=NO
           build
 
       - name: Create unsigned DMG
         run: |
           APP_PATH="$DERIVED_DATA/Build/Products/Release/SpendScope.app"
           test -d "$APP_PATH"
+          ARCHITECTURES="$(lipo -archs "$APP_PATH/Contents/MacOS/SpendScope")"
+          [[ " $ARCHITECTURES " == *" arm64 "* ]]
+          [[ " $ARCHITECTURES " == *" x86_64 "* ]]
           mkdir -p dist dmg-root
           ditto "$APP_PATH" "dmg-root/SpendScope.app"
           ln -s /Applications dmg-root/Applications
