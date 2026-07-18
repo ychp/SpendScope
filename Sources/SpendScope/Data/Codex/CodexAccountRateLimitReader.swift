@@ -178,7 +178,7 @@ struct CodexAppServerRateLimitReader: CodexAccountRateLimitReading, Sendable {
         do {
             try process.run()
             let requests = """
-            {"id":1,"method":"initialize","params":{"clientInfo":{"name":"SpendScope","version":"0.1.0"},"capabilities":{}}}
+            {"id":1,"method":"initialize","params":{"clientInfo":{"name":"SpendScope","version":"0.1.1"},"capabilities":{}}}
             {"id":2,"method":"account/rateLimits/read","params":null}
 
             """
