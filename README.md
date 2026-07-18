@@ -209,6 +209,14 @@ script/                   本地构建、运行、调试和日志脚本
 docs/                     截图和技术档案
 ```
 
+按重要程度划分：
+
+- **核心运行与构建**：`Sources/SpendScope/`、`SpendScope.xcodeproj/project.pbxproj` 和共享 Scheme。
+- **工程与发布必备**：`Tests/`、`script/`、`.github/`、`README.md`、`docs/` 和 `.gitignore`；它们不进入安装包，但保证项目可测试、可维护、可发布。
+- **本机可选或可再生**：`.codex/`、`.worktrees/`、`DerivedData/`、Xcode `xcuserdata/`、`.DS_Store` 等，不影响 App 核心功能。
+
+完整的目录职责、核心文件入口和安全清理边界见 [项目文件结构](docs/PROJECT_STRUCTURE.md)。
+
 核心数据链路对应以下文件：
 
 | 模块 | 入口文件 |

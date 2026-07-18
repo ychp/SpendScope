@@ -1,6 +1,16 @@
+# macOS metadata
 .DS_Store
+
+# Build products
 .build/
 DerivedData/
+dist/
+dmg-root/
+SpendScope-release-notes.md
+
+# Local worktrees
 .worktrees/
+
+# Xcode user state
 xcuserdata/
 *.xcuserstate
