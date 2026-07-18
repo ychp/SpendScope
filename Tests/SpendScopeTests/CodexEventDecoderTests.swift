@@ -107,6 +107,65 @@ final class CodexEventDecoderTests: XCTestCase {
         XCTAssertTrue(snapshot.quotas.isEmpty)
     }
 
+    func testAppServerReaderUsesTopLevelAccountQuotaInsteadOfModelPool() throws {
+        let response = #"{"id":2,"result":{"rateLimits":{"limitId":"codex","planType":"prolite","primary":{"usedPercent":3,"windowDurationMins":10080,"resetsAt":1784985380},"secondary":null},"rateLimitsByLimitId":{"codex_bengalfox":{"limitId":"codex_bengalfox","planType":"prolite","primary":{"usedPercent":0,"windowDurationMins":10080,"resetsAt":1784985380},"secondary":null}}}}"#
+        let observedAt = Date(timeIntervalSince1970: 1_768_000_000)
+
+        let rateLimits = try CodexAppServerRateLimitReader.parse(
+            data: Data((response + "\n").utf8),
+            observedAt: observedAt
+        )
+
+        XCTAssertEqual(rateLimits.planRaw, "prolite")
+        XCTAssertEqual(rateLimits.windows, [
+            RawQuotaWindow(
+                windowMinutes: 10_080,
+                usedPercent: 3,
+                resetsAtSeconds: 1_784_985_380
+            )
+        ])
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let snapshot = rateLimits.applying(
+            to: .empty(updatedText: "刚刚刷新"),
+            now: observedAt,
+            calendar: calendar
+        )
+        XCTAssertEqual(snapshot.planName, "Pro 5x")
+        XCTAssertEqual(snapshot.weeklyQuota?.remaining ?? -1, 0.97, accuracy: 0.000_001)
+    }
+
+    func testExpiredOfficialCacheDoesNotRevealModelPoolFallback() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let storedSnapshot = DashboardSnapshot(
+            planName: "Pro 5x",
+            updatedText: "刚刚刷新",
+            periods: [],
+            quotas: [QuotaSnapshot(
+                id: "7d", title: "7 天", remaining: 1, resetText: "01-01",
+                resetsAt: Date(timeIntervalSince1970: 2_000)
+            )],
+            models: [],
+            dailyUsage: []
+        )
+        let expiredOfficialCache = CodexAccountRateLimits(
+            planRaw: "prolite",
+            windows: [RawQuotaWindow(
+                windowMinutes: 10_080, usedPercent: 8, resetsAtSeconds: 900
+            )],
+            observedAt: Date(timeIntervalSince1970: 800)
+        )
+
+        let snapshot = expiredOfficialCache.applying(
+            to: storedSnapshot,
+            now: now,
+            calendar: .current
+        )
+
+        XCTAssertTrue(snapshot.quotas.isEmpty)
+    }
+
     func testDecodesOnlyWhitelistedLifecycleEventsAndIgnoresMessages() throws {
         let started = #"{"timestamp":"2026-07-14T06:55:02.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","model_context_window":258400}}"#
         let message = #"{"timestamp":"2026-07-14T06:55:03.000Z","type":"event_msg","payload":{"type":"user_message","message":"must never enter the store"}}"#

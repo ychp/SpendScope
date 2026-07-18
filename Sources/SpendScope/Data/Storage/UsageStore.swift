@@ -444,6 +444,67 @@ final class UsageStore: @unchecked Sendable {
         return result
     }
 
+    func persistAccountRateLimits(_ rateLimits: CodexAccountRateLimits) throws {
+        guard !rateLimits.windows.isEmpty else { return }
+        let observedAtMilliseconds = Int64(
+            (rateLimits.observedAt.timeIntervalSince1970 * 1_000).rounded(.towardZero)
+        )
+        try database.inTransaction {
+            try database.execute(sql: "DELETE FROM account_rate_limit_cache")
+            for window in rateLimits.windows {
+                guard window.windowMinutes > 0,
+                      window.usedPercent.isFinite else {
+                    throw UsageStoreError.invalidQuotaRemaining
+                }
+                try database.execute(
+                    sql: """
+                    INSERT INTO account_rate_limit_cache(
+                      window_minutes, used_percent, resets_at_seconds, plan_raw, observed_at_ms
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    bindings: [
+                        .integer(Int64(window.windowMinutes)),
+                        .real(window.usedPercent),
+                        window.resetsAtSeconds.sqliteValue,
+                        rateLimits.planRaw.sqliteValue,
+                        .integer(observedAtMilliseconds)
+                    ]
+                )
+            }
+        }
+    }
+
+    func accountRateLimits() throws -> CodexAccountRateLimits? {
+        let rows = try database.query(sql: """
+            SELECT window_minutes, used_percent, resets_at_seconds, plan_raw, observed_at_ms
+            FROM account_rate_limit_cache
+            ORDER BY window_minutes
+            """)
+        guard let firstValues = rows.first else { return nil }
+        let first = SQLiteRow(table: "account_rate_limit_cache", values: firstValues)
+        let observedAtMilliseconds = try first.requiredInt64("observed_at_ms")
+        let planRaw = try first.optionalString("plan_raw")
+        let windows = try rows.map { values -> RawQuotaWindow in
+            let row = SQLiteRow(table: "account_rate_limit_cache", values: values)
+            guard try row.requiredInt64("observed_at_ms") == observedAtMilliseconds,
+                  try row.optionalString("plan_raw") == planRaw else {
+                throw UsageStoreError.corruptAccountRateLimitCache
+            }
+            return RawQuotaWindow(
+                windowMinutes: Int(try row.requiredInt64("window_minutes")),
+                usedPercent: try row.requiredDouble("used_percent"),
+                resetsAtSeconds: try row.optionalInt64("resets_at_seconds")
+            )
+        }
+        return CodexAccountRateLimits(
+            planRaw: planRaw,
+            windows: windows,
+            observedAt: Date(
+                timeIntervalSince1970: TimeInterval(observedAtMilliseconds) / 1_000
+            )
+        )
+    }
+
     func hourlyUsage() throws -> [StoredHourlyUsage] {
         let rows = try database.query(
             sql: "SELECT * FROM hourly_usage ORDER BY hour_start_ms, model, plan"
@@ -792,14 +853,15 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 8 else {
+            guard versions.last ?? 0 <= 9 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(8) {
+            if versions.contains(9) {
                 try validateVersionTwoSchema()
                 try validateVersionThreeSchema()
                 try validateVersionFiveSchema()
                 try validateVersionSevenSchema()
+                try validateVersionNineSchema()
                 return
             }
 
@@ -857,14 +919,22 @@ final class UsageStore: @unchecked Sendable {
                 try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (7)")
             }
 
-            // v8 reads the repository URL embedded in session metadata. Rebuild so deleted
-            // worktrees can recover their repository identity without filesystem access.
-            try resetImportedDataInCurrentTransaction()
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (8)")
+            if !versions.contains(8) {
+                // v8 reads the repository URL embedded in session metadata. Rebuild so deleted
+                // worktrees can recover their repository identity without filesystem access.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (8)")
+            }
+
+            for statement in Self.versionNineStatements {
+                try database.execute(sql: statement)
+            }
+            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (9)")
             try validateVersionTwoSchema()
             try validateVersionThreeSchema()
             try validateVersionFiveSchema()
             try validateVersionSevenSchema()
+            try validateVersionNineSchema()
         }
     }
 
@@ -1338,6 +1408,18 @@ final class UsageStore: @unchecked Sendable {
         "ALTER TABLE usage_events ADD COLUMN repository_id TEXT"
     ]
 
+    private static let versionNineStatements = [
+        """
+        CREATE TABLE IF NOT EXISTS account_rate_limit_cache(
+          window_minutes INTEGER PRIMARY KEY,
+          used_percent REAL NOT NULL,
+          resets_at_seconds INTEGER,
+          plan_raw TEXT,
+          observed_at_ms INTEGER NOT NULL
+        )
+        """
+    ]
+
     private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
         try SQLitePlanResolution.optional(from: row)
     }
@@ -1469,6 +1551,23 @@ final class UsageStore: @unchecked Sendable {
             }
         }
     }
+
+    private func validateVersionNineSchema() throws {
+        let rows = try database.query(sql: "PRAGMA table_info(account_rate_limit_cache)")
+        let existing = try Set(rows.map {
+            try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+        })
+        let required = Set([
+            "window_minutes", "used_percent", "resets_at_seconds", "plan_raw", "observed_at_ms"
+        ])
+        let missing = required.subtracting(existing).sorted()
+        if !missing.isEmpty {
+            throw UsageStoreError.rebuildRequired(
+                table: "account_rate_limit_cache",
+                missingColumns: missing
+            )
+        }
+    }
 }
 
 enum UsageStoreError: Error, Equatable {
@@ -1477,6 +1576,7 @@ enum UsageStoreError: Error, Equatable {
     case invalidFileCheckpoint(fileSize: Int64, committedOffset: Int64)
     case invalidUsageComponent(name: String, value: Int64)
     case invalidQuotaRemaining
+    case corruptAccountRateLimitCache
     case tokenOverflow(context: String)
     case corruptColumn(table: String, column: String, expected: String, actual: SQLiteValue?)
     case corruptEnum(table: String, column: String, value: String)

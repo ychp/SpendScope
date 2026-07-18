@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import OSLog
+
+private let quotaLogger = Logger(subsystem: "com.ychp.SpendScope", category: "quota")
 
 enum DashboardLoadState: Sendable {
     case loading
@@ -45,6 +48,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
     private let now: @Sendable () -> Date
     private let calendar: Calendar
     private let usageCalendar: Calendar
+    private let accountRateLimitReader: (any CodexAccountRateLimitReading)?
     private let beforeImport: @Sendable (ImportScope) async -> Void
     private let beforeQuery: @Sendable () async -> Void
     private var operationIsRunning = false
@@ -57,6 +61,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         calendar: Calendar = .current,
         usageCalendar: Calendar = CodexUsageCalendar.utc,
         fileManager: FileManager = .default,
+        accountRateLimitReader: (any CodexAccountRateLimitReading)? = nil,
         beforeImport: @escaping @Sendable (ImportScope) async -> Void = { _ in },
         beforeQuery: @escaping @Sendable () async -> Void = {}
     ) throws {
@@ -75,6 +80,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         self.now = now
         self.calendar = calendar
         self.usageCalendar = usageCalendar
+        self.accountRateLimitReader = accountRateLimitReader
         self.beforeImport = beforeImport
         self.beforeQuery = beforeQuery
     }
@@ -100,7 +106,10 @@ actor LiveDashboardDataClient: DashboardDataClient {
             issues: importResult.issues,
             processedFileCount: importResult.processedFileCount
         )
-        return try await makeResult(importResult: importResult)
+        return try await makeResult(
+            importResult: importResult,
+            accountRateLimits: await readAccountRateLimits()
+        )
     }
 
     func backfillHistory() async throws -> DashboardDataResult {
@@ -117,7 +126,10 @@ actor LiveDashboardDataClient: DashboardDataClient {
             issues: importResult.issues,
             processedFileCount: importResult.processedFileCount
         )
-        return try await makeResult(importResult: importResult)
+        return try await makeResult(
+            importResult: importResult,
+            accountRateLimits: await readAccountRateLimits()
+        )
     }
 
     func rebuildFromLocalData() async throws -> DashboardDataResult {
@@ -134,7 +146,10 @@ actor LiveDashboardDataClient: DashboardDataClient {
             issues: importResult.issues,
             processedFileCount: importResult.processedFileCount
         )
-        return try await makeResult(importResult: importResult)
+        return try await makeResult(
+            importResult: importResult,
+            accountRateLimits: await readAccountRateLimits()
+        )
     }
 
     private func acquireOperation() async throws {
@@ -171,14 +186,54 @@ actor LiveDashboardDataClient: DashboardDataClient {
         operationWaiters.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 
-    private func makeResult(importResult: ImportResult?) async throws -> DashboardDataResult {
+    private func readAccountRateLimits() async -> CodexAccountRateLimits? {
+        guard let accountRateLimitReader else { return nil }
+        do {
+            let rateLimits = try await accountRateLimitReader.read()
+            let windows = rateLimits.windows.map {
+                "\($0.windowMinutes)m used=\($0.usedPercent) reset=\($0.resetsAtSeconds ?? -1)"
+            }.joined(separator: ", ")
+            quotaLogger.debug("Read official account quota: \(windows, privacy: .public)")
+            do {
+                try store.persistAccountRateLimits(rateLimits)
+            } catch {
+                quotaLogger.error(
+                    "Official account quota cache write failed: \(String(describing: error), privacy: .public)"
+                )
+            }
+            return rateLimits
+        } catch {
+            quotaLogger.error("Official account quota read failed: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
+    private func makeResult(
+        importResult: ImportResult?,
+        accountRateLimits: CodexAccountRateLimits? = nil
+    ) async throws -> DashboardDataResult {
         await beforeQuery()
         try Task.checkCancellation()
-        let snapshot = try queryService.snapshot(
-            now: now(),
+        let currentDate = now()
+        let storedSnapshot = try queryService.snapshot(
+            now: currentDate,
             calendar: calendar,
             usageCalendar: usageCalendar
         )
+        let cachedAccountRateLimits: CodexAccountRateLimits?
+        do {
+            cachedAccountRateLimits = try store.accountRateLimits()
+        } catch {
+            quotaLogger.error(
+                "Official account quota cache read failed: \(String(describing: error), privacy: .public)"
+            )
+            cachedAccountRateLimits = nil
+        }
+        let snapshot = (accountRateLimits ?? cachedAccountRateLimits)?.applying(
+            to: storedSnapshot,
+            now: currentDate,
+            calendar: calendar
+        ) ?? storedSnapshot
         let facts = try store.sourceFacts()
         let summary = SourceSummary(
             cli: facts.hasCLIData ? .connected : .missing,
@@ -312,7 +367,8 @@ final class DashboardStore {
         do {
             client = try LiveDashboardDataClient(
                 codexRootURL: codexRoot,
-                databaseURL: databaseURL
+                databaseURL: databaseURL,
+                accountRateLimitReader: CodexAppServerRateLimitReader.discover()
             )
         } catch {
             client = UnavailableDashboardDataClient()

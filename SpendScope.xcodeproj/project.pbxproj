@@ -23,6 +23,7 @@
 		A00000000000000000000041 /* UsageReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000041 /* UsageReminderTests.swift */; };
 		A00000000000000000000042 /* AppUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000042 /* AppUpdateService.swift */; };
 		A00000000000000000000043 /* AppUpdateServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000043 /* AppUpdateServiceTests.swift */; };
+		A00000000000000000000044 /* CodexAccountRateLimitReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000044 /* CodexAccountRateLimitReader.swift */; };
 		A00000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* SettingsView.swift */; };
 		A00000000000000000000012 /* CodexEventDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* CodexEventDecoderTests.swift */; };
 		A00000000000000000000013 /* CodexEventModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* CodexEventModels.swift */; };
@@ -79,6 +80,7 @@
 		B00000000000000000000041 /* UsageReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/UsageReminderTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000042 /* AppUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Support/AppUpdateService.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000043 /* AppUpdateServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/AppUpdateServiceTests.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000044 /* CodexAccountRateLimitReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexAccountRateLimitReader.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Settings/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000012 /* CodexEventDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/CodexEventDecoderTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000013 /* CodexEventModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexEventModels.swift; sourceTree = SOURCE_ROOT; };
@@ -152,6 +154,7 @@
 				B00000000000000000000011 /* SettingsView.swift */,
 				B00000000000000000000013 /* CodexEventModels.swift */,
 				B00000000000000000000014 /* CodexEventDecoder.swift */,
+				B00000000000000000000044 /* CodexAccountRateLimitReader.swift */,
 				B00000000000000000000017 /* UsageAccumulator.swift */,
 				B00000000000000000000018 /* SessionStateReducer.swift */,
 				B00000000000000000000019 /* SQLiteDatabase.swift */,
@@ -313,6 +316,7 @@
 				A00000000000000000000009 /* SettingsView.swift in Sources */,
 				A00000000000000000000013 /* CodexEventModels.swift in Sources */,
 				A00000000000000000000014 /* CodexEventDecoder.swift in Sources */,
+				A00000000000000000000044 /* CodexAccountRateLimitReader.swift in Sources */,
 				A00000000000000000000017 /* UsageAccumulator.swift in Sources */,
 				A00000000000000000000018 /* SessionStateReducer.swift in Sources */,
 				A00000000000000000000019 /* SQLiteDatabase.swift in Sources */,

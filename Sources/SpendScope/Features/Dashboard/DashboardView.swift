@@ -194,6 +194,12 @@ private struct DashboardContentView: View {
                 VStack(spacing: 5) {
                     quotaRingGroup
                     quotaResetList
+                    if let officialQuotaSyncText {
+                        Text(officialQuotaSyncText)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                            .accessibilityLabel(officialQuotaSyncText)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -310,6 +316,21 @@ private struct DashboardContentView: View {
             }
         }
         .frame(maxWidth: 200)
+    }
+
+    private var officialQuotaSyncText: String? {
+        let officialQuotas = snapshot.visibleQuotas.filter { $0.isOfficialAccountQuota }
+        guard let observedAt = officialQuotas
+            .compactMap(\.observedAt)
+            .max() else {
+            return nil
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = .current
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = .current
+        formatter.dateFormat = Calendar.current.isDateInToday(observedAt) ? "HH:mm" : "MM-dd HH:mm"
+        return "官方额度 · 同步于 \(formatter.string(from: observedAt))"
     }
 
     private func quotaResetRow(_ quota: QuotaSnapshot, color: Color) -> some View {

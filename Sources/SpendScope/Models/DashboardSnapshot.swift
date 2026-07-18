@@ -238,6 +238,7 @@ struct QuotaSnapshot: Identifiable, Sendable {
     let resetText: String
     let resetsAt: Date?
     let observedAt: Date?
+    let isOfficialAccountQuota: Bool
 
     init(
         id: String,
@@ -245,7 +246,8 @@ struct QuotaSnapshot: Identifiable, Sendable {
         remaining: Double,
         resetText: String,
         resetsAt: Date? = nil,
-        observedAt: Date? = nil
+        observedAt: Date? = nil,
+        isOfficialAccountQuota: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -253,6 +255,7 @@ struct QuotaSnapshot: Identifiable, Sendable {
         self.resetText = resetText
         self.resetsAt = resetsAt
         self.observedAt = observedAt
+        self.isOfficialAccountQuota = isOfficialAccountQuota
     }
 
     var remainingPercent: Int { Int((remaining * 100).rounded()) }

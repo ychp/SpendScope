@@ -336,6 +336,92 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: databaseURL.path))
     }
 
+    func testLiveClientRefreshOverridesStoredQuotaWithOfficialAccountQuota() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DashboardStoreQuotaTests-\(UUID().uuidString)", isDirectory: true)
+        let codexRoot = directory.appendingPathComponent("synthetic-codex", isDirectory: true)
+        let databaseURL = directory.appendingPathComponent("synthetic-app-support/SpendScope.sqlite")
+        try FileManager.default.createDirectory(at: codexRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: databaseURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let storage = try UsageStore(databaseURL: databaseURL)
+        try storage.commit(ImportBatch(
+            file: FileCheckpoint(
+                fileID: "quota-source", deviceID: 1, inode: 1,
+                path: "/synthetic/quota.jsonl", fileSize: 10, committedOffset: 10,
+                generation: 0, threadID: "thread-1", lastRecordAtMilliseconds: 999_000,
+                lastSuccessAtMilliseconds: 999_000, formatStatus: "supported", lastError: nil
+            ),
+            usageEvents: [StoredUsageEvent(
+                fingerprint: "usage", observedAtMilliseconds: 999_000,
+                threadID: "thread-1", sourceKind: .cli, model: "test-model",
+                plan: PlanResolver.resolve(rawValue: "plus"),
+                usage: TokenUsageDelta(
+                    uncachedInput: 10, cachedInput: 0, visibleOutput: 0, reasoning: 0
+                ),
+                sourceFileID: "quota-source", sourceOffset: 10
+            )],
+            quotaEvents: [StoredQuotaEvent(
+                fingerprint: "stored-100-percent", threadID: "thread-1",
+                observation: QuotaObservation(
+                    kind: .weekly, observedAtMilliseconds: 999_000,
+                    windowMinutes: 10_080, remaining: 1,
+                    resetsAtMilliseconds: 2_000_000,
+                    plan: PlanResolver.resolve(rawValue: "plus")
+                ),
+                sourceKind: .cli
+            )],
+            stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+        let accountRateLimits = CodexAccountRateLimits(
+            planRaw: "prolite",
+            windows: [RawQuotaWindow(
+                windowMinutes: 10_080,
+                usedPercent: 3,
+                resetsAtSeconds: 2_000
+            )],
+            observedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let client = try LiveDashboardDataClient(
+            codexRootURL: codexRoot,
+            databaseURL: databaseURL,
+            now: { Date(timeIntervalSince1970: 1_000) },
+            calendar: .fixture,
+            accountRateLimitReader: FixedAccountRateLimitReader(value: accountRateLimits)
+        )
+
+        let result = try await client.refresh()
+
+        guard case let .loaded(snapshot, _) = result else {
+            return XCTFail("Expected loaded dashboard")
+        }
+        XCTAssertEqual(snapshot.planName, "Pro 5x")
+        XCTAssertEqual(snapshot.weeklyQuota?.remaining ?? -1, 0.97, accuracy: 0.000_001)
+        XCTAssertEqual(try storage.accountRateLimits(), accountRateLimits)
+
+        let offlineClient = try LiveDashboardDataClient(
+            codexRootURL: codexRoot,
+            databaseURL: databaseURL,
+            now: { Date(timeIntervalSince1970: 1_000) },
+            calendar: .fixture,
+            accountRateLimitReader: FailingAccountRateLimitReader()
+        )
+        guard case let .loaded(cachedSnapshot, _) = try await offlineClient.loadCached() else {
+            return XCTFail("Expected cached dashboard after restart")
+        }
+        XCTAssertEqual(cachedSnapshot.planName, "Pro 5x")
+        XCTAssertEqual(cachedSnapshot.weeklyQuota?.remaining ?? -1, 0.97, accuracy: 0.000_001)
+
+        guard case let .loaded(offlineSnapshot, _) = try await offlineClient.refresh() else {
+            return XCTFail("Expected cached official quota when live refresh fails")
+        }
+        XCTAssertEqual(offlineSnapshot.weeklyQuota?.remaining ?? -1, 0.97, accuracy: 0.000_001)
+    }
+
     func testLiveClientDoesNotEnterCachedQueryWhileImporterAwaitOwnsSharedConnection() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("DashboardStoreGateTests-\(UUID().uuidString)", isDirectory: true)
@@ -568,6 +654,16 @@ private enum FakeClientError: Error, Sendable {
     case fixture
 
     var sensitiveText: String { "fixture-secret" }
+}
+
+private struct FixedAccountRateLimitReader: CodexAccountRateLimitReading {
+    let value: CodexAccountRateLimits
+
+    func read() async throws -> CodexAccountRateLimits { value }
+}
+
+private struct FailingAccountRateLimitReader: CodexAccountRateLimitReading {
+    func read() async throws -> CodexAccountRateLimits { throw FakeClientError.fixture }
 }
 
 private actor FakeDashboardDataClient: DashboardDataClient {
