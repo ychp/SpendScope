@@ -1,9 +1,11 @@
+import AppKit
 import Charts
 import SwiftUI
 
 struct DashboardView: View {
     let store: DashboardStore
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
+    @State private var isCollapsed = false
 
     var body: some View {
         Group {
@@ -15,7 +17,7 @@ struct DashboardView: View {
                     description: "SpendScope 正在读取已保存的本地统计。"
                 )
             case .loaded(let snapshot, _):
-                DashboardContentView(snapshot: snapshot)
+                DashboardContentView(snapshot: snapshot, isCollapsed: isCollapsed)
             case .empty:
                 unavailableView(
                     "未检测到 Codex 数据",
@@ -23,13 +25,15 @@ struct DashboardView: View {
                     description: "使用 Codex 后刷新即可在这里查看 Token 用量。"
                 )
             case .stale(let snapshot, _, let message):
-                DashboardContentView(snapshot: snapshot)
+                DashboardContentView(snapshot: snapshot, isCollapsed: isCollapsed)
                     .overlay(alignment: .topTrailing) {
-                        Label(message, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                            .padding(.top, 22)
-                            .padding(.trailing, 16)
+                        if !isCollapsed {
+                            Label(message, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .padding(.top, 22)
+                                .padding(.trailing, 16)
+                        }
                     }
             case .failed(let message):
                 unavailableView(
@@ -50,8 +54,26 @@ struct DashboardView: View {
             SpendScopeVisualEffect(style: .window)
                 .ignoresSafeArea()
         }
+        .background(DashboardWindowSizingBridge(isCollapsed: isCollapsed))
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isCollapsed.toggle()
+                    }
+                } label: {
+                    Image(
+                        systemName: isCollapsed
+                            ? "arrow.up.left.and.arrow.down.right"
+                            : "arrow.down.right.and.arrow.up.left"
+                    )
+                    .frame(width: 16, height: 16)
+                }
+                .disabled(store.snapshot == nil)
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .accessibilityLabel(isCollapsed ? "展开看板" : "收起看板")
+                .help(isCollapsed ? "展开看板" : "收起看板，仅展示额度")
+
                 Button {
                     Task { await store.refresh() }
                 } label: {
@@ -107,8 +129,123 @@ struct DashboardView: View {
     }
 }
 
+private enum DashboardWindowLayout {
+    static let expandedMinimumContentSize = CGSize(width: 920, height: 620)
+    static let collapsedQuotaWidth: CGFloat = 280
+    static let collapsedQuotaHeight: CGFloat = 210
+    static let collapsedPadding: CGFloat = 20
+    static let collapsedContentSize = CGSize(
+        width: collapsedQuotaWidth + collapsedPadding * 2 + 28,
+        height: collapsedQuotaHeight + collapsedPadding * 2 + 28
+    )
+}
+
+private struct DashboardWindowSizingBridge: NSViewRepresentable {
+    let isCollapsed: Bool
+
+    func makeNSView(context: Context) -> DashboardWindowSizingView {
+        let view = DashboardWindowSizingView()
+        view.setCollapsed(isCollapsed)
+        return view
+    }
+
+    func updateNSView(_ nsView: DashboardWindowSizingView, context: Context) {
+        nsView.setCollapsed(isCollapsed)
+    }
+}
+
+@MainActor
+private final class DashboardWindowSizingView: NSView {
+    private var requestedCollapsedState: Bool?
+    private weak var managedWindow: NSWindow?
+    private var expandedFrame: NSRect?
+    private var expandedMinimumContentSize: CGSize?
+    private var expandedMaximumContentSize: CGSize?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window, managedWindow !== window else { return }
+        managedWindow = window
+        expandedFrame = nil
+        expandedMinimumContentSize = nil
+        expandedMaximumContentSize = nil
+        scheduleSizingUpdate()
+    }
+
+    func setCollapsed(_ isCollapsed: Bool) {
+        guard requestedCollapsedState != isCollapsed else { return }
+        requestedCollapsedState = isCollapsed
+        scheduleSizingUpdate()
+    }
+
+    private func scheduleSizingUpdate() {
+        DispatchQueue.main.async { [weak self] in
+            self?.applyRequestedState()
+        }
+    }
+
+    private func applyRequestedState() {
+        guard let window, let requestedCollapsedState else { return }
+        if requestedCollapsedState {
+            collapse(window)
+        } else {
+            expand(window)
+        }
+    }
+
+    private func collapse(_ window: NSWindow) {
+        guard expandedFrame == nil else { return }
+        expandedFrame = window.frame
+        expandedMinimumContentSize = window.contentMinSize
+        expandedMaximumContentSize = window.contentMaxSize
+
+        let collapsedSize = DashboardWindowLayout.collapsedContentSize
+        window.contentMinSize = collapsedSize
+        resize(window, toContentSize: collapsedSize)
+        window.contentMaxSize = collapsedSize
+    }
+
+    private func expand(_ window: NSWindow) {
+        guard let expandedFrame else { return }
+
+        if let expandedMaximumContentSize {
+            window.contentMaxSize = expandedMaximumContentSize
+        }
+        if let expandedMinimumContentSize {
+            window.contentMinSize = CGSize(
+                width: max(
+                    expandedMinimumContentSize.width,
+                    DashboardWindowLayout.expandedMinimumContentSize.width
+                ),
+                height: max(
+                    expandedMinimumContentSize.height,
+                    DashboardWindowLayout.expandedMinimumContentSize.height
+                )
+            )
+        } else {
+            window.contentMinSize = DashboardWindowLayout.expandedMinimumContentSize
+        }
+
+        window.setFrame(expandedFrame, display: true, animate: true)
+        self.expandedFrame = nil
+        expandedMinimumContentSize = nil
+        expandedMaximumContentSize = nil
+    }
+
+    private func resize(_ window: NSWindow, toContentSize contentSize: CGSize) {
+        let currentFrame = window.frame
+        var targetFrame = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: contentSize)
+        )
+        targetFrame.origin.x = currentFrame.origin.x
+        targetFrame.origin.y = currentFrame.maxY - targetFrame.height
+        window.setFrame(targetFrame, display: true, animate: true)
+    }
+}
+
 private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
+    let isCollapsed: Bool
     @State private var selectedRange = TrendRange.defaultRange
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
     @State private var selectedActivityRange = ActivityRange.defaultRange
@@ -119,14 +256,33 @@ private struct DashboardContentView: View {
         ZStack {
             dashboardBackground
 
-            VStack(alignment: .leading, spacing: 14) {
-                dashboardHeader
-                overviewPanel.frame(height: 238)
-                analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if isCollapsed {
+                currentQuotaSection
+                    .frame(
+                        width: DashboardWindowLayout.collapsedQuotaWidth,
+                        height: DashboardWindowLayout.collapsedQuotaHeight
+                    )
+                    .dashboardPanel(padding: 14, strong: true)
+                    .padding(DashboardWindowLayout.collapsedPadding)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    dashboardHeader
+                    overviewPanel.frame(height: 238)
+                    analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .padding(20)
+                .transition(.opacity)
             }
-            .padding(20)
         }
-        .frame(minWidth: 920, minHeight: 620)
+        .frame(
+            minWidth: isCollapsed
+                ? DashboardWindowLayout.collapsedContentSize.width
+                : DashboardWindowLayout.expandedMinimumContentSize.width,
+            minHeight: isCollapsed
+                ? DashboardWindowLayout.collapsedContentSize.height
+                : DashboardWindowLayout.expandedMinimumContentSize.height
+        )
         .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
     }
 
@@ -180,9 +336,18 @@ private struct DashboardContentView: View {
 
     private var currentQuotaSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+
+                if let officialQuotaSyncText {
+                    Text(officialQuotaSyncText)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                        .accessibilityLabel(officialQuotaSyncText)
+                }
+            }
 
             if snapshot.visibleQuotas.isEmpty {
                 ContentUnavailableView(
@@ -194,12 +359,6 @@ private struct DashboardContentView: View {
                 VStack(spacing: 5) {
                     quotaRingGroup
                     quotaResetList
-                    if let officialQuotaSyncText {
-                        Text(officialQuotaSyncText)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                            .accessibilityLabel(officialQuotaSyncText)
-                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
