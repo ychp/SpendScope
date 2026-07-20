@@ -36,7 +36,8 @@ enum DashboardDataResult: Sendable {
 
 protocol DashboardDataClient: Sendable {
     func loadCached() async throws -> DashboardDataResult
-    func refresh() async throws -> DashboardDataResult
+    func refreshUsage() async throws -> DashboardDataResult
+    func refreshQuota() async throws -> DashboardDataResult
     func backfillHistory() async throws -> DashboardDataResult
     func rebuildFromLocalData() async throws -> DashboardDataResult
 }
@@ -92,7 +93,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         return try await makeResult(importResult: nil)
     }
 
-    func refresh() async throws -> DashboardDataResult {
+    func refreshUsage() async throws -> DashboardDataResult {
         try await acquireOperation()
         defer { releaseOperation() }
         try Task.checkCancellation()
@@ -106,8 +107,15 @@ actor LiveDashboardDataClient: DashboardDataClient {
             issues: importResult.issues,
             processedFileCount: importResult.processedFileCount
         )
+        return try await makeResult(importResult: importResult)
+    }
+
+    func refreshQuota() async throws -> DashboardDataResult {
+        try await acquireOperation()
+        defer { releaseOperation() }
+        try Task.checkCancellation()
         return try await makeResult(
-            importResult: importResult,
+            importResult: nil,
             accountRateLimits: await readAccountRateLimits()
         )
     }
@@ -126,10 +134,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
             issues: importResult.issues,
             processedFileCount: importResult.processedFileCount
         )
-        return try await makeResult(
-            importResult: importResult,
-            accountRateLimits: await readAccountRateLimits()
-        )
+        return try await makeResult(importResult: importResult)
     }
 
     func rebuildFromLocalData() async throws -> DashboardDataResult {
@@ -146,10 +151,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
             issues: importResult.issues,
             processedFileCount: importResult.processedFileCount
         )
-        return try await makeResult(
-            importResult: importResult,
-            accountRateLimits: await readAccountRateLimits()
-        )
+        return try await makeResult(importResult: importResult)
     }
 
     private func acquireOperation() async throws {
@@ -306,7 +308,11 @@ private actor UnavailableDashboardDataClient: DashboardDataClient {
         throw LiveDashboardDataError.initializationFailed
     }
 
-    func refresh() async throws -> DashboardDataResult {
+    func refreshUsage() async throws -> DashboardDataResult {
+        throw LiveDashboardDataError.initializationFailed
+    }
+
+    func refreshQuota() async throws -> DashboardDataResult {
         throw LiveDashboardDataError.initializationFailed
     }
 
@@ -331,28 +337,35 @@ final class DashboardStore {
     private(set) var sourceSummary: SourceSummary?
 
     private let client: any DashboardDataClient
-    private let refreshInterval: Duration
+    private let usageRefreshInterval: Duration
+    private let quotaCheckInterval: Duration
     private let sleeper: Sleeper
     private var hasLoadedCached = false
     private var hasStarted = false
     private var publicationRevision: UInt64 = 0
     private var foregroundRevision: UInt64 = 0
     private var startTask: Task<Void, Never>?
+    private var inFlightManualRefresh: Task<Void, Never>?
     private var inFlightRefresh: Task<Void, Never>?
+    private var inFlightQuotaRefresh: Task<Void, Never>?
     private var inFlightRebuild: Task<Void, Never>?
     private var backfillTask: Task<Void, Never>?
-    private var automaticRefreshTask: Task<Void, Never>?
+    private var automaticUsageRefreshTask: Task<Void, Never>?
+    private var automaticQuotaCheckTask: Task<Void, Never>?
+    private var quotaRefreshNeeded = true
 
     init(
         client: any DashboardDataClient,
-        refreshInterval: Duration = .seconds(60),
+        usageRefreshInterval: Duration = .seconds(60),
+        quotaCheckInterval: Duration = .seconds(120),
         automaticRefreshEnabled: Bool = true,
         sleeper: @escaping Sleeper = { duration in
             try await ContinuousClock().sleep(for: duration)
         }
     ) {
         self.client = client
-        self.refreshInterval = refreshInterval
+        self.usageRefreshInterval = usageRefreshInterval
+        self.quotaCheckInterval = quotaCheckInterval
         isAutomaticRefreshEnabled = automaticRefreshEnabled
         self.sleeper = sleeper
     }
@@ -407,7 +420,7 @@ final class DashboardStore {
 
         let task = Task { @MainActor [weak self] in
             await self?.loadCached()
-            await self?.refresh()
+            await self?.refreshUsage()
             self?.launchBackfill()
             self?.launchAutomaticRefresh()
         }
@@ -427,6 +440,22 @@ final class DashboardStore {
     }
 
     func refresh() async {
+        if let inFlightManualRefresh {
+            await inFlightManualRefresh.value
+            return
+        }
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.refreshUsage()
+            await self.refreshQuota(force: true)
+        }
+        inFlightManualRefresh = task
+        await task.value
+        inFlightManualRefresh = nil
+    }
+
+    func refreshUsage() async {
         if let inFlightRebuild {
             await inFlightRebuild.value
             return
@@ -438,12 +467,13 @@ final class DashboardStore {
 
         foregroundRevision &+= 1
         isRefreshing = true
+        let previousUsage = usageFingerprint
         let client = self.client
         let task = Task { @MainActor [weak self, client] in
             do {
-                let result = try await client.refresh()
+                let result = try await client.refreshUsage()
                 guard !Task.isCancelled else { return }
-                self?.publish(result)
+                self?.publishUsageResult(result, previousUsage: previousUsage)
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.publishRefreshFailure()
@@ -453,6 +483,34 @@ final class DashboardStore {
         await task.value
         inFlightRefresh = nil
         isRefreshing = false
+    }
+
+    func refreshQuotaIfNeeded() async {
+        await refreshQuota(force: false)
+    }
+
+    private func refreshQuota(force: Bool) async {
+        if let inFlightQuotaRefresh {
+            await inFlightQuotaRefresh.value
+            return
+        }
+        guard force || quotaRefreshNeeded else { return }
+
+        quotaRefreshNeeded = false
+        let client = self.client
+        let task = Task { @MainActor [weak self, client] in
+            do {
+                let result = try await client.refreshQuota()
+                guard !Task.isCancelled else { return }
+                self?.publish(result)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.quotaRefreshNeeded = true
+            }
+        }
+        inFlightQuotaRefresh = task
+        await task.value
+        inFlightQuotaRefresh = nil
     }
 
     func rebuildFromLocalData() async {
@@ -472,6 +530,7 @@ final class DashboardStore {
         backfillTask = nil
         foregroundRevision &+= 1
         publicationRevision &+= 1
+        let previousUsage = usageFingerprint
         isRebuildingData = true
         sourceSummary = nil
         state = .loading
@@ -481,7 +540,7 @@ final class DashboardStore {
             do {
                 let result = try await client.rebuildFromLocalData()
                 guard !Task.isCancelled else { return }
-                self?.publish(result)
+                self?.publishUsageResult(result, previousUsage: previousUsage)
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.publicationRevision &+= 1
@@ -502,8 +561,10 @@ final class DashboardStore {
             guard hasStarted else { return }
             launchAutomaticRefresh()
         } else {
-            automaticRefreshTask?.cancel()
-            automaticRefreshTask = nil
+            automaticUsageRefreshTask?.cancel()
+            automaticUsageRefreshTask = nil
+            automaticQuotaCheckTask?.cancel()
+            automaticQuotaCheckTask = nil
         }
     }
 
@@ -512,6 +573,7 @@ final class DashboardStore {
         let client = self.client
         let capturedPublicationRevision = publicationRevision
         let capturedForegroundRevision = foregroundRevision
+        let previousUsage = usageFingerprint
         backfillTask = Task { @MainActor [weak self, client] in
             do {
                 let result = try await client.backfillHistory()
@@ -521,7 +583,7 @@ final class DashboardStore {
                       self.foregroundRevision == capturedForegroundRevision else {
                     return
                 }
-                self.publish(result)
+                self.publishUsageResult(result, previousUsage: previousUsage)
             } catch {
                 // Foreground state remains authoritative when optional history work fails.
             }
@@ -529,19 +591,49 @@ final class DashboardStore {
     }
 
     private func launchAutomaticRefresh() {
-        guard isAutomaticRefreshEnabled, automaticRefreshTask == nil else { return }
-        let interval = refreshInterval
+        guard isAutomaticRefreshEnabled else { return }
         let sleeper = self.sleeper
-        automaticRefreshTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                do {
-                    try await sleeper(interval)
-                } catch {
-                    return
+        if automaticUsageRefreshTask == nil {
+            let interval = usageRefreshInterval
+            automaticUsageRefreshTask = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    do {
+                        try await sleeper(interval)
+                    } catch {
+                        return
+                    }
+                    guard !Task.isCancelled else { return }
+                    await self?.refreshUsage()
                 }
-                guard !Task.isCancelled else { return }
-                await self?.refresh()
             }
+        }
+        if automaticQuotaCheckTask == nil {
+            let interval = quotaCheckInterval
+            automaticQuotaCheckTask = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    do {
+                        try await sleeper(interval)
+                    } catch {
+                        return
+                    }
+                    guard !Task.isCancelled else { return }
+                    await self?.refreshQuotaIfNeeded()
+                }
+            }
+        }
+    }
+
+    private var usageFingerprint: UsageFingerprint? {
+        snapshot.flatMap(UsageFingerprint.init)
+    }
+
+    private func publishUsageResult(
+        _ result: DashboardDataResult,
+        previousUsage: UsageFingerprint?
+    ) {
+        publish(result)
+        if previousUsage != usageFingerprint {
+            quotaRefreshNeeded = true
         }
     }
 
@@ -577,9 +669,29 @@ final class DashboardStore {
 
     isolated deinit {
         startTask?.cancel()
+        inFlightManualRefresh?.cancel()
         inFlightRefresh?.cancel()
+        inFlightQuotaRefresh?.cancel()
         inFlightRebuild?.cancel()
         backfillTask?.cancel()
-        automaticRefreshTask?.cancel()
+        automaticUsageRefreshTask?.cancel()
+        automaticQuotaCheckTask?.cancel()
+    }
+}
+
+private struct UsageFingerprint: Equatable {
+    let uncachedInput: Int
+    let cachedInput: Int
+    let output: Int
+    let reasoning: Int
+
+    init?(_ snapshot: DashboardSnapshot) {
+        guard let allTime = snapshot.periods.first(where: { $0.id == "allTime" }) else {
+            return nil
+        }
+        uncachedInput = allTime.uncachedInput
+        cachedInput = allTime.cachedInput
+        output = allTime.output
+        reasoning = allTime.reasoning
     }
 }

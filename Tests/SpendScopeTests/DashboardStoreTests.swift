@@ -94,7 +94,7 @@ final class DashboardStoreTests: XCTestCase {
             refreshResults: [.loaded(.fixture(todayTokens: 42), .fixture)],
             pauseRefresh: true
         )
-        let store = DashboardStore(client: client, refreshInterval: .seconds(60))
+        let store = DashboardStore(client: client, usageRefreshInterval: .seconds(60))
 
         async let first: Void = store.refresh()
         async let second: Void = store.refresh()
@@ -107,7 +107,9 @@ final class DashboardStoreTests: XCTestCase {
         }
         XCTAssertEqual(snapshot.todayTokens, 42)
         let refreshCount = await client.refreshCount
+        let quotaRefreshCount = await client.quotaRefreshCount
         XCTAssertEqual(refreshCount, 1)
+        XCTAssertEqual(quotaRefreshCount, 1)
         XCTAssertFalse(store.isRefreshing)
     }
 
@@ -118,7 +120,7 @@ final class DashboardStoreTests: XCTestCase {
             rebuildResult: .loaded(.fixture(todayTokens: 84), .fixture),
             pauseRebuild: true
         )
-        let store = DashboardStore(client: client, refreshInterval: .seconds(60))
+        let store = DashboardStore(client: client, usageRefreshInterval: .seconds(60))
         await store.loadCached()
 
         async let first: Void = store.rebuildFromLocalData()
@@ -146,7 +148,7 @@ final class DashboardStoreTests: XCTestCase {
             loadResult: .empty(.fixture),
             refreshResults: [.empty(.fixture)]
         )
-        let store = DashboardStore(client: client, refreshInterval: .seconds(60))
+        let store = DashboardStore(client: client, usageRefreshInterval: .seconds(60))
 
         await store.refresh()
 
@@ -158,9 +160,10 @@ final class DashboardStoreTests: XCTestCase {
         let client = FakeDashboardDataClient(
             loadResult: .loaded(cached, .fixture),
             refreshResults: [],
-            refreshFailure: .fixture
+            refreshFailure: .fixture,
+            quotaFailure: .fixture
         )
-        let store = DashboardStore(client: client, refreshInterval: .seconds(60))
+        let store = DashboardStore(client: client, usageRefreshInterval: .seconds(60))
 
         await store.loadCached()
         await store.refresh()
@@ -182,7 +185,7 @@ final class DashboardStoreTests: XCTestCase {
         )
         let store = DashboardStore(
             client: client,
-            refreshInterval: .seconds(60),
+            usageRefreshInterval: .seconds(60),
             sleeper: { duration in try await sleeper.sleep(for: duration) }
         )
 
@@ -192,17 +195,20 @@ final class DashboardStoreTests: XCTestCase {
         await eventually {
             let backfillCount = await client.backfillCount
             let sleepCount = await sleeper.callCount
-            return backfillCount == 1 && sleepCount == 1
+            return backfillCount == 1 && sleepCount == 2
         }
 
         let loadCachedCount = await client.loadCachedCount
         let refreshCount = await client.refreshCount
         let backfillCount = await client.backfillCount
         let sleepCount = await sleeper.callCount
+        let requestedDurations = await sleeper.requestedDurations
         XCTAssertEqual(loadCachedCount, 1)
         XCTAssertEqual(refreshCount, 1)
         XCTAssertEqual(backfillCount, 1)
-        XCTAssertEqual(sleepCount, 1)
+        XCTAssertEqual(sleepCount, 2)
+        XCTAssertTrue(requestedDurations.contains(.seconds(60)))
+        XCTAssertTrue(requestedDurations.contains(.seconds(120)))
     }
 
     func testStartWithAutomaticRefreshDisabledStillLoadsWithoutLaunchingLoop() async {
@@ -214,7 +220,7 @@ final class DashboardStoreTests: XCTestCase {
         )
         let store = DashboardStore(
             client: client,
-            refreshInterval: .seconds(60),
+            usageRefreshInterval: .seconds(60),
             automaticRefreshEnabled: false,
             sleeper: { duration in try await sleeper.sleep(for: duration) }
         )
@@ -240,20 +246,94 @@ final class DashboardStoreTests: XCTestCase {
         )
         let store = DashboardStore(
             client: client,
-            refreshInterval: .seconds(60),
+            usageRefreshInterval: .seconds(60),
             sleeper: { duration in try await sleeper.sleep(for: duration) }
         )
 
         await store.start()
-        await eventually { await sleeper.callCount == 1 }
+        await eventually { await sleeper.callCount == 2 }
 
         store.setAutomaticRefreshEnabled(false)
-        await eventually { await sleeper.cancellationCount == 1 }
+        await eventually { await sleeper.cancellationCount == 2 }
         XCTAssertFalse(store.isAutomaticRefreshEnabled)
 
         store.setAutomaticRefreshEnabled(true)
-        await eventually { await sleeper.callCount == 2 }
+        await eventually { await sleeper.callCount == 4 }
         XCTAssertTrue(store.isAutomaticRefreshEnabled)
+    }
+
+    func testQuotaRefreshRunsOncePerNeedAndSkipsWhenUsageIsUnchanged() async {
+        let tenTokens = DashboardSnapshot.fixture(todayTokens: 10)
+        let elevenTokens = DashboardSnapshot.fixture(todayTokens: 11)
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(tenTokens, .fixture),
+            refreshResults: [
+                .loaded(tenTokens, .fixture),
+                .loaded(elevenTokens, .fixture)
+            ],
+            quotaResults: [
+                .loaded(tenTokens, .fixture),
+                .loaded(elevenTokens, .fixture)
+            ]
+        )
+        let store = DashboardStore(client: client, automaticRefreshEnabled: false)
+
+        await store.loadCached()
+        await store.refreshQuotaIfNeeded()
+        await store.refreshQuotaIfNeeded()
+        var quotaRefreshCount = await client.quotaRefreshCount
+        XCTAssertEqual(quotaRefreshCount, 1)
+
+        await store.refreshUsage()
+        await store.refreshQuotaIfNeeded()
+        quotaRefreshCount = await client.quotaRefreshCount
+        XCTAssertEqual(quotaRefreshCount, 1)
+
+        await store.refreshUsage()
+        await store.refreshQuotaIfNeeded()
+        await store.refreshQuotaIfNeeded()
+        quotaRefreshCount = await client.quotaRefreshCount
+        XCTAssertEqual(quotaRefreshCount, 2)
+    }
+
+    func testManualRefreshAlwaysRefreshesQuotaAndConsumesPendingNeed() async {
+        let snapshot = DashboardSnapshot.fixture(todayTokens: 10)
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(snapshot, .fixture),
+            refreshResults: [
+                .loaded(snapshot, .fixture),
+                .loaded(snapshot, .fixture)
+            ]
+        )
+        let store = DashboardStore(client: client, automaticRefreshEnabled: false)
+
+        await store.loadCached()
+        await store.refreshQuotaIfNeeded()
+        await store.refresh()
+        await store.refresh()
+        await store.refreshQuotaIfNeeded()
+
+        let usageRefreshCount = await client.refreshCount
+        let quotaRefreshCount = await client.quotaRefreshCount
+        XCTAssertEqual(usageRefreshCount, 2)
+        XCTAssertEqual(quotaRefreshCount, 3)
+    }
+
+    func testFailedQuotaRefreshRemainsNeededForNextCheck() async {
+        let snapshot = DashboardSnapshot.fixture(todayTokens: 10)
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(snapshot, .fixture),
+            refreshResults: [],
+            quotaFailure: .fixture
+        )
+        let store = DashboardStore(client: client, automaticRefreshEnabled: false)
+
+        await store.loadCached()
+        await store.refreshQuotaIfNeeded()
+        await store.refreshQuotaIfNeeded()
+
+        let quotaRefreshCount = await client.quotaRefreshCount
+        XCTAssertEqual(quotaRefreshCount, 2)
     }
 
     func testOlderBackfillResultDoesNotOverwriteNewerForegroundRefresh() async {
@@ -269,7 +349,7 @@ final class DashboardStoreTests: XCTestCase {
         )
         let store = DashboardStore(
             client: client,
-            refreshInterval: .seconds(60),
+            usageRefreshInterval: .seconds(60),
             sleeper: { duration in try await sleeper.sleep(for: duration) }
         )
 
@@ -294,22 +374,22 @@ final class DashboardStoreTests: XCTestCase {
         )
         var store: DashboardStore? = DashboardStore(
             client: client,
-            refreshInterval: .seconds(60),
+            usageRefreshInterval: .seconds(60),
             sleeper: { duration in try await sleeper.sleep(for: duration) }
         )
         weak let weakStore = store
 
         await store?.start()
-        await eventually { await sleeper.callCount == 1 }
+        await eventually { await sleeper.callCount == 2 }
         store = nil
         await eventually {
             let cancellationCount = await sleeper.cancellationCount
-            return weakStore == nil && cancellationCount == 1
+            return weakStore == nil && cancellationCount == 2
         }
 
         XCTAssertNil(weakStore)
         let cancellationCount = await sleeper.cancellationCount
-        XCTAssertEqual(cancellationCount, 1)
+        XCTAssertEqual(cancellationCount, 2)
     }
 
     func testLiveClientUsesInjectedTemporaryLocationsAndCachedLoadDoesNotImport() async throws {
@@ -336,7 +416,7 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: databaseURL.path))
     }
 
-    func testLiveClientRefreshOverridesStoredQuotaWithOfficialAccountQuota() async throws {
+    func testLiveClientRefreshesOfficialQuotaOnlyThroughQuotaOperation() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("DashboardStoreQuotaTests-\(UUID().uuidString)", isDirectory: true)
         let codexRoot = directory.appendingPathComponent("synthetic-codex", isDirectory: true)
@@ -386,21 +466,31 @@ final class DashboardStoreTests: XCTestCase {
             )],
             observedAt: Date(timeIntervalSince1970: 1_000)
         )
+        let rateLimitReader = CountingAccountRateLimitReader(value: accountRateLimits)
         let client = try LiveDashboardDataClient(
             codexRootURL: codexRoot,
             databaseURL: databaseURL,
             now: { Date(timeIntervalSince1970: 1_000) },
             calendar: .fixture,
-            accountRateLimitReader: FixedAccountRateLimitReader(value: accountRateLimits)
+            accountRateLimitReader: rateLimitReader
         )
 
-        let result = try await client.refresh()
+        guard case let .loaded(usageSnapshot, _) = try await client.refreshUsage() else {
+            return XCTFail("Expected loaded usage dashboard")
+        }
+        XCTAssertEqual(usageSnapshot.weeklyQuota?.remaining ?? -1, 1, accuracy: 0.000_001)
+        let readCountBeforeQuotaRefresh = await rateLimitReader.readCount
+        XCTAssertEqual(readCountBeforeQuotaRefresh, 0)
+
+        let result = try await client.refreshQuota()
 
         guard case let .loaded(snapshot, _) = result else {
             return XCTFail("Expected loaded dashboard")
         }
         XCTAssertEqual(snapshot.planName, "Pro 5x")
         XCTAssertEqual(snapshot.weeklyQuota?.remaining ?? -1, 0.97, accuracy: 0.000_001)
+        let readCountAfterQuotaRefresh = await rateLimitReader.readCount
+        XCTAssertEqual(readCountAfterQuotaRefresh, 1)
         XCTAssertEqual(try storage.accountRateLimits(), accountRateLimits)
 
         let offlineClient = try LiveDashboardDataClient(
@@ -416,7 +506,7 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertEqual(cachedSnapshot.planName, "Pro 5x")
         XCTAssertEqual(cachedSnapshot.weeklyQuota?.remaining ?? -1, 0.97, accuracy: 0.000_001)
 
-        guard case let .loaded(offlineSnapshot, _) = try await offlineClient.refresh() else {
+        guard case let .loaded(offlineSnapshot, _) = try await offlineClient.refreshUsage() else {
             return XCTFail("Expected cached official quota when live refresh fails")
         }
         XCTAssertEqual(offlineSnapshot.weeklyQuota?.remaining ?? -1, 0.97, accuracy: 0.000_001)
@@ -439,7 +529,7 @@ final class DashboardStoreTests: XCTestCase {
             beforeQuery: { await probe.recordQueryEntry() }
         )
 
-        async let refreshResult = client.refresh()
+        async let refreshResult = client.refreshUsage()
         await eventually { await probe.foregroundImportIsPaused }
         async let cachedResult = client.loadCached()
         for _ in 0..<100 { await Task.yield() }
@@ -468,7 +558,7 @@ final class DashboardStoreTests: XCTestCase {
             beforeImport: { scope in await probe.pauseForegroundImport(scope) },
             beforeQuery: { await probe.recordQueryEntry() }
         )
-        let holder = Task { try await client.refresh() }
+        let holder = Task { try await client.refreshUsage() }
         await eventually { await probe.foregroundImportIsPaused }
         let queued = Task { () -> Error? in
             do {
@@ -656,10 +746,18 @@ private enum FakeClientError: Error, Sendable {
     var sensitiveText: String { "fixture-secret" }
 }
 
-private struct FixedAccountRateLimitReader: CodexAccountRateLimitReading {
+private actor CountingAccountRateLimitReader: CodexAccountRateLimitReading {
     let value: CodexAccountRateLimits
+    private(set) var readCount = 0
 
-    func read() async throws -> CodexAccountRateLimits { value }
+    init(value: CodexAccountRateLimits) {
+        self.value = value
+    }
+
+    func read() async throws -> CodexAccountRateLimits {
+        readCount += 1
+        return value
+    }
 }
 
 private struct FailingAccountRateLimitReader: CodexAccountRateLimitReading {
@@ -668,10 +766,13 @@ private struct FailingAccountRateLimitReader: CodexAccountRateLimitReading {
 
 private actor FakeDashboardDataClient: DashboardDataClient {
     private let loadResult: DashboardDataResult
+    private var currentResult: DashboardDataResult
     private var refreshResults: [DashboardDataResult]
+    private var quotaResults: [DashboardDataResult]
     private let backfillResult: DashboardDataResult
     private let rebuildResult: DashboardDataResult
     private let refreshFailure: FakeClientError?
+    private let quotaFailure: FakeClientError?
     private let pauseRefresh: Bool
     private let pauseBackfill: Bool
     private let pauseRebuild: Bool
@@ -681,6 +782,7 @@ private actor FakeDashboardDataClient: DashboardDataClient {
 
     private(set) var loadCachedCount = 0
     private(set) var refreshCount = 0
+    private(set) var quotaRefreshCount = 0
     private(set) var backfillCount = 0
     private(set) var completedBackfillCount = 0
     private(set) var rebuildCount = 0
@@ -688,18 +790,23 @@ private actor FakeDashboardDataClient: DashboardDataClient {
     init(
         loadResult: DashboardDataResult,
         refreshResults: [DashboardDataResult],
+        quotaResults: [DashboardDataResult] = [],
         backfillResult: DashboardDataResult = .empty(.fixture),
         rebuildResult: DashboardDataResult = .empty(.fixture),
         refreshFailure: FakeClientError? = nil,
+        quotaFailure: FakeClientError? = nil,
         pauseRefresh: Bool = false,
         pauseBackfill: Bool = false,
         pauseRebuild: Bool = false
     ) {
         self.loadResult = loadResult
+        currentResult = loadResult
         self.refreshResults = refreshResults
+        self.quotaResults = quotaResults
         self.backfillResult = backfillResult
         self.rebuildResult = rebuildResult
         self.refreshFailure = refreshFailure
+        self.quotaFailure = quotaFailure
         self.pauseRefresh = pauseRefresh
         self.pauseBackfill = pauseBackfill
         self.pauseRebuild = pauseRebuild
@@ -707,16 +814,27 @@ private actor FakeDashboardDataClient: DashboardDataClient {
 
     func loadCached() async throws -> DashboardDataResult {
         loadCachedCount += 1
+        currentResult = loadResult
         return loadResult
     }
 
-    func refresh() async throws -> DashboardDataResult {
+    func refreshUsage() async throws -> DashboardDataResult {
         refreshCount += 1
         if pauseRefresh {
             await withCheckedContinuation { refreshContinuations.append($0) }
         }
         if let refreshFailure { throw refreshFailure }
-        return refreshResults.removeFirst()
+        let result = refreshResults.removeFirst()
+        currentResult = result
+        return result
+    }
+
+    func refreshQuota() async throws -> DashboardDataResult {
+        quotaRefreshCount += 1
+        if let quotaFailure { throw quotaFailure }
+        let result = quotaResults.isEmpty ? currentResult : quotaResults.removeFirst()
+        currentResult = result
+        return result
     }
 
     func backfillHistory() async throws -> DashboardDataResult {
@@ -725,6 +843,7 @@ private actor FakeDashboardDataClient: DashboardDataClient {
             await withCheckedContinuation { backfillContinuations.append($0) }
         }
         completedBackfillCount += 1
+        currentResult = backfillResult
         return backfillResult
     }
 
@@ -733,6 +852,7 @@ private actor FakeDashboardDataClient: DashboardDataClient {
         if pauseRebuild {
             await withCheckedContinuation { rebuildContinuations.append($0) }
         }
+        currentResult = rebuildResult
         return rebuildResult
     }
 
@@ -756,11 +876,12 @@ private actor SuspendedSleeper {
     private var continuations: [UUID: CheckedContinuation<Void, any Error>] = [:]
     private(set) var callCount = 0
     private(set) var cancellationCount = 0
+    private(set) var requestedDurations: [Duration] = []
 
     func sleep(for duration: Duration) async throws {
-        _ = duration
         let id = UUID()
         callCount += 1
+        requestedDurations.append(duration)
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 continuations[id] = continuation

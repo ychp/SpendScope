@@ -321,7 +321,8 @@ private actor ReminderDashboardClient: DashboardDataClient {
     }
 
     func loadCached() async throws -> DashboardDataResult { result }
-    func refresh() async throws -> DashboardDataResult { result }
+    func refreshUsage() async throws -> DashboardDataResult { result }
+    func refreshQuota() async throws -> DashboardDataResult { result }
     func backfillHistory() async throws -> DashboardDataResult { result }
     func rebuildFromLocalData() async throws -> DashboardDataResult { result }
 }

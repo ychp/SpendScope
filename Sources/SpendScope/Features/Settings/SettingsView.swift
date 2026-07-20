@@ -343,11 +343,11 @@ struct SettingsView: View {
                 preferenceRow(
                     "自动刷新",
                     detail: automaticRefreshEnabled
-                        ? "在后台每 60 秒更新统计数据"
+                        ? "每 60 秒更新用量；额度每 120 秒按需检查"
                         : "已关闭，仍可启动时读取或手动刷新"
                 ) {
                     HStack(spacing: 10) {
-                        Text(automaticRefreshEnabled ? "每 60 秒" : "已关闭")
+                        Text(automaticRefreshEnabled ? "用量 60 秒" : "已关闭")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         Toggle("", isOn: automaticRefreshBinding)
