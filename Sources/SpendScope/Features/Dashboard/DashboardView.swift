@@ -250,6 +250,7 @@ private struct DashboardContentView: View {
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
     @State private var selectedActivityRange = ActivityRange.defaultRange
     @State private var selectedProjectRange = ActivityRange.defaultRange
+    @State private var selectedModelRange = ActivityRange.defaultRange
     @State private var hoveredUsageID: DailyUsage.ID?
 
     var body: some View {
@@ -680,6 +681,10 @@ private struct DashboardContentView: View {
         snapshot.projectUsage.ranking(for: selectedProjectRange)
     }
 
+    private var selectedModelRanking: ModelUsageRanking {
+        snapshot.modelUsage.ranking(for: selectedModelRange)
+    }
+
     private var analyticsPanel: some View {
         VStack(spacing: 9) {
             HStack(spacing: 10) {
@@ -690,6 +695,9 @@ private struct DashboardContentView: View {
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 } else if selectedAnalyticsTab == .project {
                     projectRangeSelector
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
+                } else if selectedAnalyticsTab == .model {
+                    modelRangeSelector
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -710,6 +718,9 @@ private struct DashboardContentView: View {
 
             ProjectUsagePanel(ranking: selectedProjectRanking)
                 .analyticsTabLayer(isSelected: selectedAnalyticsTab == .project)
+
+            ModelUsagePanel(ranking: selectedModelRanking)
+                .analyticsTabLayer(isSelected: selectedAnalyticsTab == .model)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
@@ -755,6 +766,13 @@ private struct DashboardContentView: View {
             selectedRange: selectedProjectRange,
             accessibilityLabel: "项目用量时间范围"
         ) { selectedProjectRange = $0 }
+    }
+
+    private var modelRangeSelector: some View {
+        analyticsRangeSelector(
+            selectedRange: selectedModelRange,
+            accessibilityLabel: "模型用量时间范围"
+        ) { selectedModelRange = $0 }
     }
 
     private func analyticsRangeSelector(
@@ -1050,6 +1068,7 @@ private enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
     case trend = "用量趋势"
     case activity = "Skills / Tools"
     case project = "项目用量"
+    case model = "模型用量"
 
     static let defaultTab: DashboardAnalyticsTab = .trend
 

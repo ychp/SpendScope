@@ -199,6 +199,92 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertFalse(allTime.entries.contains { $0.id == "project-future" })
     }
 
+    func testBuildsModelUsageRankingBreakdownAndStandardAPIEstimate() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 14, hour: 12
+        )))
+        let todayStart = calendar.startOfDay(for: now)
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage(
+                "sol",
+                at: todayStart.addingTimeInterval(60),
+                total: 10_000_000,
+                usage: .init(
+                    uncachedInput: 1_000_000,
+                    cachedInput: 2_000_000,
+                    visibleOutput: 3_000_000,
+                    reasoning: 4_000_000
+                ),
+                model: "gpt-5.6-sol"
+            ),
+            usage(
+                "terra",
+                at: todayStart.addingTimeInterval(120),
+                total: 4_000_000,
+                usage: .init(
+                    uncachedInput: 1_000_000,
+                    cachedInput: 1_000_000,
+                    visibleOutput: 1_000_000,
+                    reasoning: 1_000_000
+                ),
+                model: "gpt-5.6-terra"
+            ),
+            usage(
+                "internal-review",
+                at: todayStart.addingTimeInterval(180),
+                total: 100,
+                model: "codex-auto-review"
+            )
+        ], quotas: []))
+
+        let ranking = try DashboardQueryService(store: store)
+            .snapshot(now: now, calendar: calendar)
+            .modelUsage
+            .ranking(for: .today)
+
+        XCTAssertEqual(ranking.entries.map(\.model), [
+            "gpt-5.6-sol", "gpt-5.6-terra", "codex-auto-review"
+        ])
+        XCTAssertEqual(ranking.totalTokens, 14_000_100)
+        XCTAssertEqual(ranking.entries.first?.uncachedInputTokens, 1_000_000)
+        XCTAssertEqual(ranking.entries.first?.cachedInputTokens, 2_000_000)
+        XCTAssertEqual(ranking.entries.first?.visibleOutputTokens, 3_000_000)
+        XCTAssertEqual(ranking.entries.first?.reasoningTokens, 4_000_000)
+        XCTAssertEqual(
+            try XCTUnwrap(ranking.entries.first?.estimatedCostUSD),
+            216,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(ranking.entries[1].estimatedCostUSD),
+            32.75,
+            accuracy: 0.000_001
+        )
+        XCTAssertNil(ranking.entries.last?.estimatedCostUSD)
+        XCTAssertEqual(ranking.estimatedCostUSD, 248.75, accuracy: 0.000_001)
+        XCTAssertEqual(ranking.unpricedModelCount, 1)
+    }
+
+    func testOfficialModelPricingCatalogUsesPublishedStandardRates() throws {
+        let sol = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.6-sol"))
+        let terra = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.6-terra"))
+        let gpt55 = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.5"))
+
+        XCTAssertEqual(sol.inputPerMillionUSD, 5)
+        XCTAssertEqual(sol.cachedInputPerMillionUSD, 0.5)
+        XCTAssertEqual(sol.outputPerMillionUSD, 30)
+        XCTAssertEqual(terra.inputPerMillionUSD, 2.5)
+        XCTAssertEqual(terra.cachedInputPerMillionUSD, 0.25)
+        XCTAssertEqual(terra.outputPerMillionUSD, 15)
+        XCTAssertEqual(gpt55.inputPerMillionUSD, 5)
+        XCTAssertEqual(gpt55.cachedInputPerMillionUSD, 0.5)
+        XCTAssertEqual(gpt55.outputPerMillionUSD, 30)
+        XCTAssertNil(ModelPricingCatalog.rule(for: "codex-auto-review"))
+    }
+
     func testProjectUsageReturnsEveryProjectInSelectedRange() throws {
         let now = Date(timeIntervalSince1970: 20_000)
         let store = try makeStore()

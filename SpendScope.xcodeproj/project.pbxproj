@@ -24,6 +24,8 @@
 		A00000000000000000000042 /* AppUpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000042 /* AppUpdateService.swift */; };
 		A00000000000000000000043 /* AppUpdateServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000043 /* AppUpdateServiceTests.swift */; };
 		A00000000000000000000044 /* CodexAccountRateLimitReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000044 /* CodexAccountRateLimitReader.swift */; };
+		A00000000000000000000046 /* ModelPricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000046 /* ModelPricing.swift */; };
+		A00000000000000000000047 /* ModelUsagePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000047 /* ModelUsagePanel.swift */; };
 		A00000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* SettingsView.swift */; };
 		A00000000000000000000012 /* CodexEventDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* CodexEventDecoderTests.swift */; };
 		A00000000000000000000013 /* CodexEventModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* CodexEventModels.swift */; };
@@ -81,6 +83,8 @@
 		B00000000000000000000042 /* AppUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Support/AppUpdateService.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000043 /* AppUpdateServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/AppUpdateServiceTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000044 /* CodexAccountRateLimitReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexAccountRateLimitReader.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000046 /* ModelPricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Support/ModelPricing.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000047 /* ModelUsagePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/ModelUsagePanel.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000045 /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
 		B00000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Settings/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000012 /* CodexEventDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/CodexEventDecoderTests.swift; sourceTree = SOURCE_ROOT; };
@@ -158,6 +162,8 @@
 				B00000000000000000000036 /* UsageCalendarPanel.swift */,
 				B00000000000000000000037 /* ActivityRankingPanel.swift */,
 				B00000000000000000000038 /* ProjectUsagePanel.swift */,
+				B00000000000000000000047 /* ModelUsagePanel.swift */,
+				B00000000000000000000046 /* ModelPricing.swift */,
 				B00000000000000000000039 /* UsageReminder.swift */,
 				B00000000000000000000040 /* UsageReminderController.swift */,
 				B00000000000000000000042 /* AppUpdateService.swift */,
@@ -320,6 +326,8 @@
 				A00000000000000000000036 /* UsageCalendarPanel.swift in Sources */,
 				A00000000000000000000037 /* ActivityRankingPanel.swift in Sources */,
 				A00000000000000000000038 /* ProjectUsagePanel.swift in Sources */,
+				A00000000000000000000047 /* ModelUsagePanel.swift in Sources */,
+				A00000000000000000000046 /* ModelPricing.swift in Sources */,
 				A00000000000000000000039 /* UsageReminder.swift in Sources */,
 				A00000000000000000000040 /* UsageReminderController.swift in Sources */,
 				A00000000000000000000042 /* AppUpdateService.swift in Sources */,

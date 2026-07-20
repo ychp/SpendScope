@@ -58,6 +58,7 @@ struct CodexAccountRateLimits: Equatable, Sendable {
             dailyUsage: snapshot.dailyUsage,
             activityRankings: snapshot.activityRankings,
             projectUsage: snapshot.projectUsage,
+            modelUsage: snapshot.modelUsage,
             issues: snapshot.issues
         )
     }

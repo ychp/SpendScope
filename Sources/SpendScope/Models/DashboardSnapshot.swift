@@ -9,6 +9,7 @@ struct DashboardSnapshot: Sendable {
     let dailyUsage: [DailyUsage]
     let activityRankings: ActivityRankingSnapshot
     let projectUsage: ProjectUsageSnapshot
+    let modelUsage: ModelUsageSnapshot
     let issues: [DashboardIssue]
 
     init(
@@ -20,6 +21,7 @@ struct DashboardSnapshot: Sendable {
         dailyUsage: [DailyUsage],
         activityRankings: ActivityRankingSnapshot = .empty,
         projectUsage: ProjectUsageSnapshot = .empty,
+        modelUsage: ModelUsageSnapshot = .empty,
         issues: [DashboardIssue] = []
     ) {
         self.planName = planName
@@ -30,6 +32,7 @@ struct DashboardSnapshot: Sendable {
         self.dailyUsage = dailyUsage
         self.activityRankings = activityRankings
         self.projectUsage = projectUsage
+        self.modelUsage = modelUsage
         self.issues = issues
     }
 
@@ -333,6 +336,56 @@ struct ModelUsage: Identifiable, Sendable {
     let id: String
     let name: String
     let share: Double
+}
+
+struct ModelUsageEntry: Identifiable, Equatable, Sendable {
+    let model: String
+    let totalTokens: Int
+    let uncachedInputTokens: Int
+    let cachedInputTokens: Int
+    let visibleOutputTokens: Int
+    let reasoningTokens: Int
+    let share: Double
+    let estimatedCostUSD: Double?
+
+    var id: String { model }
+}
+
+struct ModelUsageRanking: Equatable, Sendable {
+    let entries: [ModelUsageEntry]
+    let totalTokens: Int
+    let estimatedCostUSD: Double
+    let unpricedModelCount: Int
+
+    static let empty = ModelUsageRanking(
+        entries: [],
+        totalTokens: 0,
+        estimatedCostUSD: 0,
+        unpricedModelCount: 0
+    )
+}
+
+struct ModelUsageSnapshot: Equatable, Sendable {
+    let today: ModelUsageRanking
+    let sevenDays: ModelUsageRanking
+    let thirtyDays: ModelUsageRanking
+    let allTime: ModelUsageRanking
+
+    static let empty = ModelUsageSnapshot(
+        today: .empty,
+        sevenDays: .empty,
+        thirtyDays: .empty,
+        allTime: .empty
+    )
+
+    func ranking(for range: ActivityRange) -> ModelUsageRanking {
+        switch range {
+        case .today: today
+        case .sevenDays: sevenDays
+        case .thirtyDays: thirtyDays
+        case .allTime: allTime
+        }
+    }
 }
 
 struct DailyUsage: Identifiable, Sendable {

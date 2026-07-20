@@ -78,6 +78,12 @@ final class DashboardQueryService: @unchecked Sendable {
             thirtyDays: try projectRanking(from: thirtyDayRows),
             allTime: try projectRanking(from: allRows.filter { $0.observedAtMilliseconds < end })
         )
+        let modelUsage = ModelUsageSnapshot(
+            today: try modelRanking(from: todayRows),
+            sevenDays: try modelRanking(from: sevenDayRows),
+            thirtyDays: try modelRanking(from: thirtyDayRows),
+            allTime: try modelRanking(from: allRows.filter { $0.observedAtMilliseconds < end })
+        )
 
         return DashboardSnapshot(
             planName: resolvedPlanName(from: allRows),
@@ -93,7 +99,58 @@ final class DashboardQueryService: @unchecked Sendable {
             ),
             activityRankings: activityRankings,
             projectUsage: projectUsage,
+            modelUsage: modelUsage,
             issues: quotaResult.issues
+        )
+    }
+
+    private func modelRanking(from rows: [StoredUsageQueryRow]) throws -> ModelUsageRanking {
+        var totals: [String: UsageAggregate] = [:]
+        var overall: Int64 = 0
+        for row in rows {
+            var aggregate = totals[row.model, default: UsageAggregate()]
+            try aggregate.add(row, context: "model.\(row.model)")
+            totals[row.model] = aggregate
+            overall = try checkedAdd(overall, row.totalTokens, context: "models.total")
+        }
+        guard overall > 0 else { return .empty }
+
+        let ordered = totals.sorted { left, right in
+            left.value.total == right.value.total
+                ? left.key < right.key
+                : left.value.total > right.value.total
+        }
+        var estimatedCostUSD = 0.0
+        var unpricedModelCount = 0
+        let entries = ordered.map { model, aggregate in
+            let rule = ModelPricingCatalog.rule(for: model)
+            let estimatedCost = rule?.estimate(
+                uncachedInputTokens: aggregate.uncachedInput,
+                cachedInputTokens: aggregate.cachedInput,
+                visibleOutputTokens: aggregate.visibleOutput,
+                reasoningTokens: aggregate.reasoning
+            )
+            if let estimatedCost {
+                estimatedCostUSD += estimatedCost
+            } else {
+                unpricedModelCount += 1
+            }
+            return ModelUsageEntry(
+                model: model,
+                totalTokens: Int(clamping: aggregate.total),
+                uncachedInputTokens: Int(clamping: aggregate.uncachedInput),
+                cachedInputTokens: Int(clamping: aggregate.cachedInput),
+                visibleOutputTokens: Int(clamping: aggregate.visibleOutput),
+                reasoningTokens: Int(clamping: aggregate.reasoning),
+                share: min(max(Double(aggregate.total) / Double(overall), 0), 1),
+                estimatedCostUSD: estimatedCost
+            )
+        }
+        return ModelUsageRanking(
+            entries: entries,
+            totalTokens: Int(clamping: overall),
+            estimatedCostUSD: estimatedCostUSD,
+            unpricedModelCount: unpricedModelCount
         )
     }
 
