@@ -4,7 +4,7 @@
 
 ## 1. 项目目标
 
-SpendScope 是一款原生 macOS 菜单栏应用，用于读取本机 Codex CLI 和 Codex Desktop 产生的记录，并展示 Token 用量、5 小时与 7 天额度、趋势、活动排行和项目用量。
+SpendScope 是一款原生 macOS 菜单栏应用，用于读取本机 Codex CLI 和 Codex Desktop 产生的记录，并展示 Token 用量、5 小时与 7 天额度、趋势、活动/项目/模型排行和 API 等值费用估算。
 
 必须保持以下产品边界：
 
@@ -12,7 +12,7 @@ SpendScope 是一款原生 macOS 菜单栏应用，用于读取本机 Codex CLI 
 - 不读取、保存或上传提示词、回复、摘要、推理正文、工具输入、文件内容和项目代码。
 - 不读取认证文件内容，不保存原始 Git remote 或完整项目路径。
 - 不修改或删除 Codex 原始文件和数据库。
-- 暂不实现费用估算、账单分析、API Key 消费分析、账号体系、云同步或跨设备汇总。
+- 不把 API 等值费用估算描述为 Codex 实际账单；暂不实现账单对账、预算管理、API Key 实际消费分析、账号体系、云同步或跨设备汇总。
 
 ## 2. 技术基线
 
@@ -31,6 +31,7 @@ SpendScope 是一款原生 macOS 菜单栏应用，用于读取本机 Codex CLI 
 ## 3. 目录职责
 
 ```text
+Config/Version.xcconfig    工程与发布版本的唯一来源
 Sources/SpendScope/
 ├── App/                  应用入口、生命周期、共享状态和额度提醒
 ├── Data/
@@ -38,12 +39,12 @@ Sources/SpendScope/
 │   ├── Dashboard/        看板与会话查询
 │   └── Storage/          SQLite、迁移、事件、聚合和检查点
 ├── Features/
-│   ├── Dashboard/        详细看板、日历、排行和项目用量
+│   ├── Dashboard/        详细看板、日历、活动/项目/模型排行和费用明细
 │   ├── MenuBar/          状态栏项目和弹窗
 │   └── Settings/         设置窗口
 ├── Models/               UI 与查询层共享模型
 ├── Resources/            App、状态栏和 Codex 图标
-└── Support/              偏好、更新、提醒、格式化和设计系统
+└── Support/              偏好、更新、提醒、模型价格、格式化和设计系统
 
 Tests/SpendScopeTests/    XCTest 单元与集成测试
 script/                   构建、运行、日志和版本说明脚本
@@ -56,12 +57,15 @@ docs/                     截图和技术档案
 | 领域 | 入口文件 |
 | --- | --- |
 | 数据源发现 | `Sources/SpendScope/Data/Codex/CodexSourceDiscovery.swift` |
+| 官方额度读取 | `Sources/SpendScope/Data/Codex/CodexAccountRateLimitReader.swift` |
 | 增量 JSONL 读取 | `Sources/SpendScope/Data/Codex/IncrementalJSONLReader.swift` |
 | 事件白名单解码 | `Sources/SpendScope/Data/Codex/CodexEventDecoder.swift` |
 | Token 增量计算 | `Sources/SpendScope/Data/Codex/UsageAccumulator.swift` |
 | 幂等导入 | `Sources/SpendScope/Data/Codex/CodexImporter.swift` |
 | SQLite 存储 | `Sources/SpendScope/Data/Storage/UsageStore.swift` |
 | 看板查询 | `Sources/SpendScope/Data/Dashboard/DashboardQueryService.swift` |
+| 模型价格 | `Sources/SpendScope/Support/ModelPricing.swift` |
+| 模型排行界面 | `Sources/SpendScope/Features/Dashboard/ModelUsagePanel.swift` |
 | 全局界面状态 | `Sources/SpendScope/App/DashboardStore.swift` |
 | 软件更新 | `Sources/SpendScope/Support/AppUpdateService.swift` |
 
@@ -82,6 +86,8 @@ docs/                     截图和技术档案
 - 每日统计继续按 UTC 日期归属，除非产品明确改变口径并同步迁移、测试和文档。
 - 额度按 `window_minutes` 识别：300 分钟对应 5 小时，10080 分钟对应 7 天。
 - 额度过期且没有新观测时不得推断为 100%。
+- 官方额度通过本机 Codex app-server 单独读取并缓存；用量刷新不得顺带无条件触发额度读取。首次启动、用量指纹变化和失败重试使用待刷新标记，用户手动刷新则强制执行。
+- API 等值费用只能使用显式收录的模型价格；未知模型必须保持未定价，不能按相似名称猜价。长上下文、缓存写入等无法从聚合事件可靠还原的附加倍率不得计入总额。
 
 ### 增量导入与存储
 

@@ -84,7 +84,7 @@ shasum -a 256 -c SpendScope-macOS-unsigned.dmg.sha256
 
 - 当前安装包未签名、未公证，首次启动需要手动确认。
 - SpendScope 仅统计本机 Codex 记录，不同步其他设备或服务端历史。
-- 暂不提供费用估算、账单或 API Key 消费分析。
+- 模型费用仅为 API 标准价下的等值估算，不代表 Codex 实际账单；暂不提供账单对账或 API Key 实际消费分析。
 
 ## 完整变更
 

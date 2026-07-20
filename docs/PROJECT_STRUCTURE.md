@@ -1,6 +1,6 @@
 # SpendScope 项目文件结构
 
-更新日期：2026-07-18
+更新日期：2026-07-20
 
 本文档说明仓库中每个目录的职责、重要程度和清理边界。重要程度分为三类：
 
@@ -39,23 +39,22 @@
 | `Data/Codex/` | 核心 | 发现 Codex 数据、只读额度信息、解析 JSONL、计算 Token 增量、归约会话状态并协调导入 | 必须保持隐私白名单和幂等性 |
 | `Data/Dashboard/` | 核心 | 从本地数据库生成看板和会话查询结果 | 统计口径应与存储层一致 |
 | `Data/Storage/` | 核心 | SQLite 连接、迁移、事务、事件、聚合和文件检查点 | 表结构变化必须提供迁移 |
-| `Features/Dashboard/` | 核心 | Token 看板、趋势、日历、活动排行和项目用量 | 不在 UI 中重复计算业务口径 |
+| `Features/Dashboard/` | 核心 | Token 看板、趋势、日历、活动/项目/模型排行和费用明细 | 不在 UI 中重复计算业务口径 |
 | `Features/MenuBar/` | 核心 | 菜单栏状态项及其弹窗 | 与 `DashboardStore` 共享状态 |
 | `Features/Settings/` | 核心 | 设置窗口、刷新、提醒、数据来源和更新选项 | 新设置需补默认值与持久化 |
 | `Models/` | 核心 | 查询层与界面层共享的数据模型 | 避免放入数据库或 UI 专属逻辑 |
 | `Resources/` | 核心 | App 图标、菜单栏图标和 Codex 图标资源 | 删除会造成资源缺失或构建异常 |
-| `Support/` | 核心 | 偏好设置、软件更新、设计系统、格式化和提醒模型 | 优先复用，避免各界面自行实现 |
+| `Support/` | 核心 | 偏好设置、软件更新、模型价格、设计系统、格式化和提醒模型 | 优先复用，避免各界面自行实现 |
 
 核心数据路径如下：
 
 ```text
-Codex 本机文件 / 只读索引
-        ↓
-Data/Codex：发现、读取、解码、增量计算
-        ↓
-Data/Storage：幂等写入 SpendScope SQLite
-        ↓
-Data/Dashboard：聚合查询
+Codex 本机文件 / 只读索引 ─→ Data/Codex：发现、读取、解码、增量计算 ─┐
+Codex app-server 官方额度 ──→ Data/Codex：账户额度只读补充 ─────────┤
+                                                                    ↓
+                                Data/Storage：幂等事件与官方额度缓存
+                                                                    ↓
+Data/Dashboard：周期、活动、项目、模型和费用聚合查询
         ↓
 App/DashboardStore：发布共享状态
         ↓
@@ -74,6 +73,8 @@ Features：菜单栏、看板和设置
 | 幂等导入 | `Sources/SpendScope/Data/Codex/CodexImporter.swift` |
 | 数据库与迁移 | `Sources/SpendScope/Data/Storage/UsageStore.swift` |
 | 看板统计 | `Sources/SpendScope/Data/Dashboard/DashboardQueryService.swift` |
+| 模型价格规则 | `Sources/SpendScope/Support/ModelPricing.swift` |
+| 模型用量界面 | `Sources/SpendScope/Features/Dashboard/ModelUsagePanel.swift` |
 | 全局状态 | `Sources/SpendScope/App/DashboardStore.swift` |
 
 ## 3. 测试 `Tests/SpendScopeTests/`
@@ -85,9 +86,9 @@ Features：菜单栏、看板和设置
 - `CodexEventDecoderTests`：事件白名单、字段兼容和隐私边界。
 - `IncrementalJSONLReaderTests`：追加、半行、分块、截断和替换。
 - `UsageAccumulatorTests`：累计值转增量、回退分段和 Token 分类。
-- `CodexImporterTests`、`UsageStoreTests`：导入幂等、事务、检查点和迁移。
-- `DashboardQueryServiceTests`、`SessionQueryServiceTests`：周期统计、额度、排行和会话查询。
-- `DashboardStoreTests`：加载、刷新、错误和全局状态协调。
+- `CodexImporterTests`、`UsageStoreTests`：导入幂等、事务、检查点、迁移和官方额度缓存。
+- `DashboardQueryServiceTests`、`SessionQueryServiceTests`：周期统计、额度、活动/项目/模型排行、费用估算和会话查询。
+- `DashboardStoreTests`：加载、用量/额度拆分刷新、按需调度、错误和全局状态协调。
 - `UsageReminderTests`、`AppUpdateServiceTests`：提醒阈值和软件更新校验。
 - `TokenFormatterTests`、`SessionStateReducerTests`：展示格式与会话事实归约。
 
