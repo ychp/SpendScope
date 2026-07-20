@@ -299,12 +299,7 @@ SPENDSCOPE_DERIVED_DATA=/private/tmp/My-SpendScope-Data ./script/build_and_run.s
 
 ## 发布流程
 
-项目版本统一维护在 `Config/Version.xcconfig`：
-
-```xcconfig
-MARKETING_VERSION = 0.1.2
-CURRENT_PROJECT_VERSION = 3
-```
+项目版本统一维护在 `Config/Version.xcconfig`：`MARKETING_VERSION` 保存用户可见的语义化版本，`CURRENT_PROJECT_VERSION` 保存每次发布递增的正整数构建号。
 
 发布新版本前，只需在这个文件中更新用户可见版本号和递增后的构建号，并将修改提交到默认分支。Xcode 的 Debug / Release 构建、App Bundle、Codex 客户端声明和 GitHub Actions 都会读取这份配置，不需要再修改工程文件或 Swift 源码。
 
