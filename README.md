@@ -293,17 +293,27 @@ SPENDSCOPE_DERIVED_DATA=/private/tmp/My-SpendScope-Data ./script/build_and_run.s
 
 ## 发布流程
 
-`.github/workflows/unsigned-release.yml` 提供手动触发的 GitHub Actions 工作流。发布前先将工程中的 `MARKETING_VERSION` 更新为目标版本，然后在 GitHub Actions 中输入对应标签（例如 `v0.2.0`）和面向用户的版本亮点；多条亮点使用 `|` 分隔。
+项目版本统一维护在 `Config/Version.xcconfig`：
+
+```xcconfig
+MARKETING_VERSION = 0.1.2
+CURRENT_PROJECT_VERSION = 3
+```
+
+发布新版本前，只需在这个文件中更新用户可见版本号和递增后的构建号，并将修改提交到默认分支。Xcode 的 Debug / Release 构建、App Bundle、Codex 客户端声明和 GitHub Actions 都会读取这份配置，不需要再修改工程文件或 Swift 源码。
+
+`.github/workflows/unsigned-release.yml` 提供手动触发的 GitHub Actions 工作流。运行时不需要填写 Tag，只需输入面向用户的版本亮点；多条亮点使用 `|` 分隔。预发布版本可勾选 `prerelease`；只有修复同版本 Release 的附件时才勾选 `replace_existing`。
 
 工作流会：
 
-1. 校验标签格式及其与工程 `MARKETING_VERSION` 的一致性；
-2. 在 macOS runner 上运行测试；
-3. 构建同时支持 `arm64` 和 `x86_64` 的 Universal Release App；
-4. 校验两种架构并制作拖拽安装式 DMG；
-5. 为 DMG 生成可直接校验的 SHA-256 文件；
-6. 生成包含更新亮点、安装说明、芯片支持、未签名打开方式、附件说明和完整变更链接的中文版本说明；
-7. 创建或更新标题为 `SpendScope v<版本号>` 的 GitHub Release。
+1. 从 `Config/Version.xcconfig` 读取版本号和构建号，正式版生成 `v<版本>` 标签，预发布版生成 `v<版本>-beta` 标签；
+2. 校验工作流运行于默认分支，并确认 Xcode 实际构建版本与统一配置一致；
+3. 默认阻止覆盖已有同版本 Release；
+4. 运行完整测试；
+5. 构建同时支持 `arm64` 和 `x86_64` 的 Universal Release App；
+6. 校验两种架构并制作拖拽安装式 DMG 及其 SHA-256 文件；
+7. 生成包含更新亮点、安装说明、芯片支持、未签名打开方式、附件说明和完整变更链接的中文版本说明；
+8. 创建标题为 `SpendScope v<版本号>` 的 GitHub Release，Tag 指向触发工作流的源码提交。
 
 发布附件包括：
 

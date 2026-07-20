@@ -3,10 +3,6 @@ name: Publish unsigned macOS release
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag（例如 v0.2.0，需与项目版本一致）"
-        required: true
-        type: string
       highlights:
         description: "版本亮点，多条请用 | 分隔"
         required: true
@@ -16,9 +12,18 @@ on:
         required: true
         default: false
         type: boolean
+      replace_existing:
+        description: "覆盖同版本已有 Release（仅用于修复发布附件）"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
+
+concurrency:
+  group: unsigned-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -28,10 +33,12 @@ jobs:
     env:
       DERIVED_DATA: ${{ github.workspace }}/DerivedData
       ARTIFACT_NAME: SpendScope-macOS-unsigned.dmg
-      TAG: ${{ inputs.tag }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      VERSION_CONFIG: Config/Version.xcconfig
       RELEASE_HIGHLIGHTS: ${{ inputs.highlights }}
       RELEASE_NOTES_FILE: ${{ github.workspace }}/SpendScope-release-notes.md
       PRERELEASE: ${{ inputs.prerelease }}
+      REPLACE_EXISTING: ${{ inputs.replace_existing }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -40,13 +47,49 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate release branch
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+            echo "Releases must run from the default branch $DEFAULT_BRANCH, not $GITHUB_REF_NAME."
+            exit 1
+          fi
+
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Validate release version
+      - name: Load release version
+        run: |
+          marketing_version="$(awk -F '=' '/^[[:space:]]*MARKETING_VERSION[[:space:]]*=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' "$VERSION_CONFIG")"
+          build_number="$(awk -F '=' '/^[[:space:]]*CURRENT_PROJECT_VERSION[[:space:]]*=/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' "$VERSION_CONFIG")"
+
+          if [[ ! "$marketing_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid MARKETING_VERSION in $VERSION_CONFIG: ${marketing_version:-<missing>}"
+            exit 1
+          fi
+          if [[ ! "$build_number" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Invalid CURRENT_PROJECT_VERSION in $VERSION_CONFIG: ${build_number:-<missing>}"
+            exit 1
+          fi
+
+          tag="v$marketing_version"
+          if [[ "$PRERELEASE" == "true" ]]; then
+            tag="$tag-beta"
+          fi
+          {
+            echo "TAG=$tag"
+            echo "MARKETING_VERSION=$marketing_version"
+            echo "BUILD_NUMBER=$build_number"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate release target
         run: |
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
-            echo "Invalid tag: $TAG. Expected a semantic version such as v0.2.0 or v0.2.0-beta.1."
+            echo "Invalid tag: $TAG. Expected a semantic version such as v0.2.0 or v0.2.0-beta."
+            exit 1
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1 && [[ "$REPLACE_EXISTING" != "true" ]]; then
+            echo "Release $TAG already exists. Increment $VERSION_CONFIG before a new release, or enable replace_existing to repair its assets."
             exit 1
           fi
 
@@ -59,10 +102,13 @@ jobs:
             -showBuildSettings \
             > "$RUNNER_TEMP/SpendScope-build-settings.txt"
           project_version="$(awk '/ MARKETING_VERSION = / { print $3; exit }' "$RUNNER_TEMP/SpendScope-build-settings.txt")"
-          tag_version="${TAG#v}"
-          tag_version="${tag_version%%-*}"
-          if [[ -z "$project_version" || "$project_version" != "$tag_version" ]]; then
-            echo "Tag version $tag_version does not match MARKETING_VERSION ${project_version:-<missing>}."
+          project_build="$(awk '/ CURRENT_PROJECT_VERSION = / { print $3; exit }' "$RUNNER_TEMP/SpendScope-build-settings.txt")"
+          if [[ "$project_version" != "$MARKETING_VERSION" ]]; then
+            echo "Xcode MARKETING_VERSION ${project_version:-<missing>} does not match $VERSION_CONFIG ($MARKETING_VERSION)."
+            exit 1
+          fi
+          if [[ "$project_build" != "$BUILD_NUMBER" ]]; then
+            echo "Xcode CURRENT_PROJECT_VERSION ${project_build:-<missing>} does not match $VERSION_CONFIG ($BUILD_NUMBER)."
             exit 1
           fi
 

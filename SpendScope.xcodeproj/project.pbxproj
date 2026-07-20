@@ -81,6 +81,7 @@
 		B00000000000000000000042 /* AppUpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Support/AppUpdateService.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000043 /* AppUpdateServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/AppUpdateServiceTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000044 /* CodexAccountRateLimitReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexAccountRateLimitReader.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000045 /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
 		B00000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Settings/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000012 /* CodexEventDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/CodexEventDecoderTests.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000013 /* CodexEventModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Data/Codex/CodexEventModels.swift; sourceTree = SOURCE_ROOT; };
@@ -129,10 +130,19 @@
 		C00000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+				C00000000000000000000005 /* Config */,
 				C00000000000000000000002 /* Sources */,
 				C00000000000000000000003 /* Tests */,
 				C00000000000000000000004 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		C00000000000000000000005 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000045 /* Version.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		C00000000000000000000002 /* Sources */ = {
@@ -397,12 +407,12 @@
 		};
 		I00000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = B00000000000000000000045 /* Version.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = NO;
@@ -410,7 +420,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
 				OTHER_LDFLAGS = "$(inherited) -lsqlite3";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ychp.SpendScope;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -421,12 +430,12 @@
 		};
 		I00000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = B00000000000000000000045 /* Version.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = NO;
@@ -434,7 +443,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.1;
 				OTHER_LDFLAGS = "$(inherited) -lsqlite3";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ychp.SpendScope;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -12,6 +12,7 @@
 
 | 路径 | 级别 | 作用 | 是否进入 App |
 | --- | --- | --- | --- |
+| `Config/` | 核心 | 统一管理 App 的版本号和构建号 | 构建时使用 |
 | `Sources/` | 核心 | SpendScope 全部生产源码与资源 | 是 |
 | `SpendScope.xcodeproj/` | 核心 | Xcode 工程配置、Target、构建设置和共享 Scheme | 构建时使用 |
 | `Tests/` | 工程必备 | XCTest 单元与集成测试 | 否 |
@@ -26,7 +27,7 @@
 | `.worktrees/` | 可选 / 可再生 | 本地 Git worktree 临时目录，目前为空 | 否 |
 | `.DS_Store` | 可选 / 可删除 | Finder 自动生成的目录显示元数据 | 否 |
 
-结论：真正决定 App 功能的是 `Sources/` 与 `SpendScope.xcodeproj/`；测试、脚本、工作流和文档不进入安装包，但属于可维护、可发布项目的重要组成部分。
+结论：真正决定 App 功能和版本的是 `Config/`、`Sources/` 与 `SpendScope.xcodeproj/`；测试、脚本、工作流和文档不进入安装包，但属于可维护、可发布项目的重要组成部分。
 
 ## 2. 生产源码 `Sources/SpendScope/`
 
@@ -98,10 +99,16 @@ Features：菜单栏、看板和设置
 
 需要提交的文件只有：
 
-- `project.pbxproj`：Target、源码引用、版本、Bundle ID、部署版本和构建设置。
+- `project.pbxproj`：Target、源码引用、Bundle ID、部署版本和构建设置；Debug / Release 均引用 `Config/Version.xcconfig`。
 - `xcshareddata/xcschemes/SpendScope.xcscheme`：CI 与团队共享的 Scheme。
 
 `project.xcworkspace/`、`xcuserdata/` 和 `*.xcuserstate` 是 Xcode 自动生成的用户工作区状态，可删除并重新生成，不应提交。
+
+### `Config/` — 核心
+
+- `Version.xcconfig`：`MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION` 的唯一来源。
+
+新版本只修改这个文件。Xcode 自动将值写入 App Bundle，运行时代码从 Bundle 获取版本，GitHub Actions 也从同一文件生成 Release Tag。
 
 ### `script/` — 工程必备
 
@@ -114,7 +121,8 @@ Features：菜单栏、看板和设置
 
 `unsigned-release.yml` 负责：
 
-- 校验 Tag 与 `MARKETING_VERSION`。
+- 从 `Config/Version.xcconfig` 读取版本号和构建号并生成 Tag，无需发布者填写。
+- 校验 Xcode 实际构建版本与统一配置一致，并默认阻止覆盖已有版本。
 - 运行测试。
 - 构建并验证 `arm64 + x86_64` Universal App。
 - 生成未签名 DMG 和 SHA-256 校验文件。

@@ -80,15 +80,20 @@ protocol CodexAccountRateLimitReading: Sendable {
 struct CodexAppServerRateLimitReader: CodexAccountRateLimitReading, Sendable {
     private let executableURL: URL
     private let commandTimeout: DispatchTimeInterval
+    private let clientVersion: String
     private let now: @Sendable () -> Date
 
     init(
         executableURL: URL,
         commandTimeout: DispatchTimeInterval = .seconds(10),
+        clientVersion: String? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.executableURL = executableURL
         self.commandTimeout = commandTimeout
+        self.clientVersion = clientVersion
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "development"
         self.now = now
     }
 
@@ -110,11 +115,13 @@ struct CodexAppServerRateLimitReader: CodexAccountRateLimitReading, Sendable {
     func read() async throws -> CodexAccountRateLimits {
         let executableURL = executableURL
         let commandTimeout = commandTimeout
+        let clientVersion = clientVersion
         let observedAt = now()
         return try await Task.detached(priority: .utility) {
             let data = try Self.runAppServer(
                 executableURL: executableURL,
-                commandTimeout: commandTimeout
+                commandTimeout: commandTimeout,
+                clientVersion: clientVersion
             )
             return try Self.parse(data: data, observedAt: observedAt)
         }.value
@@ -154,7 +161,8 @@ struct CodexAppServerRateLimitReader: CodexAccountRateLimitReading, Sendable {
 
     private static func runAppServer(
         executableURL: URL,
-        commandTimeout: DispatchTimeInterval
+        commandTimeout: DispatchTimeInterval,
+        clientVersion: String
     ) throws -> Data {
         let process = Process()
         let standardInput = Pipe()
@@ -178,7 +186,7 @@ struct CodexAppServerRateLimitReader: CodexAccountRateLimitReading, Sendable {
         do {
             try process.run()
             let requests = """
-            {"id":1,"method":"initialize","params":{"clientInfo":{"name":"SpendScope","version":"0.1.1"},"capabilities":{}}}
+            {"id":1,"method":"initialize","params":{"clientInfo":{"name":"SpendScope","version":"\(clientVersion)"},"capabilities":{}}}
             {"id":2,"method":"account/rateLimits/read","params":null}
 
             """

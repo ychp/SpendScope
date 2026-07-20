@@ -163,8 +163,11 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 发布入口为 `.github/workflows/unsigned-release.yml`，只能在明确要求发布时触发。
 
-- 标签必须是 `v<语义化版本>`，例如 `v0.2.0`。
-- 标签中的基础版本必须与 Xcode `MARKETING_VERSION` 一致。
+- `Config/Version.xcconfig` 是工程版本的唯一来源；不得在 `project.pbxproj`、Swift 源码或文档中重复维护当前版本字面量。
+- 发布前更新并提交 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`；工作流只读取当前提交中的配置，不自动修改或推送版本文件。
+- Release Tag 由 `MARKETING_VERSION` 自动生成，必须指向触发工作流的 `GITHUB_SHA`。
+- 正式标签使用 `v<语义化版本>`；预发布标签固定使用 `v<版本>-beta`。
+- 已存在的同版本 Release 默认不得覆盖；仅修复发布附件时可显式启用 `replace_existing`。
 - Release App 必须使用 `ARCHS='arm64 x86_64'`、`ONLY_ACTIVE_ARCH=NO` 构建，并通过 `lipo` 验证。
 - Release 标题固定为 `SpendScope v<版本号>`。
 - 工作流只上传 `SpendScope-macOS-unsigned.dmg` 和对应 `.sha256`。
