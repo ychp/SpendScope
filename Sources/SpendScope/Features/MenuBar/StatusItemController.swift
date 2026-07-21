@@ -7,6 +7,39 @@ enum StatusItemQuotaPaletteRole: Equatable {
     case weekly
 }
 
+struct StatusItemQuotaPalette {
+    let start: NSColor
+    let end: NSColor
+    let background: NSColor
+    let progressTrack: NSColor
+    let text: NSColor
+    let border: NSColor
+
+    static func resolve(_ role: StatusItemQuotaPaletteRole) -> StatusItemQuotaPalette {
+        let text = NSColor(srgbRed: 0.055, green: 0.11, blue: 0.20, alpha: 1)
+        switch role {
+        case .fiveHour:
+            return StatusItemQuotaPalette(
+                start: NSColor(srgbRed: 0.055, green: 0.286, blue: 0.667, alpha: 1),
+                end: NSColor(srgbRed: 0.090, green: 0.365, blue: 0.780, alpha: 1),
+                background: NSColor(srgbRed: 0.90, green: 0.94, blue: 0.99, alpha: 1),
+                progressTrack: text.withAlphaComponent(0.14),
+                text: text,
+                border: text.withAlphaComponent(0.10)
+            )
+        case .weekly:
+            return StatusItemQuotaPalette(
+                start: NSColor(srgbRed: 0.149, green: 0.337, blue: 0.635, alpha: 1),
+                end: NSColor(srgbRed: 0.200, green: 0.431, blue: 0.737, alpha: 1),
+                background: NSColor(srgbRed: 0.925, green: 0.955, blue: 0.995, alpha: 1),
+                progressTrack: text.withAlphaComponent(0.14),
+                text: text,
+                border: text.withAlphaComponent(0.10)
+            )
+        }
+    }
+}
+
 enum StatusItemLayoutMetrics {
     static let imageHeight: CGFloat = 22
     static let itemOuterPadding: CGFloat = 8
@@ -126,12 +159,6 @@ struct StatusItemPresentation: Equatable {
 }
 
 struct StatusItemRenderer {
-    private struct Palette {
-        let start: NSColor
-        let end: NSColor
-        let track: NSColor
-    }
-
     func render(_ presentation: StatusItemPresentation, appearance: NSAppearance) -> NSImage {
         var renderedImage: NSImage?
         appearance.performAsCurrentDrawingAppearance {
@@ -201,51 +228,66 @@ struct StatusItemRenderer {
         paletteRole: StatusItemQuotaPaletteRole,
         in rect: NSRect
     ) {
-        let fillRect = drawLinearProgress(
+        let palette = StatusItemQuotaPalette.resolve(paletteRole)
+        drawValueBackground(in: rect, palette: palette)
+        drawLinearProgress(
             in: rect,
             fraction: fraction,
-            paletteRole: paletteRole
+            palette: palette
         )
         drawText(
             value,
-            in: NSRect(x: rect.minX, y: rect.minY + 2, width: rect.width, height: 12),
+            in: NSRect(x: rect.minX, y: rect.minY + 3, width: rect.width, height: 12),
             font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .bold),
-            color: NSColor.labelColor,
+            color: palette.text,
             alignment: .center
         )
-
-        if let fillRect {
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(rect: fillRect).addClip()
-            drawText(
-                value,
-                in: NSRect(x: rect.minX, y: rect.minY + 2, width: rect.width, height: 12),
-                font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .bold),
-                color: NSColor.white,
-                alignment: .center
-            )
-            NSGraphicsContext.restoreGraphicsState()
-        }
     }
 
-    @discardableResult
+    private func drawValueBackground(in rect: NSRect, palette: StatusItemQuotaPalette) {
+        let path = NSBezierPath(
+            roundedRect: rect,
+            xRadius: rect.height / 2,
+            yRadius: rect.height / 2
+        )
+        palette.background.setFill()
+        path.fill()
+        palette.border.setStroke()
+        path.lineWidth = 0.8
+        path.stroke()
+    }
+
     private func drawLinearProgress(
         in rect: NSRect,
         fraction: CGFloat,
-        paletteRole: StatusItemQuotaPaletteRole
-    ) -> NSRect? {
-        let palette = palette(for: paletteRole)
-        palette.track.setFill()
-        NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+        palette: StatusItemQuotaPalette
+    ) {
+        let progressRect = NSRect(
+            x: rect.minX + 5,
+            y: rect.minY + 2,
+            width: rect.width - 10,
+            height: 1.8
+        )
+        palette.progressTrack.setFill()
+        NSBezierPath(
+            roundedRect: progressRect,
+            xRadius: progressRect.height / 2,
+            yRadius: progressRect.height / 2
+        ).fill()
 
         let normalized = min(max(fraction, 0), 1)
-        guard normalized > 0 else { return nil }
-        let fillWidth = max(0.8, rect.width * normalized)
-        let fillRect = NSRect(x: rect.minX, y: rect.minY, width: fillWidth, height: rect.height)
+        guard normalized > 0 else { return }
+        let fillWidth = max(progressRect.height, progressRect.width * normalized)
+        let fillRect = NSRect(
+            x: progressRect.minX,
+            y: progressRect.minY,
+            width: fillWidth,
+            height: progressRect.height
+        )
         let fillPath = NSBezierPath(
             roundedRect: fillRect,
-            xRadius: min(rect.height / 2, fillWidth / 2),
-            yRadius: min(rect.height / 2, fillWidth / 2)
+            xRadius: fillRect.height / 2,
+            yRadius: fillRect.height / 2
         )
         guard let context = NSGraphicsContext.current?.cgContext,
               let gradient = CGGradient(
@@ -256,7 +298,7 @@ struct StatusItemRenderer {
         else {
             palette.end.setFill()
             fillPath.fill()
-            return fillRect
+            return
         }
         context.saveGState()
         fillPath.addClip()
@@ -267,7 +309,6 @@ struct StatusItemRenderer {
             options: []
         )
         context.restoreGState()
-        return fillRect
     }
 
     private func drawResetCountdown(_ value: String, x: CGFloat) {
@@ -294,23 +335,6 @@ struct StatusItemRenderer {
             color: color,
             alignment: .left
         )
-    }
-
-    private func palette(for role: StatusItemQuotaPaletteRole) -> Palette {
-        switch role {
-        case .fiveHour:
-            Palette(
-                start: NSColor(srgbRed: 0.09, green: 0.41, blue: 0.88, alpha: 1),
-                end: NSColor(srgbRed: 0.18, green: 0.50, blue: 0.93, alpha: 1),
-                track: NSColor(srgbRed: 0.87, green: 0.93, blue: 1, alpha: 1)
-            )
-        case .weekly:
-            Palette(
-                start: NSColor(srgbRed: 0.22, green: 0.56, blue: 0.96, alpha: 1),
-                end: NSColor(srgbRed: 0.45, green: 0.71, blue: 1, alpha: 1),
-                track: NSColor(srgbRed: 0.89, green: 0.95, blue: 1, alpha: 1)
-            )
-        }
     }
 
     private func drawText(

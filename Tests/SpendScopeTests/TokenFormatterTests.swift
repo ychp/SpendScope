@@ -297,6 +297,24 @@ final class StatusItemPresentationTests: XCTestCase {
         XCTAssertFalse(image.isTemplate)
     }
 
+    func testQuotaPillTextMaintainsReadableContrastAcrossEveryPaletteSurface() throws {
+        for role in [StatusItemQuotaPaletteRole.fiveHour, .weekly] {
+            let palette = StatusItemQuotaPalette.resolve(role)
+            XCTAssertGreaterThanOrEqual(
+                try contrastRatio(palette.text, palette.background),
+                4.5
+            )
+            XCTAssertGreaterThanOrEqual(
+                try contrastRatio(palette.start, palette.background),
+                3
+            )
+            XCTAssertGreaterThanOrEqual(
+                try contrastRatio(palette.end, palette.background),
+                3
+            )
+        }
+    }
+
     func testBuildsOnlyConfiguredQuotaMetrics() {
         let presentation = StatusItemPresentation(
             snapshot: .preview,
@@ -380,6 +398,25 @@ final class StatusItemPresentationTests: XCTestCase {
                 + StatusItemLayoutMetrics.richValueWidth
                 + 2
         )
+    }
+
+    private func contrastRatio(_ foreground: NSColor, _ background: NSColor) throws -> CGFloat {
+        let foregroundLuminance = try relativeLuminance(foreground)
+        let backgroundLuminance = try relativeLuminance(background)
+        return (max(foregroundLuminance, backgroundLuminance) + 0.05)
+            / (min(foregroundLuminance, backgroundLuminance) + 0.05)
+    }
+
+    private func relativeLuminance(_ color: NSColor) throws -> CGFloat {
+        let color = try XCTUnwrap(color.usingColorSpace(.sRGB))
+        func linearize(_ component: CGFloat) -> CGFloat {
+            component <= 0.04045
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linearize(color.redComponent)
+            + 0.7152 * linearize(color.greenComponent)
+            + 0.0722 * linearize(color.blueComponent)
     }
 }
 
