@@ -420,7 +420,7 @@ final class DashboardStore {
 
         let task = Task { @MainActor [weak self] in
             await self?.loadCached()
-            await self?.refreshUsage()
+            await self?.refresh()
             self?.launchBackfill()
             self?.launchAutomaticRefresh()
         }

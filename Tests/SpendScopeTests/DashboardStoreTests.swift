@@ -200,11 +200,13 @@ final class DashboardStoreTests: XCTestCase {
 
         let loadCachedCount = await client.loadCachedCount
         let refreshCount = await client.refreshCount
+        let quotaRefreshCount = await client.quotaRefreshCount
         let backfillCount = await client.backfillCount
         let sleepCount = await sleeper.callCount
         let requestedDurations = await sleeper.requestedDurations
         XCTAssertEqual(loadCachedCount, 1)
         XCTAssertEqual(refreshCount, 1)
+        XCTAssertEqual(quotaRefreshCount, 1)
         XCTAssertEqual(backfillCount, 1)
         XCTAssertEqual(sleepCount, 2)
         XCTAssertTrue(requestedDurations.contains(.seconds(60)))
@@ -230,10 +232,12 @@ final class DashboardStoreTests: XCTestCase {
 
         let loadCachedCount = await client.loadCachedCount
         let refreshCount = await client.refreshCount
+        let quotaRefreshCount = await client.quotaRefreshCount
         let sleepCount = await sleeper.callCount
         XCTAssertFalse(store.isAutomaticRefreshEnabled)
         XCTAssertEqual(loadCachedCount, 1)
         XCTAssertEqual(refreshCount, 1)
+        XCTAssertEqual(quotaRefreshCount, 1)
         XCTAssertEqual(sleepCount, 0)
     }
 

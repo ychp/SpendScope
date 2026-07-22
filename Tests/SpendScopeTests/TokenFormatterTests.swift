@@ -297,6 +297,31 @@ final class StatusItemPresentationTests: XCTestCase {
         XCTAssertFalse(image.isTemplate)
     }
 
+    func testStatusItemRendererPreservesTheCallersGraphicsTransform() throws {
+        let canvas = NSImage(size: NSSize(width: 320, height: 80))
+        canvas.lockFocus()
+        defer { canvas.unlockFocus() }
+
+        let context = try XCTUnwrap(NSGraphicsContext.current?.cgContext)
+        context.translateBy(x: 13, y: 7)
+        context.scaleBy(x: 1.25, y: 0.75)
+        let transformBeforeRendering = context.ctm
+        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+        let presentation = StatusItemPresentation(
+            snapshot: .preview,
+            configuration: .standard
+        )
+
+        _ = StatusItemRenderer().render(presentation, appearance: appearance)
+
+        XCTAssertEqual(context.ctm.a, transformBeforeRendering.a, accuracy: 0.000_001)
+        XCTAssertEqual(context.ctm.b, transformBeforeRendering.b, accuracy: 0.000_001)
+        XCTAssertEqual(context.ctm.c, transformBeforeRendering.c, accuracy: 0.000_001)
+        XCTAssertEqual(context.ctm.d, transformBeforeRendering.d, accuracy: 0.000_001)
+        XCTAssertEqual(context.ctm.tx, transformBeforeRendering.tx, accuracy: 0.000_001)
+        XCTAssertEqual(context.ctm.ty, transformBeforeRendering.ty, accuracy: 0.000_001)
+    }
+
     func testQuotaPillTextMaintainsReadableContrastAcrossEveryPaletteSurface() throws {
         for role in [StatusItemQuotaPaletteRole.fiveHour, .weekly] {
             let palette = StatusItemQuotaPalette.resolve(role)

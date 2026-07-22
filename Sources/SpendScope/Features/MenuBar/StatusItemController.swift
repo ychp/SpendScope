@@ -170,7 +170,9 @@ struct StatusItemRenderer {
     private func draw(_ presentation: StatusItemPresentation) -> NSImage {
         let image = NSImage(size: presentation.imageSize)
         image.lockFocus()
+        NSGraphicsContext.saveGraphicsState()
         defer {
+            NSGraphicsContext.restoreGraphicsState()
             image.unlockFocus()
             image.isTemplate = false
         }
@@ -363,19 +365,21 @@ struct StatusItemRenderer {
     }
 
     private func drawTintedImage(_ source: NSImage, color: NSColor, in rect: NSRect) {
-        let image = NSImage(size: rect.size)
-        image.lockFocus()
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
         source.draw(
-            in: NSRect(origin: .zero, size: rect.size),
+            in: rect,
             from: .zero,
             operation: .sourceOver,
             fraction: 1
         )
-        color.setFill()
-        NSRect(origin: .zero, size: rect.size).fill(using: .sourceIn)
-        image.unlockFocus()
-        image.isTemplate = false
-        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+        context.setBlendMode(.sourceIn)
+        context.setFillColor(color.cgColor)
+        context.fill(rect)
+        context.setBlendMode(.normal)
+        context.endTransparencyLayer()
     }
 }
 
