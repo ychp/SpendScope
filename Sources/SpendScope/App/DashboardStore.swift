@@ -34,6 +34,17 @@ enum DashboardDataResult: Sendable {
     case unsupported(String)
 }
 
+enum QuotaRefreshBlocker: Equatable, Sendable {
+    case proxyUnavailable
+
+    var message: String {
+        switch self {
+        case .proxyUnavailable:
+            "未检测到系统代理，额度刷新已暂停"
+        }
+    }
+}
+
 protocol DashboardDataClient: Sendable {
     func loadCached() async throws -> DashboardDataResult
     func refreshUsage() async throws -> DashboardDataResult
@@ -329,16 +340,20 @@ private actor UnavailableDashboardDataClient: DashboardDataClient {
 @Observable
 final class DashboardStore {
     typealias Sleeper = @Sendable (Duration) async throws -> Void
+    typealias ProxyStatusProvider = @Sendable () async -> Bool
 
     private(set) var state: DashboardLoadState = .loading
     private(set) var isRefreshing = false
     private(set) var isRebuildingData = false
     private(set) var isAutomaticRefreshEnabled: Bool
+    private(set) var quotaRefreshRequiresProxy: Bool
+    private(set) var quotaRefreshBlocker: QuotaRefreshBlocker?
     private(set) var sourceSummary: SourceSummary?
 
     private let client: any DashboardDataClient
     private let usageRefreshInterval: Duration
     private let quotaCheckInterval: Duration
+    private let proxyStatusProvider: ProxyStatusProvider
     private let sleeper: Sleeper
     private var hasLoadedCached = false
     private var hasStarted = false
@@ -359,6 +374,8 @@ final class DashboardStore {
         usageRefreshInterval: Duration = .seconds(60),
         quotaCheckInterval: Duration = .seconds(120),
         automaticRefreshEnabled: Bool = true,
+        quotaRefreshRequiresProxy: Bool = false,
+        proxyStatusProvider: @escaping ProxyStatusProvider = { LocalProxyStatus.isEnabled() },
         sleeper: @escaping Sleeper = { duration in
             try await ContinuousClock().sleep(for: duration)
         }
@@ -367,6 +384,8 @@ final class DashboardStore {
         self.usageRefreshInterval = usageRefreshInterval
         self.quotaCheckInterval = quotaCheckInterval
         isAutomaticRefreshEnabled = automaticRefreshEnabled
+        self.quotaRefreshRequiresProxy = quotaRefreshRequiresProxy
+        self.proxyStatusProvider = proxyStatusProvider
         self.sleeper = sleeper
     }
 
@@ -389,9 +408,11 @@ final class DashboardStore {
         let automaticRefreshEnabled = UserDefaults.standard.object(
             forKey: AppPreferenceKeys.automaticRefreshEnabled
         ) as? Bool ?? true
+        let quotaRefreshRequiresProxy = QuotaRefreshProxyPolicy.requiresEnabledProxy()
         let store = DashboardStore(
             client: client,
-            automaticRefreshEnabled: automaticRefreshEnabled
+            automaticRefreshEnabled: automaticRefreshEnabled,
+            quotaRefreshRequiresProxy: quotaRefreshRequiresProxy
         )
         Task { @MainActor [weak store] in
             await store?.start()
@@ -496,16 +517,25 @@ final class DashboardStore {
         }
         guard force || quotaRefreshNeeded else { return }
 
-        quotaRefreshNeeded = false
         let client = self.client
-        let task = Task { @MainActor [weak self, client] in
+        let requiresProxy = quotaRefreshRequiresProxy
+        let proxyStatusProvider = self.proxyStatusProvider
+        let task = Task { @MainActor [weak self, client, proxyStatusProvider] in
+            if requiresProxy, !(await proxyStatusProvider()) {
+                self?.quotaRefreshNeeded = true
+                self?.quotaRefreshBlocker = .proxyUnavailable
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.quotaRefreshBlocker = nil
+            self.quotaRefreshNeeded = false
             do {
                 let result = try await client.refreshQuota()
                 guard !Task.isCancelled else { return }
-                self?.publish(result)
+                self.publish(result)
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.quotaRefreshNeeded = true
+                self.quotaRefreshNeeded = true
             }
         }
         inFlightQuotaRefresh = task
@@ -565,6 +595,13 @@ final class DashboardStore {
             automaticUsageRefreshTask = nil
             automaticQuotaCheckTask?.cancel()
             automaticQuotaCheckTask = nil
+        }
+    }
+
+    func setQuotaRefreshRequiresProxy(_ isRequired: Bool) {
+        quotaRefreshRequiresProxy = isRequired
+        if !isRequired {
+            quotaRefreshBlocker = nil
         }
     }
 

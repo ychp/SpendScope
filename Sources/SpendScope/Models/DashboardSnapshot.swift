@@ -294,6 +294,31 @@ struct QuotaSnapshot: Identifiable, Sendable {
         resetInterval(now: now).map { "\($0.amount) \($0.chineseUnit)后重置" }
     }
 
+    func detailedResetDescription(now: Date = Date()) -> String? {
+        guard let seconds = resetSeconds(now: now) else { return nil }
+        let totalMinutes = max(1, Int(ceil(seconds / 60)))
+        let days = totalMinutes / (24 * 60)
+        let hours = totalMinutes % (24 * 60) / 60
+        let minutes = totalMinutes % 60
+
+        if days > 0 {
+            if hours > 0 {
+                return "\(days) 天 \(hours) 小时后重置"
+            }
+            if minutes > 0 {
+                return "\(days) 天 \(minutes) 分钟后重置"
+            }
+            return "\(days) 天后重置"
+        }
+        if hours > 0 {
+            if minutes > 0 {
+                return "\(hours) 小时 \(minutes) 分钟后重置"
+            }
+            return "\(hours) 小时后重置"
+        }
+        return "\(totalMinutes) 分钟后重置"
+    }
+
     func observationDescription(now: Date = Date()) -> String? {
         guard let observedAt else { return nil }
         let seconds = max(now.timeIntervalSince(observedAt), 0)
@@ -304,9 +329,7 @@ struct QuotaSnapshot: Identifiable, Sendable {
     }
 
     private func resetInterval(now: Date) -> (amount: Int, compactUnit: String, chineseUnit: String)? {
-        guard let resetsAt else { return nil }
-        let seconds = resetsAt.timeIntervalSince(now)
-        guard seconds > 0 else { return nil }
+        guard let seconds = resetSeconds(now: now) else { return nil }
 
         if seconds < 3_600 {
             return (max(1, Int(ceil(seconds / 60))), "m", "分钟")
@@ -314,7 +337,13 @@ struct QuotaSnapshot: Identifiable, Sendable {
         if seconds < 86_400 {
             return (max(1, Int(ceil(seconds / 3_600))), "h", "小时")
         }
-        return (max(1, Int(floor(seconds / 86_400))), "d", "天")
+        return (max(1, Int(ceil(seconds / 86_400))), "d", "天")
+    }
+
+    private func resetSeconds(now: Date) -> TimeInterval? {
+        guard let resetsAt else { return nil }
+        let seconds = resetsAt.timeIntervalSince(now)
+        return seconds > 0 ? seconds : nil
     }
 }
 

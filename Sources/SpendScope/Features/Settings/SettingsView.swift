@@ -77,6 +77,8 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKeys.dashboardCloseBehavior)
     private var dashboardCloseBehaviorRaw = DashboardCloseBehavior.closeDashboard.rawValue
     @AppStorage(AppPreferenceKeys.automaticRefreshEnabled) private var automaticRefreshEnabled = true
+    @AppStorage(AppPreferenceKeys.quotaRefreshRequiresProxy)
+    private var quotaRefreshRequiresProxy = false
     @AppStorage(AppPreferenceKeys.usageRemindersEnabled) private var usageRemindersEnabled = false
     @AppStorage(AppPreferenceKeys.remindsFiveHour) private var remindsFiveHour = true
     @AppStorage(AppPreferenceKeys.remindsWeekly) private var remindsWeekly = true
@@ -356,6 +358,22 @@ struct SettingsView: View {
                     }
                 }
                 settingsDivider
+                preferenceRow(
+                    "额度刷新检查代理",
+                    detail: quotaRefreshRequiresProxy
+                        ? "仅检测到系统代理已开启时刷新额度"
+                        : "关闭时刷新额度不会检查系统代理"
+                ) {
+                    HStack(spacing: 10) {
+                        Text(quotaRefreshRequiresProxy ? "已开启" : "已关闭")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Toggle("", isOn: quotaRefreshRequiresProxyBinding)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+                }
+                settingsDivider
                 settingsRow {
                     settingLabel("手动刷新", detail: "立即重新读取本机 Codex 数据")
                 } control: {
@@ -589,6 +607,16 @@ struct SettingsView: View {
             set: { isEnabled in
                 automaticRefreshEnabled = isEnabled
                 store.setAutomaticRefreshEnabled(isEnabled)
+            }
+        )
+    }
+
+    private var quotaRefreshRequiresProxyBinding: Binding<Bool> {
+        Binding(
+            get: { quotaRefreshRequiresProxy },
+            set: { isRequired in
+                quotaRefreshRequiresProxy = isRequired
+                store.setQuotaRefreshRequiresProxy(isRequired)
             }
         )
     }

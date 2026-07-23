@@ -110,6 +110,28 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(DashboardCloseBehavior.load(from: defaults), .closeDashboard)
     }
 
+    func testQuotaRefreshProxyPolicyDefaultsToDisabledAndPersistsSelection() {
+        let suiteName = "QuotaRefreshProxyPolicyTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertFalse(QuotaRefreshProxyPolicy.requiresEnabledProxy(from: defaults))
+        defaults.set(true, forKey: AppPreferenceKeys.quotaRefreshRequiresProxy)
+        XCTAssertTrue(QuotaRefreshProxyPolicy.requiresEnabledProxy(from: defaults))
+        defaults.set(false, forKey: AppPreferenceKeys.quotaRefreshRequiresProxy)
+        XCTAssertFalse(QuotaRefreshProxyPolicy.requiresEnabledProxy(from: defaults))
+    }
+
+    func testLocalProxyStatusRecognizesSystemProxyModes() {
+        XCTAssertFalse(LocalProxyStatus.isEnabled(in: [:]))
+        XCTAssertFalse(LocalProxyStatus.isEnabled(in: ["HTTPEnable": 0]))
+        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["HTTPEnable": 1]))
+        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["HTTPSEnable": true]))
+        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["SOCKSEnable": 1]))
+        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["ProxyAutoConfigEnable": 1]))
+        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["ProxyAutoDiscoveryEnable": 1]))
+    }
+
     func testUsageCalendarBuildsMondayFirstSixWeekGrid() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
@@ -209,6 +231,22 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(
             MenuBarQuotaResetText.text(for: fallbackQuota, now: now),
             "2026-07-22 10:08 重置"
+        )
+    }
+
+    func testMenuQuotaResetTextShowsDetailedDayAndHourCountdown() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let quota = QuotaSnapshot(
+            id: "7d",
+            title: "7 天",
+            remaining: 0.52,
+            resetText: "",
+            resetsAt: now.addingTimeInterval(5 * 86_400 + 22 * 3_600 + 37 * 60)
+        )
+
+        XCTAssertEqual(
+            MenuBarQuotaResetText.text(for: quota, now: now),
+            "5 天 22 小时后重置"
         )
     }
 
@@ -650,6 +688,13 @@ final class DashboardSnapshotTests: XCTestCase {
             QuotaSnapshot(
                 id: "7d", title: "7 天", remaining: 0.8, resetText: "",
                 resetsAt: now.addingTimeInterval(6 * 86_400 + 23 * 3_600)
+            ).resetCountdown(now: now),
+            "7d"
+        )
+        XCTAssertEqual(
+            QuotaSnapshot(
+                id: "7d", title: "7 天", remaining: 0.8, resetText: "",
+                resetsAt: now.addingTimeInterval(5 * 86_400 + 22 * 3_600)
             ).resetCountdown(now: now),
             "6d"
         )

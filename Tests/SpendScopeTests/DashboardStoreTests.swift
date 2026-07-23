@@ -300,6 +300,90 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertEqual(quotaRefreshCount, 2)
     }
 
+    func testQuotaRefreshDoesNotCheckProxyWhenRequirementIsDisabled() async {
+        let snapshot = DashboardSnapshot.fixture(todayTokens: 10)
+        let proxy = ProxyStatusProbe(isEnabled: false)
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(snapshot, .fixture),
+            refreshResults: []
+        )
+        let store = DashboardStore(
+            client: client,
+            automaticRefreshEnabled: false,
+            proxyStatusProvider: { await proxy.check() }
+        )
+
+        await store.loadCached()
+        await store.refreshQuotaIfNeeded()
+
+        let quotaRefreshCount = await client.quotaRefreshCount
+        let proxyCheckCount = await proxy.checkCount
+        XCTAssertEqual(quotaRefreshCount, 1)
+        XCTAssertEqual(proxyCheckCount, 0)
+        XCTAssertNil(store.quotaRefreshBlocker)
+    }
+
+    func testQuotaRefreshWaitsForRequiredProxyAndRetriesWhenItStarts() async {
+        let snapshot = DashboardSnapshot.fixture(todayTokens: 10)
+        let proxy = ProxyStatusProbe(isEnabled: false)
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(snapshot, .fixture),
+            refreshResults: []
+        )
+        let store = DashboardStore(
+            client: client,
+            automaticRefreshEnabled: false,
+            quotaRefreshRequiresProxy: true,
+            proxyStatusProvider: { await proxy.check() }
+        )
+
+        await store.loadCached()
+        await store.refreshQuotaIfNeeded()
+        await store.refreshQuotaIfNeeded()
+        var quotaRefreshCount = await client.quotaRefreshCount
+        var proxyCheckCount = await proxy.checkCount
+        XCTAssertEqual(quotaRefreshCount, 0)
+        XCTAssertEqual(proxyCheckCount, 2)
+        XCTAssertEqual(store.quotaRefreshBlocker, .proxyUnavailable)
+
+        await proxy.setEnabled(true)
+        await store.refreshQuotaIfNeeded()
+        await store.refreshQuotaIfNeeded()
+        quotaRefreshCount = await client.quotaRefreshCount
+        proxyCheckCount = await proxy.checkCount
+        XCTAssertEqual(quotaRefreshCount, 1)
+        XCTAssertEqual(proxyCheckCount, 3)
+        XCTAssertNil(store.quotaRefreshBlocker)
+    }
+
+    func testStartupSkipsQuotaWhenRequiredProxyIsDisabled() async {
+        let snapshot = DashboardSnapshot.fixture(todayTokens: 10)
+        let proxy = ProxyStatusProbe(isEnabled: false)
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(snapshot, .fixture),
+            refreshResults: [.loaded(snapshot, .fixture)]
+        )
+        let store = DashboardStore(
+            client: client,
+            automaticRefreshEnabled: false,
+            quotaRefreshRequiresProxy: true,
+            proxyStatusProvider: { await proxy.check() }
+        )
+
+        await store.start()
+
+        let usageRefreshCount = await client.refreshCount
+        let quotaRefreshCount = await client.quotaRefreshCount
+        let proxyCheckCount = await proxy.checkCount
+        XCTAssertEqual(usageRefreshCount, 1)
+        XCTAssertEqual(quotaRefreshCount, 0)
+        XCTAssertEqual(proxyCheckCount, 1)
+        XCTAssertEqual(store.quotaRefreshBlocker, .proxyUnavailable)
+
+        store.setQuotaRefreshRequiresProxy(false)
+        XCTAssertNil(store.quotaRefreshBlocker)
+    }
+
     func testManualRefreshAlwaysRefreshesQuotaAndConsumesPendingNeed() async {
         let snapshot = DashboardSnapshot.fixture(todayTokens: 10)
         let client = FakeDashboardDataClient(
@@ -766,6 +850,24 @@ private actor CountingAccountRateLimitReader: CodexAccountRateLimitReading {
 
 private struct FailingAccountRateLimitReader: CodexAccountRateLimitReading {
     func read() async throws -> CodexAccountRateLimits { throw FakeClientError.fixture }
+}
+
+private actor ProxyStatusProbe {
+    private var isEnabled: Bool
+    private(set) var checkCount = 0
+
+    init(isEnabled: Bool) {
+        self.isEnabled = isEnabled
+    }
+
+    func check() -> Bool {
+        checkCount += 1
+        return isEnabled
+    }
+
+    func setEnabled(_ isEnabled: Bool) {
+        self.isEnabled = isEnabled
+    }
 }
 
 private actor FakeDashboardDataClient: DashboardDataClient {

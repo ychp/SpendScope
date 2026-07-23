@@ -17,7 +17,11 @@ struct DashboardView: View {
                     description: "SpendScope 正在读取已保存的本地统计。"
                 )
             case .loaded(let snapshot, _):
-                DashboardContentView(snapshot: snapshot, isCollapsed: isCollapsed)
+                DashboardContentView(
+                    snapshot: snapshot,
+                    isCollapsed: isCollapsed,
+                    quotaRefreshBlocker: store.quotaRefreshBlocker
+                )
             case .empty:
                 unavailableView(
                     "未检测到 Codex 数据",
@@ -25,7 +29,11 @@ struct DashboardView: View {
                     description: "使用 Codex 后刷新即可在这里查看 Token 用量。"
                 )
             case .stale(let snapshot, _, let message):
-                DashboardContentView(snapshot: snapshot, isCollapsed: isCollapsed)
+                DashboardContentView(
+                    snapshot: snapshot,
+                    isCollapsed: isCollapsed,
+                    quotaRefreshBlocker: store.quotaRefreshBlocker
+                )
                     .overlay(alignment: .topTrailing) {
                         if !isCollapsed {
                             Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -246,6 +254,7 @@ private final class DashboardWindowSizingView: NSView {
 private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
     let isCollapsed: Bool
+    let quotaRefreshBlocker: QuotaRefreshBlocker?
     @State private var selectedRange = TrendRange.defaultRange
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
     @State private var selectedActivityRange = ActivityRange.defaultRange
@@ -348,6 +357,18 @@ private struct DashboardContentView: View {
                         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
                         .accessibilityLabel(officialQuotaSyncText)
                 }
+            }
+
+            if let quotaRefreshBlocker {
+                Label(
+                    quotaRefreshBlocker.message,
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .accessibilityLabel(quotaRefreshBlocker.message)
             }
 
             if snapshot.visibleQuotas.isEmpty {
