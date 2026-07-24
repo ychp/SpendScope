@@ -199,6 +199,58 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertFalse(allTime.entries.contains { $0.id == "project-future" })
     }
 
+    func testProjectUsageIncludesConversationsSortedByLastMessageWithUsageSortAvailable() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let recentMessageAt = Int64((now.addingTimeInterval(-60).timeIntervalSince1970 * 1_000).rounded())
+        let olderMessageAt = Int64((now.addingTimeInterval(-120).timeIntervalSince1970 * 1_000).rounded())
+        let project = ProjectIdentity(id: "project-a", name: "SpendScope")
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "recent-a", at: now.addingTimeInterval(-30), total: 30,
+                    project: project, threadID: "recent-thread"
+                ),
+                usage(
+                    "recent-b", at: now.addingTimeInterval(-20), total: 20,
+                    project: project, threadID: "recent-thread"
+                ),
+                usage(
+                    "older", at: now.addingTimeInterval(-10), total: 100,
+                    project: project, threadID: "older-thread"
+                )
+            ],
+            quotas: [],
+            sessions: [
+                session(threadID: "recent-thread", updatedAtMilliseconds: recentMessageAt),
+                session(threadID: "older-thread", updatedAtMilliseconds: olderMessageAt)
+            ]
+        ))
+
+        let ranking = try DashboardQueryService(store: store)
+            .snapshot(
+                now: now,
+                calendar: .current,
+                threadTitlesByThreadID: ["recent-thread": "项目用量对话名称"]
+            )
+            .projectUsage
+            .ranking(for: .allTime)
+        let entry = try XCTUnwrap(ranking.entries.first)
+
+        XCTAssertEqual(entry.conversations.map(\.tokens), [50, 100])
+        XCTAssertEqual(
+            entry.conversations.map(\.lastMessageAtMilliseconds),
+            [recentMessageAt, olderMessageAt]
+        )
+        XCTAssertTrue(entry.conversations.allSatisfy { $0.shortThreadID.hasPrefix("thread-") })
+        XCTAssertFalse(entry.conversations.contains { $0.shortThreadID == "recent-thread" })
+        XCTAssertEqual(entry.conversations.map(\.displayTitle), ["项目用量对话名称", nil])
+        XCTAssertEqual(
+            ProjectConversationSortOrder.usage.sorted(entry.conversations).map(\.tokens),
+            [100, 50]
+        )
+    }
+
     func testBuildsModelUsageRankingBreakdownAndStandardAPIEstimate() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
@@ -547,12 +599,13 @@ final class DashboardQueryServiceTests: XCTestCase {
         usage: TokenUsageDelta? = nil,
         model: String = "test-model",
         planRaw: String = "plus",
-        project: ProjectIdentity = .unknown
+        project: ProjectIdentity = .unknown,
+        threadID: String = "thread-1"
     ) -> StoredUsageEvent {
         StoredUsageEvent(
             fingerprint: fingerprint,
             observedAtMilliseconds: Int64((date.timeIntervalSince1970 * 1_000).rounded()),
-            threadID: "thread-1",
+            threadID: threadID,
             sourceKind: .cli,
             model: model,
             plan: PlanResolver.resolve(rawValue: planRaw),
@@ -560,6 +613,31 @@ final class DashboardQueryServiceTests: XCTestCase {
             sourceFileID: "file-1",
             sourceOffset: 1,
             project: project
+        )
+    }
+
+    private func session(
+        threadID: String,
+        updatedAtMilliseconds: Int64
+    ) -> StoredSession {
+        StoredSession(
+            threadID: threadID,
+            sourceKind: .cli,
+            createdAtMilliseconds: updatedAtMilliseconds - 1_000,
+            updatedAtMilliseconds: updatedAtMilliseconds,
+            state: SessionStateSnapshot(
+                threadID: threadID,
+                activity: .completed,
+                archive: .active,
+                childEdgeStatus: nil,
+                activeTurnID: nil,
+                lastActivityAtMilliseconds: updatedAtMilliseconds,
+                lastActivityEventKey: "\(threadID):1",
+                archiveObservedAtMilliseconds: nil
+            ),
+            lastModel: "test-model",
+            lastPlan: .plus,
+            sourceFileID: "file-1"
         )
     }
 
@@ -606,7 +684,8 @@ final class DashboardQueryServiceTests: XCTestCase {
     private func batch(
         events: [StoredUsageEvent],
         quotas: [StoredQuotaEvent],
-        activityEvents: [StoredActivityEvent] = []
+        activityEvents: [StoredActivityEvent] = [],
+        sessions: [StoredSession] = []
     ) -> ImportBatch {
         ImportBatch(
             file: FileCheckpoint(
@@ -619,7 +698,7 @@ final class DashboardQueryServiceTests: XCTestCase {
             quotaEvents: quotas,
             stateEvents: [],
             activityEvents: activityEvents,
-            sessions: [],
+            sessions: sessions,
             threadCheckpoints: []
         )
     }

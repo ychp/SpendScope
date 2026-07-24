@@ -121,7 +121,7 @@ final class SessionQueryService: @unchecked Sendable {
     }
 }
 
-private enum ThreadDisplayIdentifier {
+enum ThreadDisplayIdentifier {
     static func make(from threadID: String) -> String {
         let digest = SHA256.hash(data: Data(threadID.utf8))
         let prefix = digest.prefix(4).map { String(format: "%02x", $0) }.joined()

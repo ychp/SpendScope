@@ -54,8 +54,10 @@ protocol DashboardDataClient: Sendable {
 }
 
 actor LiveDashboardDataClient: DashboardDataClient {
+    private let codexRootURL: URL
     private let store: UsageStore
     private let importer: CodexImporter
+    private let sourceDiscovery: CodexSourceDiscovery
     private let queryService: DashboardQueryService
     private let now: @Sendable () -> Date
     private let calendar: Calendar
@@ -82,12 +84,14 @@ actor LiveDashboardDataClient: DashboardDataClient {
             withIntermediateDirectories: true
         )
         let store = try UsageStore(databaseURL: databaseURL)
+        self.codexRootURL = codexRootURL
         self.store = store
         importer = CodexImporter(
             rootURL: codexRootURL,
             store: store,
             calendar: calendar
         )
+        sourceDiscovery = CodexSourceDiscovery(fileManager: fileManager)
         queryService = DashboardQueryService(store: store)
         self.now = now
         self.calendar = calendar
@@ -228,10 +232,12 @@ actor LiveDashboardDataClient: DashboardDataClient {
         await beforeQuery()
         try Task.checkCancellation()
         let currentDate = now()
+        let threadTitlesByThreadID = sourceDiscovery.threadDisplayTitles(rootURL: codexRootURL)
         let storedSnapshot = try queryService.snapshot(
             now: currentDate,
             calendar: calendar,
-            usageCalendar: usageCalendar
+            usageCalendar: usageCalendar,
+            threadTitlesByThreadID: threadTitlesByThreadID
         )
         let cachedAccountRateLimits: CodexAccountRateLimits?
         do {

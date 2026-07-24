@@ -20,7 +20,8 @@ final class DashboardQueryService: @unchecked Sendable {
     func snapshot(
         now: Date,
         calendar: Calendar,
-        usageCalendar: Calendar? = nil
+        usageCalendar: Calendar? = nil,
+        threadTitlesByThreadID: [String: String] = [:]
     ) throws -> DashboardSnapshot {
         let todayStart = calendar.startOfDay(for: now)
         let resolvedUsageCalendar = usageCalendar ?? calendar
@@ -49,6 +50,12 @@ final class DashboardQueryService: @unchecked Sendable {
         )
         let allRows = try store.usageEvents()
         let trendRows = try store.usageEvents(toMilliseconds: end)
+        let sessionLastMessageTimes = try store.sessions().reduce(into: [String: Int64]()) {
+            result, session in
+            if let updatedAtMilliseconds = session.updatedAtMilliseconds {
+                result[session.threadID] = updatedAtMilliseconds
+            }
+        }
 
         let periods = try [
             period(id: "today", title: "今日", rows: todayRows),
@@ -73,10 +80,26 @@ final class DashboardQueryService: @unchecked Sendable {
             allTime: try activityRanking(fromMilliseconds: nil, toMilliseconds: end)
         )
         let projectUsage = ProjectUsageSnapshot(
-            today: try projectRanking(from: todayRows),
-            sevenDays: try projectRanking(from: sevenDayRows),
-            thirtyDays: try projectRanking(from: thirtyDayRows),
-            allTime: try projectRanking(from: allRows.filter { $0.observedAtMilliseconds < end })
+            today: try projectRanking(
+                from: todayRows,
+                sessionLastMessageTimes: sessionLastMessageTimes,
+                threadTitlesByThreadID: threadTitlesByThreadID
+            ),
+            sevenDays: try projectRanking(
+                from: sevenDayRows,
+                sessionLastMessageTimes: sessionLastMessageTimes,
+                threadTitlesByThreadID: threadTitlesByThreadID
+            ),
+            thirtyDays: try projectRanking(
+                from: thirtyDayRows,
+                sessionLastMessageTimes: sessionLastMessageTimes,
+                threadTitlesByThreadID: threadTitlesByThreadID
+            ),
+            allTime: try projectRanking(
+                from: allRows.filter { $0.observedAtMilliseconds < end },
+                sessionLastMessageTimes: sessionLastMessageTimes,
+                threadTitlesByThreadID: threadTitlesByThreadID
+            )
         )
         let modelUsage = ModelUsageSnapshot(
             today: try modelRanking(from: todayRows),
@@ -154,7 +177,11 @@ final class DashboardQueryService: @unchecked Sendable {
         )
     }
 
-    private func projectRanking(from rows: [StoredUsageQueryRow]) throws -> ProjectUsageRanking {
+    private func projectRanking(
+        from rows: [StoredUsageQueryRow],
+        sessionLastMessageTimes: [String: Int64],
+        threadTitlesByThreadID: [String: String]
+    ) throws -> ProjectUsageRanking {
         var identityGraph = ProjectUsageIdentityGraph()
         for row in rows {
             let pathNode = ProjectUsageIdentityNode(
@@ -174,6 +201,8 @@ final class DashboardQueryService: @unchecked Sendable {
         }
 
         var totals: [ProjectUsageIdentityNode: ProjectUsageAccumulator] = [:]
+        var conversationTotals:
+            [ProjectUsageIdentityNode: [String: ProjectConversationUsageAccumulator]] = [:]
         var overall: Int64 = 0
         for row in rows {
             let pathNode = ProjectUsageIdentityNode(
@@ -189,12 +218,29 @@ final class DashboardQueryService: @unchecked Sendable {
                 representativePathID: min(current.representativePathID, row.project.id),
                 tokens: try checkedAdd(current.tokens, row.totalTokens, context: "project.total")
             )
+            let currentConversation = conversationTotals[key]?[row.threadID]
+                ?? ProjectConversationUsageAccumulator(
+                    tokens: 0,
+                    lastUsageAtMilliseconds: row.observedAtMilliseconds
+                )
+            conversationTotals[key, default: [:]][row.threadID] =
+                ProjectConversationUsageAccumulator(
+                    tokens: try checkedAdd(
+                        currentConversation.tokens,
+                        row.totalTokens,
+                        context: "project.conversation.total"
+                    ),
+                    lastUsageAtMilliseconds: max(
+                        currentConversation.lastUsageAtMilliseconds,
+                        row.observedAtMilliseconds
+                    )
+                )
             overall = try checkedAdd(overall, row.totalTokens, context: "projects.total")
         }
         guard overall > 0 else { return .empty }
 
         let ordered = totals.map { key, value in
-            (id: value.representativePathID, name: key.name, tokens: value.tokens)
+            (key: key, id: value.representativePathID, name: key.name, tokens: value.tokens)
         }.sorted { left, right in
             if left.tokens != right.tokens { return left.tokens > right.tokens }
             if left.name != right.name { return left.name < right.name }
@@ -202,11 +248,22 @@ final class DashboardQueryService: @unchecked Sendable {
         }
         return ProjectUsageRanking(
             entries: ordered.map { entry in
-                ProjectUsageEntry(
+                let conversations = (conversationTotals[entry.key] ?? [:]).map {
+                    threadID, aggregate in
+                    ProjectConversationUsage(
+                        shortThreadID: ThreadDisplayIdentifier.make(from: threadID),
+                        displayTitle: threadTitlesByThreadID[threadID],
+                        tokens: Int(clamping: aggregate.tokens),
+                        lastMessageAtMilliseconds: sessionLastMessageTimes[threadID]
+                            ?? aggregate.lastUsageAtMilliseconds
+                    )
+                }
+                return ProjectUsageEntry(
                     id: entry.id,
                     name: entry.name,
                     tokens: Int(clamping: entry.tokens),
-                    share: min(max(Double(entry.tokens) / Double(overall), 0), 1)
+                    share: min(max(Double(entry.tokens) / Double(overall), 0), 1),
+                    conversations: ProjectConversationSortOrder.defaultOrder.sorted(conversations)
                 )
             },
             totalTokens: Int(clamping: overall),
@@ -420,6 +477,11 @@ private struct ProjectUsageIdentityGraph {
 private struct ProjectUsageAccumulator {
     let representativePathID: String
     let tokens: Int64
+}
+
+private struct ProjectConversationUsageAccumulator {
+    let tokens: Int64
+    let lastUsageAtMilliseconds: Int64
 }
 
 enum DashboardQueryError: Error, Equatable {

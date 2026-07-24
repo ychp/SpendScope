@@ -129,7 +129,7 @@ xattr -dr com.apple.quarantine /Applications/SpendScope.app
 | 可见输出 | 回复中可见内容使用的输出 Token |
 | 推理 | 模型内部推理使用的 Token |
 | Skills / Tools | 本机记录中识别出的调用次数 |
-| 项目用量 | 优先按项目名汇总；同名目录通过 Git 仓库指纹识别，属于同一仓库时合并统计 |
+| 项目用量 | 优先按项目名汇总；同名目录通过 Git 仓库指纹识别，属于同一仓库时合并统计；展开后可按最近消息或用量查看任务 |
 | 模型用量 | 按模型汇总四类 Token，并提供今日、7 日、30 日和累计排行 |
 | API 等值费用 | 按内置公开 API 标准价格目录估算；不等同于 Codex 订阅账单，未定价模型不计入总额 |
 
@@ -139,7 +139,9 @@ xattr -dr com.apple.quarantine /Applications/SpendScope.app
 
 SpendScope 只读取统计所需的本机 Codex 字段，例如 Token 计数、额度窗口、模型、套餐、会话来源、工作目录以及 Skills / Tools 调用标识。识别同名项目时还会读取 Git remote、根提交或公共 Git 目录，并且只保存由这些信息生成的哈希指纹，不保存原始 Git 地址或项目路径。
 
-它不会读取、保存或上传以下内容：
+项目用量展开后会显示 Codex 页面上的任务名称。该名称仅从最新 `state_*.sqlite` 的 `threads.name` / `threads.title` 字段只读获取、临时保留在内存中，不会写入 SpendScope 数据库、日志或上传。系统上下文模板不会直接作为名称展示：可识别的 Guardian / 子任务会显示安全的任务类型名称，其余不可用名称回退为匿名任务标识。
+
+除上述只读展示名称外，它不会读取、保存或上传以下内容：
 
 - 提示词、消息、回复、摘要和推理正文；
 - 工具输入、文件内容或项目代码；

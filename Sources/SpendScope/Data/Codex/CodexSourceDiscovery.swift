@@ -18,10 +18,33 @@ struct ThreadIndexRecord: Equatable, Sendable {
     let rolloutPath: String
     let sourceRaw: String
     let model: String?
+    let displayTitle: String?
     let createdAtMilliseconds: Int64
     let updatedAtMilliseconds: Int64
     let archived: Bool
     let childEdgeStatus: String?
+
+    init(
+        threadID: String,
+        rolloutPath: String,
+        sourceRaw: String,
+        model: String?,
+        displayTitle: String? = nil,
+        createdAtMilliseconds: Int64,
+        updatedAtMilliseconds: Int64,
+        archived: Bool,
+        childEdgeStatus: String?
+    ) {
+        self.threadID = threadID
+        self.rolloutPath = rolloutPath
+        self.sourceRaw = sourceRaw
+        self.model = model
+        self.displayTitle = displayTitle
+        self.createdAtMilliseconds = createdAtMilliseconds
+        self.updatedAtMilliseconds = updatedAtMilliseconds
+        self.archived = archived
+        self.childEdgeStatus = childEdgeStatus
+    }
 }
 
 enum CodexIndexHealth: Equatable, Sendable {
@@ -75,6 +98,14 @@ struct CodexSourceDiscovery {
             threadIndex: indexResult.records,
             indexHealth: indexResult.health
         )
+    }
+
+    func threadDisplayTitles(rootURL: URL) -> [String: String] {
+        readIndex(at: rootURL).records.reduce(into: [:]) { result, record in
+            if let displayTitle = record.displayTitle {
+                result[record.threadID] = displayTitle
+            }
+        }
     }
 
     private func readIndex(at rootURL: URL) -> (records: [ThreadIndexRecord], health: CodexIndexHealth) {
@@ -258,10 +289,13 @@ struct CodexThreadIndexReader {
         let usesMillisecondCreatedAt = threadColumns.contains("created_at_ms")
         let usesMillisecondUpdatedAt = threadColumns.contains("updated_at_ms")
         let modelExpression = threadColumns.contains("model") ? "model" : "NULL"
+        let nameExpression = threadColumns.contains("name") ? "name" : "NULL"
+        let titleExpression = threadColumns.contains("title") ? "title" : "NULL"
         let createdExpression = usesMillisecondCreatedAt ? "created_at_ms" : "created_at"
         let updatedExpression = usesMillisecondUpdatedAt ? "updated_at_ms" : "updated_at"
         let sql = """
             SELECT id, rollout_path, source, \(modelExpression) AS model,
+                   \(nameExpression) AS display_name, \(titleExpression) AS title,
                    \(createdExpression) AS created_value,
                    \(updatedExpression) AS updated_value, archived
             FROM threads ORDER BY id
@@ -284,6 +318,7 @@ struct CodexThreadIndexReader {
                 rolloutPath: record.rolloutPath,
                 sourceRaw: record.sourceRaw,
                 model: record.model,
+                displayTitle: record.displayTitle,
                 createdAtMilliseconds: record.createdAtMilliseconds,
                 updatedAtMilliseconds: record.updatedAtMilliseconds,
                 archived: record.archived,
@@ -335,16 +370,24 @@ struct CodexThreadIndexReader {
         while true {
             switch sqlite3_step(statement) {
             case SQLITE_ROW:
-                let created = try requiredInteger(statement, column: 4, name: "threads.created_at")
-                let updated = try requiredInteger(statement, column: 5, name: "threads.updated_at")
+                let created = try requiredInteger(statement, column: 6, name: "threads.created_at")
+                let updated = try requiredInteger(statement, column: 7, name: "threads.updated_at")
+                let displayName = try optionalText(statement, column: 4, name: "threads.name")
+                let title = try optionalText(statement, column: 5, name: "threads.title")
+                let sourceRaw = try requiredText(statement, column: 2, name: "threads.source")
                 records.append(ThreadIndexRecord(
                     threadID: try requiredText(statement, column: 0, name: "threads.id"),
                     rolloutPath: try requiredText(statement, column: 1, name: "threads.rollout_path"),
-                    sourceRaw: try requiredText(statement, column: 2, name: "threads.source"),
+                    sourceRaw: sourceRaw,
                     model: try optionalText(statement, column: 3, name: "threads.model"),
+                    displayTitle: resolvedDisplayTitle(
+                        displayName: displayName,
+                        title: title,
+                        sourceRaw: sourceRaw
+                    ),
                     createdAtMilliseconds: try milliseconds(created, alreadyMilliseconds: createdAtIsMilliseconds),
                     updatedAtMilliseconds: try milliseconds(updated, alreadyMilliseconds: updatedAtIsMilliseconds),
-                    archived: try requiredBoolean(statement, column: 6, name: "threads.archived"),
+                    archived: try requiredBoolean(statement, column: 8, name: "threads.archived"),
                     childEdgeStatus: nil
                 ))
             case SQLITE_DONE:
@@ -353,6 +396,39 @@ struct CodexThreadIndexReader {
                 throw CodexThreadIndexError.queryFailed(code, context: "read threads")
             }
         }
+    }
+
+    private func resolvedDisplayTitle(
+        displayName: String?,
+        title: String?,
+        sourceRaw: String
+    ) -> String? {
+        if let displayName = normalizedDisplayTitle(displayName) {
+            return displayName
+        }
+        if let title = normalizedDisplayTitle(title), !isSystemTemplateTitle(title) {
+            return title
+        }
+
+        let normalizedSource = sourceRaw.lowercased()
+        if normalizedSource.contains("guardian") {
+            return "命令权限检查"
+        }
+        if normalizedSource.contains("subagent") {
+            return "Codex 子任务"
+        }
+        return nil
+    }
+
+    private func normalizedDisplayTitle(_ rawValue: String?) -> String? {
+        guard let rawValue else { return nil }
+        let singleLine = rawValue.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !singleLine.isEmpty else { return nil }
+        return String(singleLine.prefix(120))
+    }
+
+    private func isSystemTemplateTitle(_ title: String) -> Bool {
+        title.lowercased().hasPrefix("the following is the codex")
     }
 
     private func readEdgeStatuses(

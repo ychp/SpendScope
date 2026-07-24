@@ -161,6 +161,43 @@ struct ProjectUsageEntry: Identifiable, Equatable, Sendable {
     let name: String
     let tokens: Int
     let share: Double
+    let conversations: [ProjectConversationUsage]
+}
+
+struct ProjectConversationUsage: Identifiable, Equatable, Sendable {
+    let shortThreadID: String
+    let displayTitle: String?
+    let tokens: Int
+    let lastMessageAtMilliseconds: Int64?
+
+    var id: String { shortThreadID }
+}
+
+enum ProjectConversationSortOrder: String, CaseIterable, Identifiable, Sendable {
+    case recent = "最近消息"
+    case usage = "用量"
+
+    static let defaultOrder: ProjectConversationSortOrder = .recent
+
+    var id: Self { self }
+
+    func sorted(_ conversations: [ProjectConversationUsage]) -> [ProjectConversationUsage] {
+        conversations.sorted { left, right in
+            switch self {
+            case .recent:
+                let leftTime = left.lastMessageAtMilliseconds ?? Int64.min
+                let rightTime = right.lastMessageAtMilliseconds ?? Int64.min
+                if leftTime != rightTime { return leftTime > rightTime }
+                if left.tokens != right.tokens { return left.tokens > right.tokens }
+            case .usage:
+                if left.tokens != right.tokens { return left.tokens > right.tokens }
+                let leftTime = left.lastMessageAtMilliseconds ?? Int64.min
+                let rightTime = right.lastMessageAtMilliseconds ?? Int64.min
+                if leftTime != rightTime { return leftTime > rightTime }
+            }
+            return left.shortThreadID < right.shortThreadID
+        }
+    }
 }
 
 struct ProjectUsageRanking: Equatable, Sendable {

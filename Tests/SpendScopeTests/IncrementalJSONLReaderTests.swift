@@ -198,6 +198,88 @@ final class IncrementalJSONLReaderTests: XCTestCase {
         ])
     }
 
+    func testIndexReaderProvidesSanitizedDisplayTitlesWithoutRequiringThem() throws {
+        let root = try temporaryDirectory()
+        let databaseURL = root.appending(path: "state_4.sqlite")
+        let database = try SQLiteDatabase(url: databaseURL)
+        try database.execute(sql: """
+            CREATE TABLE threads(
+              id TEXT NOT NULL,
+              rollout_path TEXT NOT NULL,
+              source TEXT NOT NULL,
+              model TEXT,
+              name TEXT,
+              title TEXT,
+              created_at_ms INTEGER NOT NULL,
+              updated_at_ms INTEGER NOT NULL,
+              archived INTEGER NOT NULL
+            )
+            """)
+        try database.execute(
+            sql: """
+                INSERT INTO threads(
+                  id, rollout_path, source, model, name, title,
+                  created_at_ms, updated_at_ms, archived
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+            bindings: [
+                .text("renamed"), .text("/tmp/renamed.jsonl"), .text("vscode"), .null,
+                .text("  手动\n名称  "), .text("旧标题"), .integer(1_000), .integer(2_000), .integer(0),
+                .text("titled"), .text("/tmp/titled.jsonl"), .text("cli"), .null,
+                .text("   "), .text("  修复\n项目用量  "), .integer(3_000), .integer(4_000), .integer(0)
+            ]
+        )
+        try database.execute(
+            sql: """
+                INSERT INTO threads(
+                  id, rollout_path, source, model, name, title,
+                  created_at_ms, updated_at_ms, archived
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+            bindings: [
+                .text("guardian"), .text("/tmp/guardian.jsonl"),
+                .text(#"{"subagent":{"other":"guardian"}}"#), .null, .null,
+                .text("The following is the Codex desktop context"),
+                .integer(5_000), .integer(6_000), .integer(0),
+                .text("subagent"), .text("/tmp/subagent.jsonl"),
+                .text(#"{"subagent":true}"#), .null, .null,
+                .text("The following is the Codex task context"),
+                .integer(7_000), .integer(8_000), .integer(0)
+            ]
+        )
+        try database.execute(
+            sql: """
+                INSERT INTO threads(
+                  id, rollout_path, source, model, name, title,
+                  created_at_ms, updated_at_ms, archived
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+            bindings: [
+                .text("plain-template"), .text("/tmp/plain.jsonl"), .text("cli"), .null, .null,
+                .text("The following is the Codex task context"),
+                .integer(9_000), .integer(10_000), .integer(0)
+            ]
+        )
+
+        let records = try CodexThreadIndexReader().read(databaseURL: databaseURL)
+        let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.threadID, $0) })
+
+        XCTAssertEqual(recordsByID["renamed"]?.displayTitle, "手动 名称")
+        XCTAssertEqual(recordsByID["titled"]?.displayTitle, "修复 项目用量")
+        XCTAssertEqual(recordsByID["guardian"]?.displayTitle, "命令权限检查")
+        XCTAssertEqual(recordsByID["subagent"]?.displayTitle, "Codex 子任务")
+        XCTAssertNil(recordsByID["plain-template"]?.displayTitle)
+        XCTAssertEqual(
+            CodexSourceDiscovery().threadDisplayTitles(rootURL: root),
+            [
+                "renamed": "手动 名称",
+                "titled": "修复 项目用量",
+                "guardian": "命令权限检查",
+                "subagent": "Codex 子任务"
+            ]
+        )
+    }
+
     func testIndexReaderFallsBackFromLegacySecondsAndAllowsMissingOptionalTablesAndColumns() throws {
         let root = try temporaryDirectory()
         let databaseURL = root.appending(path: "state_4.sqlite")
