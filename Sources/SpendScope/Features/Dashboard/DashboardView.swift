@@ -730,19 +730,19 @@ private struct DashboardContentView: View {
     }
 
     private var analyticsContent: some View {
-        ZStack {
-            trendRow
-                .analyticsTabLayer(isSelected: selectedAnalyticsTab == .trend)
-
-            ActivityRankingPanel(ranking: selectedActivityRanking)
-                .analyticsTabLayer(isSelected: selectedAnalyticsTab == .activity)
-
-            ProjectUsagePanel(ranking: selectedProjectRanking)
-                .analyticsTabLayer(isSelected: selectedAnalyticsTab == .project)
-
-            ModelUsagePanel(ranking: selectedModelRanking)
-                .analyticsTabLayer(isSelected: selectedAnalyticsTab == .model)
+        Group {
+            switch selectedAnalyticsTab {
+            case .trend:
+                trendRow
+            case .activity:
+                ActivityRankingPanel(ranking: selectedActivityRanking)
+            case .project:
+                ProjectUsagePanel(ranking: selectedProjectRanking)
+            case .model:
+                ModelUsagePanel(ranking: selectedModelRanking)
+            }
         }
+        .id(selectedAnalyticsTab)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
@@ -1094,12 +1094,4 @@ private enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
     static let defaultTab: DashboardAnalyticsTab = .trend
 
     var id: Self { self }
-}
-
-private extension View {
-    func analyticsTabLayer(isSelected: Bool) -> some View {
-        opacity(isSelected ? 1 : 0)
-            .allowsHitTesting(isSelected)
-            .accessibilityHidden(!isSelected)
-    }
 }
