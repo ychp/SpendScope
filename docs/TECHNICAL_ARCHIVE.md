@@ -42,7 +42,7 @@ SpendScope 是一款仅在本机运行的原生 macOS 菜单栏应用，用于�
 | 发布架构 | Universal Binary：`arm64` + `x86_64` |
 | 发布渠道 | GitHub Releases，当前为未签名、未公证 DMG |
 
-工程使用共享 Scheme `SpendScope`。本地 DerivedData 默认写入 `/private/tmp/SpendScope-DerivedData`，避免文稿目录的文件提供程序扩展属性影响本地构建和签名。
+工程使用共享 Scheme `SpendScope`。本地运行脚本根据工作区路径将 DerivedData 隔离到 `/private/tmp/SpendScope-DerivedData-<工作区指纹>`，避免文稿目录的文件提供程序扩展属性影响本地构建和签名，也避免不同 worktree 复用旧产物。源码、资源、工程配置或脚本输入发生变化时，脚本会先 clean 当前工作区的构建目录，再构建并验证实际运行的是本次生成的精确二进制。
 
 ## 3. 总体架构
 

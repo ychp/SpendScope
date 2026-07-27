@@ -113,7 +113,7 @@ Features：菜单栏、看板和设置
 
 ### `script/` — 工程必备
 
-- `build_and_run.sh`：停止旧进程、构建 Debug App、启动、调试和验证进程。
+- `build_and_run.sh`：按工作区隔离 DerivedData，在构建输入变化时自动 clean，停止旧进程后构建 Debug App，并验证启动的是本次生成的精确二进制；同时支持调试和日志模式。
 - `generate_release_notes.sh`：将版本亮点整理成结构化 GitHub Release 说明。
 
 这些脚本不是运行时依赖，但统一了本地开发和发布行为，建议保留。

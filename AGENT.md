@@ -138,6 +138,8 @@ docs/                     截图和技术档案
 ./script/build_and_run.sh --verify
 ```
 
+脚本会按工作区路径隔离 DerivedData，在源码、资源、工程配置或脚本输入变化时自动清理当前工作区的构建产物，并验证启动进程来自刚生成的 App。每次迭代后启动前，Agent 必须确认预期改动确实位于当前工作区；不得绕过脚本启动固定 DerivedData 或 `/Applications` 中的旧副本，也不要复用其他 worktree 的构建目录。
+
 调试和日志：
 
 ```bash

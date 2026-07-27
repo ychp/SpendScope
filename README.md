@@ -278,7 +278,9 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 ./script/build_and_run.sh --telemetry
 ```
 
-默认 DerivedData 位于 `/private/tmp/SpendScope-DerivedData`，也可以覆盖：
+脚本会根据工作区路径生成独立的 DerivedData 目录，避免不同 worktree 复用旧产物；检测到源码、资源、工程配置或运行脚本变化时，会自动 clean 后再构建。启动成功后还会校验实际进程来自本次构建的 App。
+
+默认目录形如 `/private/tmp/SpendScope-DerivedData-<工作区指纹>`，也可以覆盖：
 
 ```bash
 SPENDSCOPE_DERIVED_DATA=/private/tmp/My-SpendScope-Data ./script/build_and_run.sh
