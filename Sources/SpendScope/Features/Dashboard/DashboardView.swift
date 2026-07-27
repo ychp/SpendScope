@@ -730,19 +730,26 @@ private struct DashboardContentView: View {
     }
 
     private var analyticsContent: some View {
-        Group {
-            switch selectedAnalyticsTab {
-            case .trend:
-                trendRow
-            case .activity:
-                ActivityRankingPanel(ranking: selectedActivityRanking)
-            case .project:
-                ProjectUsagePanel(ranking: selectedProjectRanking)
-            case .model:
-                ModelUsagePanel(ranking: selectedModelRanking)
+        GeometryReader { geometry in
+            Group {
+                switch selectedAnalyticsTab {
+                case .trend:
+                    trendRow
+                case .activity:
+                    ActivityRankingPanel(ranking: selectedActivityRanking)
+                case .project:
+                    ProjectUsagePanel(ranking: selectedProjectRanking)
+                case .model:
+                    ModelUsagePanel(ranking: selectedModelRanking)
+                }
             }
+            .id(selectedAnalyticsTab)
+            .frame(
+                width: geometry.size.width,
+                height: geometry.size.height,
+                alignment: .topLeading
+            )
         }
-        .id(selectedAnalyticsTab)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
