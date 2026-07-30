@@ -50,6 +50,10 @@ final class DashboardQueryService: @unchecked Sendable {
         )
         let allRows = try store.usageEvents()
         let trendRows = try store.usageEvents(toMilliseconds: end)
+        let allActivityRows = try store.activityEvents(toMilliseconds: end)
+        let turnLifecycleFacts = makeTurnLifecycleFacts(
+            from: try store.turnLifecycleEvents().filter { $0.observedAtMilliseconds < end }
+        )
         let sessionLastMessageTimes = try store.sessions().reduce(into: [String: Int64]()) {
             result, session in
             if let updatedAtMilliseconds = session.updatedAtMilliseconds {
@@ -79,26 +83,58 @@ final class DashboardQueryService: @unchecked Sendable {
             ),
             allTime: try activityRanking(fromMilliseconds: nil, toMilliseconds: end)
         )
+        let projectTrendDayStarts = try (0..<7).map { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: sevenDayStart) else {
+                throw DashboardQueryError.invalidCalendarBoundary
+            }
+            return milliseconds(for: day)
+        }
         let projectUsage = ProjectUsageSnapshot(
             today: try projectRanking(
                 from: todayRows,
+                trendRows: sevenDayRows,
+                trendDayStarts: projectTrendDayStarts,
+                calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
-                threadTitlesByThreadID: threadTitlesByThreadID
+                threadTitlesByThreadID: threadTitlesByThreadID,
+                turnLifecycleFacts: turnLifecycleFacts,
+                activityRows: allActivityRows.filter {
+                    $0.observedAtMilliseconds >= milliseconds(for: todayStart)
+                }
             ),
             sevenDays: try projectRanking(
                 from: sevenDayRows,
+                trendRows: sevenDayRows,
+                trendDayStarts: projectTrendDayStarts,
+                calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
-                threadTitlesByThreadID: threadTitlesByThreadID
+                threadTitlesByThreadID: threadTitlesByThreadID,
+                turnLifecycleFacts: turnLifecycleFacts,
+                activityRows: allActivityRows.filter {
+                    $0.observedAtMilliseconds >= milliseconds(for: sevenDayStart)
+                }
             ),
             thirtyDays: try projectRanking(
                 from: thirtyDayRows,
+                trendRows: sevenDayRows,
+                trendDayStarts: projectTrendDayStarts,
+                calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
-                threadTitlesByThreadID: threadTitlesByThreadID
+                threadTitlesByThreadID: threadTitlesByThreadID,
+                turnLifecycleFacts: turnLifecycleFacts,
+                activityRows: allActivityRows.filter {
+                    $0.observedAtMilliseconds >= milliseconds(for: thirtyDayStart)
+                }
             ),
             allTime: try projectRanking(
                 from: allRows.filter { $0.observedAtMilliseconds < end },
+                trendRows: sevenDayRows,
+                trendDayStarts: projectTrendDayStarts,
+                calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
-                threadTitlesByThreadID: threadTitlesByThreadID
+                threadTitlesByThreadID: threadTitlesByThreadID,
+                turnLifecycleFacts: turnLifecycleFacts,
+                activityRows: allActivityRows
             )
         )
         let modelUsage = ModelUsageSnapshot(
@@ -179,11 +215,17 @@ final class DashboardQueryService: @unchecked Sendable {
 
     private func projectRanking(
         from rows: [StoredUsageQueryRow],
+        trendRows: [StoredUsageQueryRow],
+        trendDayStarts: [Int64],
+        calendar: Calendar,
         sessionLastMessageTimes: [String: Int64],
-        threadTitlesByThreadID: [String: String]
+        threadTitlesByThreadID: [String: String],
+        turnLifecycleFacts: [ThreadTurnKey: TurnLifecycleFact],
+        activityRows: [StoredActivityEvent]
     ) throws -> ProjectUsageRanking {
+        let turnActivityFacts = makeTurnActivityFacts(from: activityRows)
         var identityGraph = ProjectUsageIdentityGraph()
-        for row in rows {
+        for row in rows + trendRows {
             let pathNode = ProjectUsageIdentityNode(
                 name: row.project.name,
                 identity: "path:\(row.project.id)"
@@ -203,6 +245,7 @@ final class DashboardQueryService: @unchecked Sendable {
         var totals: [ProjectUsageIdentityNode: ProjectUsageAccumulator] = [:]
         var conversationTotals:
             [ProjectUsageIdentityNode: [String: ProjectConversationUsageAccumulator]] = [:]
+        var dailyTotals: [ProjectUsageIdentityNode: [Int64: Int64]] = [:]
         var overall: Int64 = 0
         for row in rows {
             let pathNode = ProjectUsageIdentityNode(
@@ -221,21 +264,89 @@ final class DashboardQueryService: @unchecked Sendable {
             let currentConversation = conversationTotals[key]?[row.threadID]
                 ?? ProjectConversationUsageAccumulator(
                     tokens: 0,
-                    lastUsageAtMilliseconds: row.observedAtMilliseconds
+                    lastUsageAtMilliseconds: row.observedAtMilliseconds,
+                    unattributedTokens: 0,
+                    replies: [:]
                 )
-            conversationTotals[key, default: [:]][row.threadID] =
-                ProjectConversationUsageAccumulator(
-                    tokens: try checkedAdd(
-                        currentConversation.tokens,
-                        row.totalTokens,
-                        context: "project.conversation.total"
-                    ),
-                    lastUsageAtMilliseconds: max(
-                        currentConversation.lastUsageAtMilliseconds,
-                        row.observedAtMilliseconds
+            var updatedConversation = currentConversation
+            updatedConversation.tokens = try checkedAdd(
+                currentConversation.tokens,
+                row.totalTokens,
+                context: "project.conversation.total"
+            )
+            updatedConversation.lastUsageAtMilliseconds = max(
+                currentConversation.lastUsageAtMilliseconds,
+                row.observedAtMilliseconds
+            )
+            if let turnID = row.turnID, !turnID.isEmpty {
+                var reply = updatedConversation.replies[turnID]
+                    ?? ProjectReplyUsageAccumulator(
+                        model: row.model,
+                        uncachedInputTokens: 0,
+                        cachedInputTokens: 0,
+                        visibleOutputTokens: 0,
+                        reasoningTokens: 0,
+                        totalTokens: 0,
+                        lastUsageAtMilliseconds: row.observedAtMilliseconds
                     )
+                reply.model = row.model
+                reply.uncachedInputTokens = try checkedAdd(
+                    reply.uncachedInputTokens,
+                    row.uncachedInputTokens,
+                    context: "project.reply.uncachedInput"
                 )
+                reply.cachedInputTokens = try checkedAdd(
+                    reply.cachedInputTokens,
+                    row.cachedInputTokens,
+                    context: "project.reply.cachedInput"
+                )
+                reply.visibleOutputTokens = try checkedAdd(
+                    reply.visibleOutputTokens,
+                    row.visibleOutputTokens,
+                    context: "project.reply.visibleOutput"
+                )
+                reply.reasoningTokens = try checkedAdd(
+                    reply.reasoningTokens,
+                    row.reasoningTokens,
+                    context: "project.reply.reasoning"
+                )
+                reply.totalTokens = try checkedAdd(
+                    reply.totalTokens,
+                    row.totalTokens,
+                    context: "project.reply.total"
+                )
+                reply.lastUsageAtMilliseconds = max(
+                    reply.lastUsageAtMilliseconds,
+                    row.observedAtMilliseconds
+                )
+                updatedConversation.replies[turnID] = reply
+            } else {
+                updatedConversation.unattributedTokens = try checkedAdd(
+                    updatedConversation.unattributedTokens,
+                    row.totalTokens,
+                    context: "project.conversation.unattributed"
+                )
+            }
+            conversationTotals[key, default: [:]][row.threadID] = updatedConversation
             overall = try checkedAdd(overall, row.totalTokens, context: "projects.total")
+        }
+
+        for row in trendRows {
+            let pathNode = ProjectUsageIdentityNode(
+                name: row.project.name,
+                identity: "path:\(row.project.id)"
+            )
+            let key = identityGraph.root(of: pathNode)
+            let observedDate = Date(
+                timeIntervalSince1970: TimeInterval(row.observedAtMilliseconds) / 1_000
+            )
+            let dayStart = milliseconds(for: calendar.startOfDay(for: observedDate))
+            let current = dailyTotals[key]?[dayStart] ?? 0
+            dailyTotals[key, default: [:]][dayStart] = try checkedAdd(
+                current,
+                row.totalTokens,
+                context: "project.daily"
+            )
         }
         guard overall > 0 else { return .empty }
 
@@ -250,12 +361,39 @@ final class DashboardQueryService: @unchecked Sendable {
             entries: ordered.map { entry in
                 let conversations = (conversationTotals[entry.key] ?? [:]).map {
                     threadID, aggregate in
-                    ProjectConversationUsage(
+                    let replies = aggregate.replies.map { turnID, usage in
+                        let turnKey = ThreadTurnKey(threadID: threadID, turnID: turnID)
+                        let lifecycle = turnLifecycleFacts[turnKey]
+                        let activity = turnActivityFacts[turnKey]
+                        return ProjectReplyUsage(
+                            id: turnID,
+                            status: lifecycle?.status ?? .unknown,
+                            model: usage.model,
+                            uncachedInputTokens: Int(clamping: usage.uncachedInputTokens),
+                            cachedInputTokens: Int(clamping: usage.cachedInputTokens),
+                            visibleOutputTokens: Int(clamping: usage.visibleOutputTokens),
+                            reasoningTokens: Int(clamping: usage.reasoningTokens),
+                            totalTokens: Int(clamping: usage.totalTokens),
+                            startedAtMilliseconds: lifecycle?.startedAtMilliseconds,
+                            endedAtMilliseconds: lifecycle?.endedAtMilliseconds,
+                            lastUsageAtMilliseconds: usage.lastUsageAtMilliseconds,
+                            skillCalls: activity?.skills ?? [],
+                            toolCalls: activity?.tools ?? []
+                        )
+                    }.sorted { left, right in
+                        if left.displayAtMilliseconds != right.displayAtMilliseconds {
+                            return left.displayAtMilliseconds > right.displayAtMilliseconds
+                        }
+                        return left.id < right.id
+                    }
+                    return ProjectConversationUsage(
                         shortThreadID: ThreadDisplayIdentifier.make(from: threadID),
                         displayTitle: threadTitlesByThreadID[threadID],
                         tokens: Int(clamping: aggregate.tokens),
                         lastMessageAtMilliseconds: sessionLastMessageTimes[threadID]
-                            ?? aggregate.lastUsageAtMilliseconds
+                            ?? aggregate.lastUsageAtMilliseconds,
+                        replies: replies,
+                        unattributedTokens: Int(clamping: aggregate.unattributedTokens)
                     )
                 }
                 return ProjectUsageEntry(
@@ -263,12 +401,84 @@ final class DashboardQueryService: @unchecked Sendable {
                     name: entry.name,
                     tokens: Int(clamping: entry.tokens),
                     share: min(max(Double(entry.tokens) / Double(overall), 0), 1),
-                    conversations: ProjectConversationSortOrder.defaultOrder.sorted(conversations)
+                    conversations: ProjectConversationSortOrder.defaultOrder.sorted(conversations),
+                    dailyUsage: trendDayStarts.map { dayStart in
+                        ProjectDailyUsage(
+                            dayStartMilliseconds: dayStart,
+                            tokens: Int(clamping: dailyTotals[entry.key]?[dayStart] ?? 0)
+                        )
+                    }
                 )
             },
             totalTokens: Int(clamping: overall),
             projectCount: totals.count
         )
+    }
+
+    private func makeTurnLifecycleFacts(
+        from rows: [StoredTurnLifecycleQueryRow]
+    ) -> [ThreadTurnKey: TurnLifecycleFact] {
+        var facts: [ThreadTurnKey: TurnLifecycleFact] = [:]
+        for row in rows {
+            let key = ThreadTurnKey(threadID: row.threadID, turnID: row.turnID)
+            var fact = facts[key] ?? TurnLifecycleFact()
+            switch row.kind {
+            case .started:
+                fact.startedAtMilliseconds = fact.startedAtMilliseconds
+                    .map { min($0, row.observedAtMilliseconds) }
+                    ?? row.observedAtMilliseconds
+                if fact.endedAtMilliseconds == nil {
+                    fact.status = .inProgress
+                }
+            case .completed:
+                fact.status = .completed
+                fact.endedAtMilliseconds = row.observedAtMilliseconds
+            case .interrupted:
+                fact.status = .interrupted
+                fact.endedAtMilliseconds = row.observedAtMilliseconds
+            case .rolledBack:
+                fact.status = .rolledBack
+                fact.endedAtMilliseconds = row.observedAtMilliseconds
+            }
+            facts[key] = fact
+        }
+        return facts
+    }
+
+    private func makeTurnActivityFacts(
+        from rows: [StoredActivityEvent]
+    ) -> [ThreadTurnKey: TurnActivityFact] {
+        var counts: [ThreadTurnKey: TurnActivityCounts] = [:]
+        for row in rows {
+            guard let turnID = row.turnID, !turnID.isEmpty, !row.name.isEmpty else {
+                continue
+            }
+            let key = ThreadTurnKey(threadID: row.threadID, turnID: turnID)
+            var turnCounts = counts[key] ?? TurnActivityCounts()
+            switch row.kind {
+            case .skill:
+                turnCounts.skills[row.name, default: 0] += 1
+            case .tool:
+                turnCounts.tools[row.name, default: 0] += 1
+            }
+            counts[key] = turnCounts
+        }
+        return counts.mapValues { turnCounts in
+            TurnActivityFact(
+                skills: activityCalls(from: turnCounts.skills),
+                tools: activityCalls(from: turnCounts.tools)
+            )
+        }
+    }
+
+    private func activityCalls(from counts: [String: Int]) -> [ProjectReplyActivityCall] {
+        counts.map { name, count in
+            ProjectReplyActivityCall(name: name, count: count)
+        }
+        .sorted { left, right in
+            if left.count != right.count { return left.count > right.count }
+            return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+        }
     }
 
     private func activityRanking(
@@ -480,8 +690,41 @@ private struct ProjectUsageAccumulator {
 }
 
 private struct ProjectConversationUsageAccumulator {
-    let tokens: Int64
-    let lastUsageAtMilliseconds: Int64
+    var tokens: Int64
+    var lastUsageAtMilliseconds: Int64
+    var unattributedTokens: Int64
+    var replies: [String: ProjectReplyUsageAccumulator]
+}
+
+private struct ProjectReplyUsageAccumulator {
+    var model: String
+    var uncachedInputTokens: Int64
+    var cachedInputTokens: Int64
+    var visibleOutputTokens: Int64
+    var reasoningTokens: Int64
+    var totalTokens: Int64
+    var lastUsageAtMilliseconds: Int64
+}
+
+private struct ThreadTurnKey: Hashable {
+    let threadID: String
+    let turnID: String
+}
+
+private struct TurnLifecycleFact {
+    var status: ProjectReplyUsageStatus = .unknown
+    var startedAtMilliseconds: Int64?
+    var endedAtMilliseconds: Int64?
+}
+
+private struct TurnActivityFact {
+    let skills: [ProjectReplyActivityCall]
+    let tools: [ProjectReplyActivityCall]
+}
+
+private struct TurnActivityCounts {
+    var skills: [String: Int] = [:]
+    var tools: [String: Int] = [:]
 }
 
 enum DashboardQueryError: Error, Equatable {

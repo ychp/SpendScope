@@ -15,6 +15,7 @@ enum SpendScopeTheme {
     // translucent tints preserve hierarchy and chart contrast.
     static let dashboardBackground = Color.clear
     static let dashboardSurface = Color.white.opacity(0.42)
+    static let dashboardSurfaceOpaque = Color(red: 0.972, green: 0.982, blue: 0.998)
     static let dashboardSurfaceStrong = Color(red: 0.972, green: 0.982, blue: 0.998).opacity(0.56)
     static let dashboardTile = Color.white.opacity(0.52)
     static let dashboardControlBackground = Color(red: 0.90, green: 0.94, blue: 0.99).opacity(0.70)

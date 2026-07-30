@@ -292,6 +292,7 @@ actor CodexImporter {
                     checkpoints = [ThreadCheckpoint(
                         threadID: threadID,
                         currentModel: previousThread?.currentModel,
+                        currentTurnID: previousThread?.currentTurnID,
                         currentPlan: previousThread?.currentPlan,
                         counters: nil,
                         counterSegment: (previousThread?.counterSegment ?? 0) + 1,
@@ -463,6 +464,7 @@ actor CodexImporter {
             threadCheckpoints = [ThreadCheckpoint(
                 threadID: threadID,
                 currentModel: context.model,
+                currentTurnID: context.currentTurnID,
                 currentPlan: context.currentPlan,
                 counters: context.counters,
                 counterSegment: context.counterSegment,
@@ -527,6 +529,7 @@ actor CodexImporter {
 
         case .turn(let turn):
             guard context.threadID != nil else { throw ImportContextIssue.missingThread }
+            context.currentTurnID = turn.turnID
             context.model = turn.model
 
         case .token(let snapshot):
@@ -561,6 +564,7 @@ actor CodexImporter {
                         )),
                         observedAtMilliseconds: snapshot.observedAtMilliseconds,
                         threadID: threadID,
+                        turnID: context.currentTurnID,
                         sourceKind: context.source,
                         model: context.model ?? rollout.thread?.model ?? "Unknown Model",
                         plan: effectivePlan,
@@ -594,6 +598,9 @@ actor CodexImporter {
 
         case .lifecycle(let lifecycle):
             guard let threadID = context.threadID else { throw ImportContextIssue.missingThread }
+            if let turnID = lifecycle.turnID {
+                context.currentTurnID = turnID
+            }
             let canonical = canonicalState(threadID: threadID, event: lifecycle)
             let eventKey = fingerprint(canonical)
             context.state = SessionStateReducer.reduce(
@@ -692,6 +699,7 @@ actor CodexImporter {
             threadID: metadata.threadID,
             source: metadata.source,
             model: matchingIndex?.model ?? storedSession?.lastModel,
+            currentTurnID: storedSession?.activeTurnID,
             currentPlan: nil,
             lastPlan: storedSession?.lastPlan,
             counters: nil,
@@ -732,6 +740,7 @@ actor CodexImporter {
             threadID: threadID,
             source: session?.sourceKind ?? sourceKind(from: rollout.thread?.sourceRaw),
             model: previousFile?.currentModel ?? session?.lastModel ?? rollout.thread?.model,
+            currentTurnID: previousFile?.currentTurnID ?? session?.activeTurnID,
             currentPlan: previousFile?.currentPlan,
             lastPlan: previousFile?.currentPlan?.kind ?? session?.lastPlan,
             counters: previousFile?.counters,
@@ -833,6 +842,7 @@ actor CodexImporter {
             formatStatus: formatStatus,
             lastError: lastError,
             currentModel: context?.model,
+            currentTurnID: context?.currentTurnID,
             currentPlan: context?.currentPlan,
             counters: context?.counters,
             counterSegment: context?.counterSegment ?? 0,
@@ -886,6 +896,7 @@ private struct ImportContext {
     var threadID: String?
     var source: CodexSourceKind
     var model: String?
+    var currentTurnID: String?
     var currentPlan: PlanResolution?
     var lastPlan: PlanKind?
     var counters: TokenCounters?

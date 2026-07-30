@@ -162,6 +162,14 @@ struct ProjectUsageEntry: Identifiable, Equatable, Sendable {
     let tokens: Int
     let share: Double
     let conversations: [ProjectConversationUsage]
+    let dailyUsage: [ProjectDailyUsage]
+}
+
+struct ProjectDailyUsage: Identifiable, Equatable, Sendable {
+    let dayStartMilliseconds: Int64
+    let tokens: Int
+
+    var id: Int64 { dayStartMilliseconds }
 }
 
 struct ProjectConversationUsage: Identifiable, Equatable, Sendable {
@@ -169,8 +177,74 @@ struct ProjectConversationUsage: Identifiable, Equatable, Sendable {
     let displayTitle: String?
     let tokens: Int
     let lastMessageAtMilliseconds: Int64?
+    let replies: [ProjectReplyUsage]
+    let unattributedTokens: Int
+
+    init(
+        shortThreadID: String,
+        displayTitle: String?,
+        tokens: Int,
+        lastMessageAtMilliseconds: Int64?,
+        replies: [ProjectReplyUsage] = [],
+        unattributedTokens: Int = 0
+    ) {
+        self.shortThreadID = shortThreadID
+        self.displayTitle = displayTitle
+        self.tokens = tokens
+        self.lastMessageAtMilliseconds = lastMessageAtMilliseconds
+        self.replies = replies
+        self.unattributedTokens = unattributedTokens
+    }
 
     var id: String { shortThreadID }
+}
+
+enum ProjectReplyUsageStatus: String, Equatable, Sendable {
+    case completed
+    case interrupted
+    case rolledBack
+    case inProgress
+    case unknown
+}
+
+struct ProjectReplyUsage: Identifiable, Equatable, Sendable {
+    let id: String
+    let status: ProjectReplyUsageStatus
+    let model: String
+    let uncachedInputTokens: Int
+    let cachedInputTokens: Int
+    let visibleOutputTokens: Int
+    let reasoningTokens: Int
+    let totalTokens: Int
+    let startedAtMilliseconds: Int64?
+    let endedAtMilliseconds: Int64?
+    let lastUsageAtMilliseconds: Int64
+    let skillCalls: [ProjectReplyActivityCall]
+    let toolCalls: [ProjectReplyActivityCall]
+
+    var displayAtMilliseconds: Int64 {
+        endedAtMilliseconds ?? lastUsageAtMilliseconds
+    }
+
+    var durationMilliseconds: Int64? {
+        guard let startedAtMilliseconds, let endedAtMilliseconds else { return nil }
+        return max(0, endedAtMilliseconds - startedAtMilliseconds)
+    }
+
+    var skillCallCount: Int {
+        skillCalls.reduce(0) { $0 + $1.count }
+    }
+
+    var toolCallCount: Int {
+        toolCalls.reduce(0) { $0 + $1.count }
+    }
+}
+
+struct ProjectReplyActivityCall: Identifiable, Equatable, Sendable {
+    let name: String
+    let count: Int
+
+    var id: String { name }
 }
 
 enum ProjectConversationSortOrder: String, CaseIterable, Identifiable, Sendable {

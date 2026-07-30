@@ -63,18 +63,18 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertFalse(columns.contains("response"))
     }
 
-    func testMigrationCreatesExactVersionNineStorageSurface() throws {
+    func testMigrationCreatesExactVersionTenStorageSurface() throws {
         let url = temporaryDatabaseURL()
         _ = try UsageStore(databaseURL: url)
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
         XCTAssertEqual(
             Set(try store.schemaColumns(table: "source_files")),
             Set([
                 "file_id", "device_id", "inode", "path", "file_size", "committed_offset",
                 "generation", "thread_id", "last_record_at_ms", "last_success_at_ms",
-                "format_status", "last_error", "current_model", "plan", "plan_raw",
+                "format_status", "last_error", "current_model", "current_turn_id", "plan", "plan_raw",
                 "plan_is_inferred", "input_tokens", "cached_input_tokens", "output_tokens",
                 "reasoning_tokens", "counter_segment", "last_token_at_ms",
                 "activity_committed_offset", "project_id", "project_name", "repository_id"
@@ -83,7 +83,7 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(
             Set(try store.schemaColumns(table: "thread_checkpoints")),
             Set([
-                "thread_id", "current_model", "plan", "plan_raw", "plan_is_inferred",
+                "thread_id", "current_model", "current_turn_id", "plan", "plan_raw", "plan_is_inferred",
                 "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens",
                 "counter_segment", "last_token_at_ms"
             ])
@@ -107,6 +107,7 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertTrue(try store.schemaColumns(table: "usage_events").contains("project_id"))
         XCTAssertTrue(try store.schemaColumns(table: "usage_events").contains("project_name"))
         XCTAssertTrue(try store.schemaColumns(table: "usage_events").contains("repository_id"))
+        XCTAssertTrue(try store.schemaColumns(table: "usage_events").contains("turn_id"))
         XCTAssertFalse(try store.schemaColumns(table: "usage_events").contains("cwd"))
         XCTAssertFalse(try store.schemaColumns(table: "usage_events").contains("project_path"))
         XCTAssertEqual(
@@ -141,8 +142,10 @@ final class UsageStoreTests: XCTestCase {
 
         XCTAssertEqual(try store.quotaEventCount(), 1)
         XCTAssertEqual(try store.sessionStateEventCount(), 1)
+        XCTAssertEqual(try store.turnLifecycleEvents().first?.turnID, "turn-1")
         XCTAssertEqual(try store.sessions().first?.activeTurnID, "turn-1")
         XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.counters?.input, 100)
+        XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.currentTurnID, "turn-1")
         XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.currentPlan?.kind, .plus)
         XCTAssertEqual(try store.threadCheckpoint(threadID: "thread-1")?.currentPlan?.rawValue, "plus")
         XCTAssertFalse(try XCTUnwrap(store.threadCheckpoint(threadID: "thread-1")?.currentPlan).isInferred)
@@ -391,7 +394,7 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(try store.sourceFacts().lastSuccessfulRefreshMilliseconds, 3_000)
     }
 
-    func testExistingVersionOneIsRebuiltIntoVersionNineStorage() throws {
+    func testExistingVersionOneIsRebuiltIntoVersionTenStorage() throws {
         let url = temporaryDatabaseURL()
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY)")
@@ -413,7 +416,7 @@ final class UsageStoreTests: XCTestCase {
 
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
         XCTAssertNil(try store.fileCheckpoint(fileID: "legacy"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("input_tokens"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("activity_committed_offset"))
@@ -439,11 +442,12 @@ final class UsageStoreTests: XCTestCase {
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_name")
         try database.execute(sql: "DROP TABLE activity_events")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN activity_committed_offset")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4, 5, 6, 7, 8, 9)")
+        try removeVersionTenColumns(database)
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4, 5, 6, 7, 8, 9, 10)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
@@ -468,11 +472,12 @@ final class UsageStoreTests: XCTestCase {
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN repository_id")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_id")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_name")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (4, 5, 6, 7, 8, 9)")
+        try removeVersionTenColumns(database)
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (4, 5, 6, 7, 8, 9, 10)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertEqual(try migrated.quotaEventCount(), 0)
@@ -492,11 +497,12 @@ final class UsageStoreTests: XCTestCase {
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "ALTER TABLE usage_events DROP COLUMN repository_id")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN repository_id")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (6, 7, 8, 9)")
+        try removeVersionTenColumns(database)
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (6, 7, 8, 9, 10)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
@@ -513,13 +519,39 @@ final class UsageStoreTests: XCTestCase {
             ))
         }
         let database = try SQLiteDatabase(url: url)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (8, 9)")
+        try removeVersionTenColumns(database)
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (8, 9, 10)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
+    }
+
+    func testVersionNineToTenMigrationAddsTurnAttributionAndRebuildsDerivedData() throws {
+        let url = temporaryDatabaseURL()
+        do {
+            let store = try UsageStore(databaseURL: url)
+            try store.commit(ImportBatch(
+                file: .fixture(committedOffset: 10),
+                usageEvents: [.fixture(fingerprint: "pre-turn-attribution", total: 321)],
+                quotaEvents: [],
+                stateEvents: [],
+                sessions: [],
+                threadCheckpoints: []
+            ))
+        }
+        let database = try SQLiteDatabase(url: url)
+        try removeVersionTenColumns(database)
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version = 10")
+
+        let migrated = try UsageStore(databaseURL: url)
+
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        XCTAssertEqual(try migrated.totalUsage(), 0)
+        XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
+        XCTAssertTrue(try migrated.schemaColumns(table: "usage_events").contains("turn_id"))
     }
 
     func testActivityEventsAreIdempotentPrivateAndRankedWithStableBoundaries() throws {
@@ -709,6 +741,13 @@ final class UsageStoreTests: XCTestCase {
         try UsageStore(databaseURL: temporaryDatabaseURL())
     }
 
+    private func removeVersionTenColumns(_ database: SQLiteDatabase) throws {
+        try database.execute(sql: "DROP INDEX usage_events_turn_idx")
+        try database.execute(sql: "ALTER TABLE usage_events DROP COLUMN turn_id")
+        try database.execute(sql: "ALTER TABLE thread_checkpoints DROP COLUMN current_turn_id")
+        try database.execute(sql: "ALTER TABLE source_files DROP COLUMN current_turn_id")
+    }
+
     private func temporaryDatabaseURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("SpendScope-UsageStoreTests-\(UUID().uuidString).sqlite3")
@@ -880,6 +919,7 @@ private extension ThreadCheckpoint {
         ThreadCheckpoint(
             threadID: "thread-1",
             currentModel: "test-model",
+            currentTurnID: "turn-1",
             currentPlan: PlanResolver.resolve(rawValue: "plus"),
             counters: TokenCounters(input: 100, cachedInput: 40, output: 20, reasoning: 5),
             counterSegment: counterSegment,

@@ -4,6 +4,7 @@ struct StoredUsageEvent: Sendable {
     let fingerprint: String
     let observedAtMilliseconds: Int64
     let threadID: String
+    let turnID: String?
     let sourceKind: CodexSourceKind
     let model: String
     let plan: PlanResolution
@@ -16,6 +17,7 @@ struct StoredUsageEvent: Sendable {
         fingerprint: String,
         observedAtMilliseconds: Int64,
         threadID: String,
+        turnID: String? = nil,
         sourceKind: CodexSourceKind,
         model: String,
         plan: PlanResolution,
@@ -27,6 +29,7 @@ struct StoredUsageEvent: Sendable {
         self.fingerprint = fingerprint
         self.observedAtMilliseconds = observedAtMilliseconds
         self.threadID = threadID
+        self.turnID = turnID
         self.sourceKind = sourceKind
         self.model = model
         self.plan = plan
@@ -102,6 +105,7 @@ struct FileCheckpoint: Sendable {
     let lastError: String?
 
     let currentModel: String?
+    let currentTurnID: String?
     let currentPlan: PlanResolution?
     let counters: TokenCounters?
     let counterSegment: Int64
@@ -123,6 +127,7 @@ struct FileCheckpoint: Sendable {
         formatStatus: String,
         lastError: String?,
         currentModel: String? = nil,
+        currentTurnID: String? = nil,
         currentPlan: PlanResolution? = nil,
         counters: TokenCounters? = nil,
         counterSegment: Int64 = 0,
@@ -143,6 +148,7 @@ struct FileCheckpoint: Sendable {
         self.formatStatus = formatStatus
         self.lastError = lastError
         self.currentModel = currentModel
+        self.currentTurnID = currentTurnID
         self.currentPlan = currentPlan
         self.counters = counters
         self.counterSegment = counterSegment
@@ -155,10 +161,29 @@ struct FileCheckpoint: Sendable {
 struct ThreadCheckpoint: Sendable {
     let threadID: String
     let currentModel: String?
+    let currentTurnID: String?
     let currentPlan: PlanResolution?
     let counters: TokenCounters?
     let counterSegment: Int64
     let lastTokenAtMilliseconds: Int64?
+
+    init(
+        threadID: String,
+        currentModel: String?,
+        currentTurnID: String? = nil,
+        currentPlan: PlanResolution?,
+        counters: TokenCounters?,
+        counterSegment: Int64,
+        lastTokenAtMilliseconds: Int64?
+    ) {
+        self.threadID = threadID
+        self.currentModel = currentModel
+        self.currentTurnID = currentTurnID
+        self.currentPlan = currentPlan
+        self.counters = counters
+        self.counterSegment = counterSegment
+        self.lastTokenAtMilliseconds = lastTokenAtMilliseconds
+    }
 }
 
 struct ImportBatch: Sendable {
@@ -204,6 +229,7 @@ struct StoredUsageQueryRow: Sendable {
     let fingerprint: String
     let observedAtMilliseconds: Int64
     let threadID: String
+    let turnID: String?
     let model: String
     let plan: PlanResolution
     let uncachedInputTokens: Int64
@@ -212,6 +238,13 @@ struct StoredUsageQueryRow: Sendable {
     let reasoningTokens: Int64
     let totalTokens: Int64
     let project: ProjectIdentity
+}
+
+struct StoredTurnLifecycleQueryRow: Sendable {
+    let threadID: String
+    let turnID: String
+    let observedAtMilliseconds: Int64
+    let kind: SessionLifecycleKind
 }
 
 struct StoredSessionQueryRow: Sendable {
@@ -332,6 +365,7 @@ final class UsageStore: @unchecked Sendable {
             formatStatus: try row.requiredString("format_status"),
             lastError: try row.optionalString("last_error"),
             currentModel: try row.optionalString("current_model"),
+            currentTurnID: try row.optionalString("current_turn_id"),
             currentPlan: try planResolution(from: row),
             counters: counters,
             counterSegment: try row.requiredInt64("counter_segment"),
@@ -379,6 +413,48 @@ final class UsageStore: @unchecked Sendable {
         }
     }
 
+    func activityEvents(
+        fromMilliseconds: Int64? = nil,
+        toMilliseconds: Int64? = nil
+    ) throws -> [StoredActivityEvent] {
+        var predicates: [String] = []
+        var bindings: [SQLiteValue] = []
+        if let fromMilliseconds {
+            predicates.append("observed_at_ms >= ?")
+            bindings.append(.integer(fromMilliseconds))
+        }
+        if let toMilliseconds {
+            predicates.append("observed_at_ms < ?")
+            bindings.append(.integer(toMilliseconds))
+        }
+        let whereClause = predicates.isEmpty
+            ? ""
+            : " WHERE \(predicates.joined(separator: " AND "))"
+        let rows = try database.query(
+            sql: """
+            SELECT fingerprint, observed_at_ms, thread_id, turn_id, kind, name,
+                   source_kind, source_file_id, source_offset
+            FROM activity_events\(whereClause)
+            ORDER BY observed_at_ms, fingerprint
+            """,
+            bindings: bindings
+        )
+        return try rows.map { values in
+            let row = SQLiteRow(table: "activity_events", values: values)
+            return StoredActivityEvent(
+                fingerprint: try row.requiredString("fingerprint"),
+                observedAtMilliseconds: try row.requiredInt64("observed_at_ms"),
+                threadID: try row.requiredString("thread_id"),
+                turnID: try row.optionalString("turn_id"),
+                kind: try row.requiredEnum("kind", as: ActivityKind.self),
+                name: try row.requiredString("name"),
+                sourceKind: try row.requiredEnum("source_kind", as: CodexSourceKind.self),
+                sourceFileID: try row.requiredString("source_file_id"),
+                sourceOffset: try row.requiredInt64("source_offset")
+            )
+        }
+    }
+
     func resetImportedData() throws {
         try database.inTransaction {
             try resetImportedDataInCurrentTransaction()
@@ -404,6 +480,7 @@ final class UsageStore: @unchecked Sendable {
         return ThreadCheckpoint(
             threadID: try row.requiredString("thread_id"),
             currentModel: try row.optionalString("current_model"),
+            currentTurnID: try row.optionalString("current_turn_id"),
             currentPlan: try planResolution(from: row),
             counters: counters,
             counterSegment: try row.requiredInt64("counter_segment"),
@@ -541,7 +618,7 @@ final class UsageStore: @unchecked Sendable {
         let whereClause = predicates.isEmpty ? "" : " WHERE \(predicates.joined(separator: " AND "))"
         let rows = try database.query(
             sql: """
-            SELECT fingerprint, observed_at_ms, thread_id, model, plan, plan_raw, plan_is_inferred,
+            SELECT fingerprint, observed_at_ms, thread_id, turn_id, model, plan, plan_raw, plan_is_inferred,
                    uncached_input_tokens, cached_input_tokens, visible_output_tokens,
                    reasoning_tokens, total_tokens, project_id, project_name, repository_id
             FROM usage_events\(whereClause)
@@ -555,6 +632,7 @@ final class UsageStore: @unchecked Sendable {
                 fingerprint: try row.requiredString("fingerprint"),
                 observedAtMilliseconds: try row.requiredInt64("observed_at_ms"),
                 threadID: try row.requiredString("thread_id"),
+                turnID: try row.optionalString("turn_id"),
                 model: try row.requiredString("model"),
                 plan: try SQLitePlanResolution.from(row: row),
                 uncachedInputTokens: try row.requiredInt64("uncached_input_tokens"),
@@ -563,6 +641,24 @@ final class UsageStore: @unchecked Sendable {
                 reasoningTokens: try row.requiredInt64("reasoning_tokens"),
                 totalTokens: try row.requiredInt64("total_tokens"),
                 project: try projectIdentity(from: row) ?? .unknown
+            )
+        }
+    }
+
+    func turnLifecycleEvents() throws -> [StoredTurnLifecycleQueryRow] {
+        let rows = try database.query(sql: """
+            SELECT thread_id, turn_id, observed_at_ms, kind
+            FROM session_state_events
+            WHERE turn_id IS NOT NULL AND turn_id <> ''
+            ORDER BY observed_at_ms, fingerprint
+            """)
+        return try rows.map { values in
+            let row = SQLiteRow(table: "session_state_events", values: values)
+            return StoredTurnLifecycleQueryRow(
+                threadID: try row.requiredString("thread_id"),
+                turnID: try row.requiredString("turn_id"),
+                observedAtMilliseconds: try row.requiredInt64("observed_at_ms"),
+                kind: try row.requiredEnum("kind", as: SessionLifecycleKind.self)
             )
         }
     }
@@ -853,15 +949,16 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 9 else {
+            guard versions.last ?? 0 <= 10 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(9) {
+            if versions.contains(10) {
                 try validateVersionTwoSchema()
                 try validateVersionThreeSchema()
                 try validateVersionFiveSchema()
                 try validateVersionSevenSchema()
                 try validateVersionNineSchema()
+                try validateVersionTenSchema()
                 return
             }
 
@@ -926,15 +1023,26 @@ final class UsageStore: @unchecked Sendable {
                 try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (8)")
             }
 
-            for statement in Self.versionNineStatements {
+            if !versions.contains(9) {
+                for statement in Self.versionNineStatements {
+                    try database.execute(sql: statement)
+                }
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (9)")
+            }
+
+            for statement in Self.versionTenStatements {
                 try database.execute(sql: statement)
             }
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (9)")
+            // v10 attributes each cumulative usage delta to its active turn. Rebuild
+            // from untouched rollouts so the complete reply history is available.
+            try resetImportedDataInCurrentTransaction()
+            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (10)")
             try validateVersionTwoSchema()
             try validateVersionThreeSchema()
             try validateVersionFiveSchema()
             try validateVersionSevenSchema()
             try validateVersionNineSchema()
+            try validateVersionTenSchema()
         }
     }
 
@@ -961,16 +1069,17 @@ final class UsageStore: @unchecked Sendable {
         try database.execute(
             sql: """
             INSERT INTO usage_events(
-              fingerprint, observed_at_ms, thread_id, source_kind, model, plan, plan_raw,
+              fingerprint, observed_at_ms, thread_id, turn_id, source_kind, model, plan, plan_raw,
               plan_is_inferred, uncached_input_tokens, cached_input_tokens,
               visible_output_tokens, reasoning_tokens, total_tokens, source_file_id, source_offset,
               project_id, project_name, repository_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(fingerprint) DO NOTHING
             """,
             bindings: [
                 .text(event.fingerprint), .integer(event.observedAtMilliseconds), .text(event.threadID),
-                .text(event.sourceKind.rawValue), .text(event.model), .text(event.plan.kind.rawValue),
+                event.turnID.sqliteValue, .text(event.sourceKind.rawValue),
+                .text(event.model), .text(event.plan.kind.rawValue),
                 event.plan.rawValue.sqliteValue, .integer(event.plan.isInferred ? 1 : 0),
                 .integer(event.usage.uncachedInput), .integer(event.usage.cachedInput),
                 .integer(event.usage.visibleOutput), .integer(event.usage.reasoning),
@@ -1147,12 +1256,13 @@ final class UsageStore: @unchecked Sendable {
         try database.execute(
             sql: """
             INSERT INTO thread_checkpoints(
-              thread_id, current_model, plan, plan_raw, plan_is_inferred,
+              thread_id, current_model, current_turn_id, plan, plan_raw, plan_is_inferred,
               input_tokens, cached_input_tokens, output_tokens,
               reasoning_tokens, counter_segment, last_token_at_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(thread_id) DO UPDATE SET
-              current_model = excluded.current_model, plan = excluded.plan,
+              current_model = excluded.current_model, current_turn_id = excluded.current_turn_id,
+              plan = excluded.plan,
               plan_raw = excluded.plan_raw, plan_is_inferred = excluded.plan_is_inferred,
               input_tokens = excluded.input_tokens,
               cached_input_tokens = excluded.cached_input_tokens, output_tokens = excluded.output_tokens,
@@ -1161,6 +1271,7 @@ final class UsageStore: @unchecked Sendable {
             """,
             bindings: [
                 .text(checkpoint.threadID), checkpoint.currentModel.sqliteValue,
+                checkpoint.currentTurnID.sqliteValue,
                 (checkpoint.currentPlan?.kind.rawValue).sqliteValue,
                 checkpoint.currentPlan.flatMap(\.rawValue).sqliteValue,
                 checkpoint.currentPlan.map { $0.isInferred ? Int64(1) : Int64(0) }.sqliteValue,
@@ -1187,11 +1298,11 @@ final class UsageStore: @unchecked Sendable {
             INSERT INTO source_files(
               file_id, device_id, inode, path, file_size, committed_offset, generation,
               thread_id, last_record_at_ms, last_success_at_ms, format_status, last_error,
-              current_model, plan, plan_raw, plan_is_inferred,
+              current_model, current_turn_id, plan, plan_raw, plan_is_inferred,
               input_tokens, cached_input_tokens, output_tokens, reasoning_tokens,
               counter_segment, last_token_at_ms, activity_committed_offset,
               project_id, project_name, repository_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_id) DO UPDATE SET
               device_id = excluded.device_id, inode = excluded.inode, path = excluded.path,
               file_size = excluded.file_size, committed_offset = excluded.committed_offset,
@@ -1199,6 +1310,7 @@ final class UsageStore: @unchecked Sendable {
               last_record_at_ms = excluded.last_record_at_ms,
               last_success_at_ms = excluded.last_success_at_ms, format_status = excluded.format_status,
               last_error = excluded.last_error, current_model = excluded.current_model,
+              current_turn_id = excluded.current_turn_id,
               plan = excluded.plan, plan_raw = excluded.plan_raw,
               plan_is_inferred = excluded.plan_is_inferred,
               input_tokens = excluded.input_tokens,
@@ -1219,6 +1331,7 @@ final class UsageStore: @unchecked Sendable {
                 checkpoint.lastRecordAtMilliseconds.sqliteValue,
                 checkpoint.lastSuccessAtMilliseconds.sqliteValue, .text(checkpoint.formatStatus),
                 checkpoint.lastError.sqliteValue, checkpoint.currentModel.sqliteValue,
+                checkpoint.currentTurnID.sqliteValue,
                 (checkpoint.currentPlan?.kind.rawValue).sqliteValue,
                 checkpoint.currentPlan.flatMap(\.rawValue).sqliteValue,
                 checkpoint.currentPlan.map { $0.isInferred ? Int64(1) : Int64(0) }.sqliteValue,
@@ -1420,6 +1533,13 @@ final class UsageStore: @unchecked Sendable {
         """
     ]
 
+    private static let versionTenStatements = [
+        "ALTER TABLE source_files ADD COLUMN current_turn_id TEXT",
+        "ALTER TABLE thread_checkpoints ADD COLUMN current_turn_id TEXT",
+        "ALTER TABLE usage_events ADD COLUMN turn_id TEXT",
+        "CREATE INDEX usage_events_turn_idx ON usage_events(thread_id, turn_id, observed_at_ms)"
+    ]
+
     private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
         try SQLitePlanResolution.optional(from: row)
     }
@@ -1566,6 +1686,27 @@ final class UsageStore: @unchecked Sendable {
                 table: "account_rate_limit_cache",
                 missingColumns: missing
             )
+        }
+    }
+
+    private func validateVersionTenSchema() throws {
+        let requiredColumns: [(table: String, columns: [String])] = [
+            ("source_files", ["current_turn_id"]),
+            ("thread_checkpoints", ["current_turn_id"]),
+            ("usage_events", ["turn_id"])
+        ]
+        for requirement in requiredColumns {
+            let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")
+            let existing = try Set(rows.map {
+                try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+            })
+            let missing = requirement.columns.filter { !existing.contains($0) }
+            if !missing.isEmpty {
+                throw UsageStoreError.rebuildRequired(
+                    table: requirement.table,
+                    missingColumns: missing
+                )
+            }
         }
     }
 }

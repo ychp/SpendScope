@@ -1,0 +1,182 @@
+import AppKit
+import SwiftUI
+
+@MainActor
+final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate {
+    private weak var parentWindow: NSWindow?
+    private var hostingController: NSHostingController<AnyView>?
+    private var parentCloseObserver: NSObjectProtocol?
+    private var lastChildOrigin: NSPoint?
+    private var isSynchronizingMove = false
+    private var isDismissing = false
+    private var parentIgnoredMouseEvents = false
+    private let onDismiss: () -> Void
+
+    init(
+        entry: ProjectUsageEntry,
+        rank: Int,
+        parentWindow: NSWindow,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.parentWindow = parentWindow
+        self.onDismiss = onDismiss
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 570),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        super.init(window: panel)
+
+        panel.title = "项目详情"
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.titlebarSeparatorStyle = .none
+        panel.backgroundColor = NSColor(
+            srgbRed: 0.972,
+            green: 0.982,
+            blue: 0.998,
+            alpha: 1
+        )
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .documentWindow
+        panel.minSize = NSSize(width: 760, height: 560)
+        panel.level = parentWindow.level
+        panel.collectionBehavior = [.fullScreenAuxiliary]
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
+        panel.delegate = self
+
+        let hostingController = NSHostingController(
+            rootView: AnyView(
+                ProjectDetailView(entry: entry, rank: rank, onClose: {})
+                    .preferredColorScheme(.light)
+            )
+        )
+        self.hostingController = hostingController
+        panel.contentViewController = hostingController
+        update(entry: entry, rank: rank)
+
+        parentCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: parentWindow,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.dismiss(reactivateParent: false)
+            }
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func show() {
+        guard let panel = window, let parentWindow else { return }
+
+        let width = max(760, min(820, parentWindow.frame.width - 72))
+        let height = max(580, min(680, parentWindow.frame.height - 24))
+        let origin = NSPoint(
+            x: parentWindow.frame.midX - width / 2,
+            y: parentWindow.frame.midY - height / 2
+        )
+        panel.setFrame(NSRect(x: origin.x, y: origin.y, width: width, height: height), display: true)
+
+        parentIgnoredMouseEvents = parentWindow.ignoresMouseEvents
+        parentWindow.ignoresMouseEvents = true
+        parentWindow.addChildWindow(panel, ordered: .above)
+        lastChildOrigin = panel.frame.origin
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    func update(entry: ProjectUsageEntry, rank: Int) {
+        hostingController?.rootView = AnyView(
+            ProjectDetailView(
+                entry: entry,
+                rank: rank,
+                onClose: { [weak self] in
+                    self?.dismiss()
+                }
+            )
+            .preferredColorScheme(.light)
+        )
+    }
+
+    func dismiss() {
+        dismiss(reactivateParent: true)
+    }
+
+    private func dismiss(reactivateParent: Bool) {
+        guard !isDismissing else { return }
+        isDismissing = true
+
+        if let parentCloseObserver {
+            NotificationCenter.default.removeObserver(parentCloseObserver)
+            self.parentCloseObserver = nil
+        }
+
+        if let panel = window {
+            panel.delegate = nil
+            parentWindow?.removeChildWindow(panel)
+            panel.orderOut(nil)
+            panel.close()
+        }
+
+        if let parentWindow {
+            parentWindow.ignoresMouseEvents = parentIgnoredMouseEvents
+            if reactivateParent {
+                parentWindow.makeKeyAndOrderFront(nil)
+            }
+        }
+
+        onDismiss()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        dismiss()
+        return false
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard
+            let childWindow = notification.object as? NSWindow,
+            childWindow === window,
+            let parentWindow,
+            !isSynchronizingMove
+        else {
+            return
+        }
+
+        let currentOrigin = childWindow.frame.origin
+        guard let previousOrigin = lastChildOrigin else {
+            lastChildOrigin = currentOrigin
+            return
+        }
+        lastChildOrigin = currentOrigin
+
+        guard NSEvent.pressedMouseButtons & 1 == 1 else { return }
+        let delta = NSPoint(
+            x: currentOrigin.x - previousOrigin.x,
+            y: currentOrigin.y - previousOrigin.y
+        )
+        guard abs(delta.x) > 0.1 || abs(delta.y) > 0.1 else { return }
+
+        isSynchronizingMove = true
+        parentWindow.removeChildWindow(childWindow)
+        parentWindow.setFrameOrigin(
+            NSPoint(
+                x: parentWindow.frame.origin.x + delta.x,
+                y: parentWindow.frame.origin.y + delta.y
+            )
+        )
+        childWindow.setFrameOrigin(currentOrigin)
+        parentWindow.addChildWindow(childWindow, ordered: .above)
+        lastChildOrigin = childWindow.frame.origin
+        isSynchronizingMove = false
+    }
+}

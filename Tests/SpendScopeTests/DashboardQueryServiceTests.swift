@@ -187,6 +187,8 @@ final class DashboardQueryServiceTests: XCTestCase {
 
         XCTAssertEqual(today.entries.map(\.id), ["project-a"])
         XCTAssertEqual(today.totalTokens, 100)
+        XCTAssertEqual(today.entries.first?.dailyUsage.count, 7)
+        XCTAssertEqual(today.entries.first?.dailyUsage.map(\.tokens), [20, 0, 0, 0, 0, 0, 100])
         XCTAssertEqual(sevenDays.entries.map(\.id), ["project-a"])
         XCTAssertEqual(sevenDays.totalTokens, 120)
         XCTAssertEqual(sevenDays.entries.first?.share, 1)
@@ -209,11 +211,17 @@ final class DashboardQueryServiceTests: XCTestCase {
             events: [
                 usage(
                     "recent-a", at: now.addingTimeInterval(-30), total: 30,
-                    project: project, threadID: "recent-thread"
+                    usage: .init(
+                        uncachedInput: 10,
+                        cachedInput: 5,
+                        visibleOutput: 10,
+                        reasoning: 5
+                    ),
+                    project: project, threadID: "recent-thread", turnID: "recent-turn-1"
                 ),
                 usage(
                     "recent-b", at: now.addingTimeInterval(-20), total: 20,
-                    project: project, threadID: "recent-thread"
+                    project: project, threadID: "recent-thread", turnID: "recent-turn-2"
                 ),
                 usage(
                     "older", at: now.addingTimeInterval(-10), total: 100,
@@ -221,6 +229,47 @@ final class DashboardQueryServiceTests: XCTestCase {
                 )
             ],
             quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "recent-start-1", threadID: "recent-thread", turnID: "recent-turn-1",
+                    kind: .started, at: now.addingTimeInterval(-40)
+                ),
+                lifecycle(
+                    "recent-complete-1", threadID: "recent-thread", turnID: "recent-turn-1",
+                    kind: .completed, at: now.addingTimeInterval(-25)
+                ),
+                lifecycle(
+                    "recent-start-2", threadID: "recent-thread", turnID: "recent-turn-2",
+                    kind: .started, at: now.addingTimeInterval(-22)
+                )
+            ],
+            activityEvents: [
+                activity(
+                    "recent-skill", kind: .skill, name: "build-macos-apps:swiftui-patterns",
+                    at: now.addingTimeInterval(-38),
+                    threadID: "recent-thread", turnID: "recent-turn-1"
+                ),
+                activity(
+                    "recent-tool-1", kind: .tool, name: "exec_command",
+                    at: now.addingTimeInterval(-37),
+                    threadID: "recent-thread", turnID: "recent-turn-1"
+                ),
+                activity(
+                    "recent-tool-2", kind: .tool, name: "exec_command",
+                    at: now.addingTimeInterval(-36),
+                    threadID: "recent-thread", turnID: "recent-turn-1"
+                ),
+                activity(
+                    "recent-tool-3", kind: .tool, name: "view_image",
+                    at: now.addingTimeInterval(-35),
+                    threadID: "recent-thread", turnID: "recent-turn-1"
+                ),
+                activity(
+                    "unattributed-tool", kind: .tool, name: "ignored",
+                    at: now.addingTimeInterval(-34),
+                    threadID: "recent-thread", turnID: nil
+                )
+            ],
             sessions: [
                 session(threadID: "recent-thread", updatedAtMilliseconds: recentMessageAt),
                 session(threadID: "older-thread", updatedAtMilliseconds: olderMessageAt)
@@ -245,6 +294,33 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertTrue(entry.conversations.allSatisfy { $0.shortThreadID.hasPrefix("thread-") })
         XCTAssertFalse(entry.conversations.contains { $0.shortThreadID == "recent-thread" })
         XCTAssertEqual(entry.conversations.map(\.displayTitle), ["项目用量对话名称", nil])
+        let recentReplies = entry.conversations[0].replies
+        XCTAssertEqual(recentReplies.map(\.id), ["recent-turn-2", "recent-turn-1"])
+        XCTAssertEqual(recentReplies.map(\.status), [.inProgress, .completed])
+        XCTAssertEqual(recentReplies[1].uncachedInputTokens, 10)
+        XCTAssertEqual(recentReplies[1].cachedInputTokens, 5)
+        XCTAssertEqual(recentReplies[1].visibleOutputTokens, 10)
+        XCTAssertEqual(recentReplies[1].reasoningTokens, 5)
+        XCTAssertEqual(recentReplies[1].durationMilliseconds, 15_000)
+        XCTAssertEqual(
+            recentReplies[1].skillCalls,
+            [ProjectReplyActivityCall(
+                name: "build-macos-apps:swiftui-patterns",
+                count: 1
+            )]
+        )
+        XCTAssertEqual(
+            recentReplies[1].toolCalls,
+            [
+                ProjectReplyActivityCall(name: "exec_command", count: 2),
+                ProjectReplyActivityCall(name: "view_image", count: 1)
+            ]
+        )
+        XCTAssertEqual(recentReplies[1].skillCallCount, 1)
+        XCTAssertEqual(recentReplies[1].toolCallCount, 3)
+        XCTAssertTrue(recentReplies[0].skillCalls.isEmpty)
+        XCTAssertTrue(recentReplies[0].toolCalls.isEmpty)
+        XCTAssertEqual(entry.conversations[1].unattributedTokens, 100)
         XCTAssertEqual(
             ProjectConversationSortOrder.usage.sorted(entry.conversations).map(\.tokens),
             [100, 50]
@@ -600,12 +676,14 @@ final class DashboardQueryServiceTests: XCTestCase {
         model: String = "test-model",
         planRaw: String = "plus",
         project: ProjectIdentity = .unknown,
-        threadID: String = "thread-1"
+        threadID: String = "thread-1",
+        turnID: String? = nil
     ) -> StoredUsageEvent {
         StoredUsageEvent(
             fingerprint: fingerprint,
             observedAtMilliseconds: Int64((date.timeIntervalSince1970 * 1_000).rounded()),
             threadID: threadID,
+            turnID: turnID,
             sourceKind: .cli,
             model: model,
             plan: PlanResolver.resolve(rawValue: planRaw),
@@ -666,13 +744,15 @@ final class DashboardQueryServiceTests: XCTestCase {
         _ fingerprint: String,
         kind: ActivityKind,
         name: String,
-        at date: Date
+        at date: Date,
+        threadID: String = "thread-1",
+        turnID: String? = "turn-1"
     ) -> StoredActivityEvent {
         StoredActivityEvent(
             fingerprint: fingerprint,
             observedAtMilliseconds: Int64((date.timeIntervalSince1970 * 1_000).rounded()),
-            threadID: "thread-1",
-            turnID: "turn-1",
+            threadID: threadID,
+            turnID: turnID,
             kind: kind,
             name: name,
             sourceKind: .cli,
@@ -681,9 +761,28 @@ final class DashboardQueryServiceTests: XCTestCase {
         )
     }
 
+    private func lifecycle(
+        _ fingerprint: String,
+        threadID: String,
+        turnID: String,
+        kind: SessionLifecycleKind,
+        at date: Date
+    ) -> StoredSessionStateEvent {
+        StoredSessionStateEvent(
+            fingerprint: fingerprint,
+            threadID: threadID,
+            turnID: turnID,
+            observedAtMilliseconds: Int64((date.timeIntervalSince1970 * 1_000).rounded()),
+            kind: kind,
+            sourceFileID: "file-1",
+            sourceOffset: 1
+        )
+    }
+
     private func batch(
         events: [StoredUsageEvent],
         quotas: [StoredQuotaEvent],
+        stateEvents: [StoredSessionStateEvent] = [],
         activityEvents: [StoredActivityEvent] = [],
         sessions: [StoredSession] = []
     ) -> ImportBatch {
@@ -696,7 +795,7 @@ final class DashboardQueryServiceTests: XCTestCase {
             ),
             usageEvents: events,
             quotaEvents: quotas,
-            stateEvents: [],
+            stateEvents: stateEvents,
             activityEvents: activityEvents,
             sessions: sessions,
             threadCheckpoints: []

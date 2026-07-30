@@ -24,6 +24,7 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(second.skippedFileCount, 1)
         XCTAssertEqual(try store.totalUsage(), 1_100)
         XCTAssertEqual(try store.usageEvents().first?.project.name, "SpendScopeFixture")
+        XCTAssertEqual(try store.usageEvents().first?.turnID, "turn-1")
         XCTAssertEqual(try store.latestQuotas().map(\.observation.kind), [.fiveHour, .weekly])
         XCTAssertEqual(try store.sessions().first?.activity, .completed)
         XCTAssertEqual(try store.sessions().first?.sourceKind, .desktop)
