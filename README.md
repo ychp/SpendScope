@@ -70,6 +70,14 @@ flowchart LR
 
 看板集中展示当前额度、今日/近 7 日/近 30 日/累计 Token，以及用量日历和趋势图。顶部标签可以切换到 Skills / Tools、项目用量和模型用量排行；项目排行可打开独立详情窗口查看项目概览、任务和回复，模型排行同时提供 Token 构成、公开 API 标准价格与费用明细。费用仅为基于本地 Token 的 API 等值估算，不代表 Codex 实际账单，未公开定价的内部模型不会被强行套价。
 
+#### Skills / Tools 排行
+
+![SpendScope Skills 与 Tools 排行，展示调用次数和相对占比](docs/images/spendscope-activity-usage.png)
+
+#### 模型用量
+
+![SpendScope 模型用量排行，展示 Token 总量和 API 等值费用估算](docs/images/spendscope-model-usage.png)
+
 ### 项目用量与回复调用详情
 
 项目用量页保留紧凑排行，不直接在表格中展开内容。点击项目行的“查看详情”会打开独立项目详情窗口，并锁定原看板；拖动详情窗口时原看板会同步移动。详情窗口包含：
