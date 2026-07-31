@@ -63,62 +63,80 @@ struct DashboardView: View {
                 .ignoresSafeArea()
         }
         .background(DashboardWindowSizingBridge(isCollapsed: isCollapsed))
+        .background(DashboardWindowChromeBridge())
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isCollapsed.toggle()
-                    }
-                } label: {
-                    Image(
-                        systemName: isCollapsed
-                            ? "arrow.up.left.and.arrow.down.right"
-                            : "arrow.down.right.and.arrow.up.left"
-                    )
-                    .frame(width: 16, height: 16)
-                }
-                .disabled(store.snapshot == nil)
-                .keyboardShortcut("b", modifiers: [.command, .shift])
-                .accessibilityLabel(isCollapsed ? "展开看板" : "收起看板")
-                .help(isCollapsed ? "展开看板" : "收起看板，仅展示额度")
+            dashboardToolbar
+        }
+    }
 
-                Button {
-                    Task { await store.refresh() }
-                } label: {
-                    ZStack {
-                        Image(systemName: "arrow.clockwise")
-                            .opacity(store.isRefreshing ? 0 : 1)
+    @ToolbarContentBuilder
+    private var dashboardToolbar: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.flexible, placement: .primaryAction)
+            dashboardToolbarItems
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            dashboardToolbarItems
+        }
+    }
 
-                        if store.isRefreshing {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-                    .frame(width: 16, height: 16)
+    @ToolbarContentBuilder
+    private var dashboardToolbarItems: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isCollapsed.toggle()
                 }
-                .disabled(store.isRefreshing)
-                .keyboardShortcut("r", modifiers: .command)
-                .accessibilityLabel(store.isRefreshing ? "正在刷新" : "刷新")
-                .help(store.isRefreshing ? "正在刷新" : "刷新")
-
-                SettingsLink {
-                    Label("设置", systemImage: "gearshape")
-                        .labelStyle(.iconOnly)
-                }
-                .help("设置")
-
-                Button {
-                    keepsDashboardOnTop.toggle()
-                } label: {
-                    Image(systemName: keepsDashboardOnTop ? "pin.fill" : "pin")
-                        .foregroundStyle(keepsDashboardOnTop ? Color.accentColor : Color.primary)
-                        .frame(width: 16, height: 16)
-                }
-                .accessibilityLabel(keepsDashboardOnTop ? "取消看板置顶" : "置顶看板")
-                .accessibilityValue(keepsDashboardOnTop ? "已置顶" : "未置顶")
-                .accessibilityAddTraits(keepsDashboardOnTop ? .isSelected : [])
-                .help(keepsDashboardOnTop ? "取消看板置顶" : "置顶看板")
+            } label: {
+                Image(
+                    systemName: isCollapsed
+                        ? "arrow.up.left.and.arrow.down.right"
+                        : "arrow.down.right.and.arrow.up.left"
+                )
+                .frame(width: 16, height: 16)
             }
+            .disabled(store.snapshot == nil)
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .accessibilityLabel(isCollapsed ? "展开看板" : "收起看板")
+            .help(isCollapsed ? "展开看板" : "收起看板，仅展示额度")
+
+            Button {
+                Task { await store.refresh() }
+            } label: {
+                ZStack {
+                    Image(systemName: "arrow.clockwise")
+                        .opacity(store.isRefreshing ? 0 : 1)
+
+                    if store.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .frame(width: 16, height: 16)
+            }
+            .disabled(store.isRefreshing)
+            .keyboardShortcut("r", modifiers: .command)
+            .accessibilityLabel(store.isRefreshing ? "正在刷新" : "刷新")
+            .help(store.isRefreshing ? "正在刷新" : "刷新")
+
+            SettingsLink {
+                Label("设置", systemImage: "gearshape")
+                    .labelStyle(.iconOnly)
+                    .frame(width: 16, height: 16)
+            }
+            .help("设置")
+
+            Button {
+                keepsDashboardOnTop.toggle()
+            } label: {
+                Image(systemName: keepsDashboardOnTop ? "pin.fill" : "pin")
+                    .foregroundStyle(keepsDashboardOnTop ? Color.accentColor : Color.primary)
+                    .frame(width: 16, height: 16)
+            }
+            .accessibilityLabel(keepsDashboardOnTop ? "取消看板置顶" : "置顶看板")
+            .accessibilityValue(keepsDashboardOnTop ? "已置顶" : "未置顶")
+            .accessibilityAddTraits(keepsDashboardOnTop ? .isSelected : [])
+            .help(keepsDashboardOnTop ? "取消看板置顶" : "置顶看板")
         }
     }
 
@@ -159,6 +177,28 @@ private struct DashboardWindowSizingBridge: NSViewRepresentable {
 
     func updateNSView(_ nsView: DashboardWindowSizingView, context: Context) {
         nsView.setCollapsed(isCollapsed)
+    }
+}
+
+private struct DashboardWindowChromeBridge: NSViewRepresentable {
+    func makeNSView(context: Context) -> DashboardWindowChromeView {
+        DashboardWindowChromeView()
+    }
+
+    func updateNSView(_ nsView: DashboardWindowChromeView, context: Context) {
+        nsView.hideWindowTitle()
+    }
+}
+
+@MainActor
+private final class DashboardWindowChromeView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        hideWindowTitle()
+    }
+
+    func hideWindowTitle() {
+        window?.titleVisibility = .hidden
     }
 }
 
@@ -281,7 +321,9 @@ private struct DashboardContentView: View {
                     overviewPanel.frame(height: 238)
                     analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+                .padding(.top, 8)
                 .transition(.opacity)
             }
         }
