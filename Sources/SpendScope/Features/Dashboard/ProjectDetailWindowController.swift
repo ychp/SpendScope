@@ -5,6 +5,8 @@ import SwiftUI
 final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate {
     private weak var parentWindow: NSWindow?
     private var hostingController: NSHostingController<AnyView>?
+    private var replyHoverPanel: NSPanel?
+    private var replyHoverHostingController: NSHostingController<AnyView>?
     private var parentCloseObserver: NSObjectProtocol?
     private var lastChildOrigin: NSPoint?
     private var isSynchronizingMove = false
@@ -52,7 +54,12 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
 
         let hostingController = NSHostingController(
             rootView: AnyView(
-                ProjectDetailView(entry: entry, rank: rank, onClose: {})
+                ProjectDetailView(
+                    entry: entry,
+                    rank: rank,
+                    onClose: {},
+                    onReplyHover: { _ in }
+                )
                     .preferredColorScheme(.light)
             )
         )
@@ -101,6 +108,9 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
                 rank: rank,
                 onClose: { [weak self] in
                     self?.dismiss()
+                },
+                onReplyHover: { [weak self] row in
+                    self?.updateReplyHover(row)
                 }
             )
             .preferredColorScheme(.light)
@@ -120,6 +130,8 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
             self.parentCloseObserver = nil
         }
 
+        closeReplyHoverPanel()
+
         if let panel = window {
             panel.delegate = nil
             parentWindow?.removeChildWindow(panel)
@@ -135,6 +147,138 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         }
 
         onDismiss()
+    }
+
+    private func updateReplyHover(_ row: ProjectReplyDetailRow?) {
+        guard let row else {
+            hideReplyHoverPanel()
+            return
+        }
+        guard let detailPanel = window else { return }
+
+        let rootView = AnyView(
+            ProjectReplyHoverCard(row: row)
+                .padding(12)
+                .preferredColorScheme(.light)
+        )
+        let hostingController: NSHostingController<AnyView>
+        let hoverPanel: NSPanel
+
+        if let existingHostingController = replyHoverHostingController,
+           let existingPanel = replyHoverPanel {
+            existingHostingController.rootView = rootView
+            hostingController = existingHostingController
+            hoverPanel = existingPanel
+        } else {
+            hostingController = NSHostingController(rootView: rootView)
+            hoverPanel = NSPanel(
+                contentRect: NSRect(x: 0, y: 0, width: 434, height: 320),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            hoverPanel.contentViewController = hostingController
+            hoverPanel.backgroundColor = .clear
+            hoverPanel.isOpaque = false
+            hoverPanel.hasShadow = true
+            hoverPanel.ignoresMouseEvents = true
+            hoverPanel.hidesOnDeactivate = false
+            hoverPanel.isReleasedWhenClosed = false
+            hoverPanel.animationBehavior = .utilityWindow
+            hoverPanel.level = detailPanel.level
+            hoverPanel.collectionBehavior = [
+                .fullScreenAuxiliary,
+                .transient,
+                .ignoresCycle
+            ]
+            replyHoverHostingController = hostingController
+            replyHoverPanel = hoverPanel
+        }
+
+        hostingController.view.layoutSubtreeIfNeeded()
+        let fittingSize = hostingController.view.fittingSize
+        let maximumHeight = max(
+            230,
+            (detailPanel.screen?.visibleFrame.height ?? 680) - 24
+        )
+        hoverPanel.setContentSize(
+            NSSize(
+                width: max(434, fittingSize.width),
+                height: min(max(230, fittingSize.height), maximumHeight)
+            )
+        )
+        positionReplyHoverPanel(hoverPanel, relativeTo: detailPanel)
+
+        if hoverPanel.parent !== detailPanel {
+            hoverPanel.parent?.removeChildWindow(hoverPanel)
+            detailPanel.addChildWindow(hoverPanel, ordered: .above)
+        }
+        hoverPanel.orderFront(nil)
+    }
+
+    private func positionReplyHoverPanel(
+        _ hoverPanel: NSPanel,
+        relativeTo detailPanel: NSWindow
+    ) {
+        guard let screen = detailPanel.screen ?? NSScreen.main else { return }
+
+        let gap: CGFloat = 10
+        let screenFrame = screen.visibleFrame.insetBy(dx: 8, dy: 8)
+        let detailFrame = detailPanel.frame
+        let hoverSize = hoverPanel.frame.size
+        let rightOriginX = detailFrame.maxX + gap
+        let leftOriginX = detailFrame.minX - hoverSize.width - gap
+        let sideOriginY = min(
+            max(detailFrame.maxY - 218 - hoverSize.height, screenFrame.minY),
+            screenFrame.maxY - hoverSize.height
+        )
+        let origin: NSPoint
+        if rightOriginX + hoverSize.width <= screenFrame.maxX {
+            origin = NSPoint(x: rightOriginX, y: sideOriginY)
+        } else if leftOriginX >= screenFrame.minX {
+            origin = NSPoint(x: leftOriginX, y: sideOriginY)
+        } else if detailFrame.minY - gap - hoverSize.height >= screenFrame.minY {
+            origin = NSPoint(
+                x: min(
+                    max(detailFrame.maxX - hoverSize.width, screenFrame.minX),
+                    screenFrame.maxX - hoverSize.width
+                ),
+                y: detailFrame.minY - gap - hoverSize.height
+            )
+        } else if detailFrame.maxY + gap + hoverSize.height <= screenFrame.maxY {
+            origin = NSPoint(
+                x: min(
+                    max(detailFrame.maxX - hoverSize.width, screenFrame.minX),
+                    screenFrame.maxX - hoverSize.width
+                ),
+                y: detailFrame.maxY + gap
+            )
+        } else {
+            let rightSpace = screenFrame.maxX - detailFrame.maxX
+            let leftSpace = detailFrame.minX - screenFrame.minX
+            origin = NSPoint(
+                x: rightSpace >= leftSpace
+                    ? screenFrame.maxX - hoverSize.width
+                    : screenFrame.minX,
+                y: sideOriginY
+            )
+        }
+        hoverPanel.setFrameOrigin(origin)
+    }
+
+    private func hideReplyHoverPanel() {
+        guard let hoverPanel = replyHoverPanel else { return }
+        hoverPanel.parent?.removeChildWindow(hoverPanel)
+        hoverPanel.orderOut(nil)
+    }
+
+    private func closeReplyHoverPanel() {
+        guard let hoverPanel = replyHoverPanel else { return }
+        hoverPanel.parent?.removeChildWindow(hoverPanel)
+        hoverPanel.orderOut(nil)
+        hoverPanel.close()
+        replyHoverPanel = nil
+        replyHoverHostingController = nil
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {

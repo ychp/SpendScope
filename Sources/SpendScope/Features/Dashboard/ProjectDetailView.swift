@@ -5,6 +5,7 @@ struct ProjectDetailView: View {
     let entry: ProjectUsageEntry
     let rank: Int
     let onClose: () -> Void
+    let onReplyHover: (ProjectReplyDetailRow?) -> Void
 
     @State private var selectedTab: ProjectDetailTab = .overview
     @State private var conversationSortOrder = ProjectConversationSortOrder.defaultOrder
@@ -54,6 +55,9 @@ struct ProjectDetailView: View {
             }
         }
         .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+        .onDisappear {
+            onReplyHover(nil)
+        }
         .onExitCommand(perform: onClose)
     }
 
@@ -206,6 +210,9 @@ struct ProjectDetailView: View {
         HStack(spacing: 28) {
             ForEach(ProjectDetailTab.allCases) { tab in
                 Button {
+                    if tab != .replies {
+                        onReplyHover(nil)
+                    }
                     withAnimation(.easeOut(duration: 0.16)) {
                         selectedTab = tab
                     }
@@ -857,7 +864,9 @@ struct ProjectDetailView: View {
                 .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72), lineWidth: 1)
         }
         .contentShape(Rectangle())
-        .help(replyActivityHelpText(row))
+        .onHover { isHovering in
+            onReplyHover(isHovering ? row : nil)
+        }
     }
 
     private func replyActivityMetric(
@@ -880,43 +889,6 @@ struct ProjectDetailView: View {
             (count > 0 ? tint : SpendScopeTheme.dashboardMutedText).opacity(0.08),
             in: Capsule()
         )
-    }
-
-    private func replyActivityHelpText(_ row: ProjectReplyDetailRow) -> String {
-        var sections: [String] = []
-        sections.append(
-            activityHelpSection(
-                title: "Skills",
-                calls: row.reply.skillCalls
-            )
-        )
-        sections.append(
-            activityHelpSection(
-                title: "Tools",
-                calls: row.reply.toolCalls
-            )
-        )
-        sections.append(
-            "Token 构成\n"
-                + "输入 \(TokenFormatter.compact(row.reply.uncachedInputTokens)) · "
-                + "缓存 \(TokenFormatter.compact(row.reply.cachedInputTokens)) · "
-                + "输出 \(TokenFormatter.compact(row.reply.visibleOutputTokens)) · "
-                + "推理 \(TokenFormatter.compact(row.reply.reasoningTokens))"
-        )
-        return sections.joined(separator: "\n\n")
-    }
-
-    private func activityHelpSection(
-        title: String,
-        calls: [ProjectReplyActivityCall]
-    ) -> String {
-        guard !calls.isEmpty else { return "\(title) 0 次\n未调用" }
-        let total = calls.reduce(0) { $0 + $1.count }
-        var rows = calls.prefix(10).map { "• \($0.name) ×\($0.count)" }
-        if calls.count > 10 {
-            rows.append("• 另有 \(calls.count - 10) 种调用")
-        }
-        return "\(title) \(total) 次\n" + rows.joined(separator: "\n")
     }
 
     private func detailCard<Content: View>(
@@ -1134,6 +1106,167 @@ struct ProjectDetailView: View {
     }
 }
 
+struct ProjectReplyHoverCard: View {
+    let row: ProjectReplyDetailRow
+
+    var body: some View {
+        let status = ProjectReplyPresentation.status(row.reply.status)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: ProjectReplyPresentation.icon(row.reply.status))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(status.color)
+                    .frame(width: 30, height: 30)
+                    .background(status.color.opacity(0.10), in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("回复调用详情")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(
+                        ProjectUsageDateFormatter.replyTime(
+                            row.reply.displayAtMilliseconds
+                        )
+                    )
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                    .monospacedDigit()
+                }
+                Spacer()
+                Text(status.title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(status.color)
+                    .padding(.horizontal, 9)
+                    .frame(height: 23)
+                    .background(status.color.opacity(0.09), in: Capsule())
+            }
+
+            HStack(spacing: 9) {
+                hoverSummary(
+                    title: "Skills",
+                    count: row.reply.skillCallCount,
+                    icon: "sparkles",
+                    tint: SpendScopeTheme.dashboardInput
+                )
+                hoverSummary(
+                    title: "Tools",
+                    count: row.reply.toolCallCount,
+                    icon: "wrench.and.screwdriver.fill",
+                    tint: SpendScopeTheme.dashboardAccentSecondary
+                )
+            }
+
+            Divider()
+
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 14) {
+                    activitySection(
+                        title: "Skills 调用",
+                        icon: "sparkles",
+                        tint: SpendScopeTheme.dashboardInput,
+                        calls: row.reply.skillCalls
+                    )
+                    activitySection(
+                        title: "Tools 调用",
+                        icon: "wrench.and.screwdriver.fill",
+                        tint: SpendScopeTheme.dashboardAccentSecondary,
+                        calls: row.reply.toolCalls
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 110, maxHeight: 420)
+            .scrollIndicators(.visible)
+
+            Divider()
+
+            Text(
+                "Token  输入 \(TokenFormatter.compact(row.reply.uncachedInputTokens))"
+                    + " · 缓存 \(TokenFormatter.compact(row.reply.cachedInputTokens))"
+                    + " · 输出 \(TokenFormatter.compact(row.reply.visibleOutputTokens))"
+                    + " · 推理 \(TokenFormatter.compact(row.reply.reasoningTokens))"
+            )
+            .font(.system(size: 10, weight: .medium, design: .rounded))
+            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            .monospacedDigit()
+        }
+        .padding(16)
+        .frame(width: 410)
+        .background(
+            SpendScopeTheme.dashboardSurfaceOpaque,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder, lineWidth: 1)
+        }
+        .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+    }
+
+    private func hoverSummary(
+        title: String,
+        count: Int,
+        icon: String,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(tint)
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            Spacer(minLength: 0)
+            Text("\(count) 次")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, minHeight: 38)
+        .background(
+            tint.opacity(0.055),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+    }
+
+    private func activitySection(
+        title: String,
+        icon: String,
+        tint: Color,
+        calls: [ProjectReplyActivityCall]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(tint)
+
+            if calls.isEmpty {
+                Text("本次回复未调用")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            } else {
+                ForEach(calls) { call in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(tint.opacity(0.72))
+                            .frame(width: 5, height: 5)
+                            .padding(.top, 6)
+                        Text(call.name)
+                            .font(.system(size: 10, weight: .medium))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Text("\(call.count) 次")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                            .monospacedDigit()
+                            .padding(.top, 1)
+                    }
+                    .frame(minHeight: 20)
+                }
+            }
+        }
+    }
+}
+
 private enum ProjectDetailTab: String, CaseIterable, Identifiable {
     case overview = "概览"
     case conversations = "任务明细"
@@ -1150,7 +1283,7 @@ private enum ProjectDetailTab: String, CaseIterable, Identifiable {
     }
 }
 
-private struct ProjectReplyDetailRow: Identifiable {
+struct ProjectReplyDetailRow: Identifiable {
     let id: String
     let conversationTitle: String
     let reply: ProjectReplyUsage
