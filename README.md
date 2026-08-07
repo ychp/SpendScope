@@ -74,6 +74,8 @@ flowchart LR
 
 ![SpendScope Skills 与 Tools 排行，展示调用次数和相对占比](docs/images/spendscope-activity-usage.png)
 
+带命名空间的 Skill 会先按命名空间汇总调用次数，再参与排行，避免同一组 Skill 因细分名称不同被拆散。将鼠标停在汇总项上，可以查看各细分 Skill 与“直接使用”的调用次数；Tools 继续按完整名称独立排行。
+
 #### 模型用量
 
 ![SpendScope 模型用量排行，展示 Token 总量和 API 等值费用估算](docs/images/spendscope-model-usage.png)
