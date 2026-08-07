@@ -485,15 +485,14 @@ final class DashboardQueryService: @unchecked Sendable {
         fromMilliseconds: Int64?,
         toMilliseconds: Int64
     ) throws -> ActivityRanking {
-        ActivityRanking(
-            skills: try store.activityCounts(
-                kind: .skill,
-                fromMilliseconds: fromMilliseconds,
-                toMilliseconds: toMilliseconds,
-                limit: 20
-            ).map {
-                ActivityRankingEntry(name: $0.name, count: Int(clamping: $0.count))
-            },
+        let skillCounts = try store.activityCounts(
+            kind: .skill,
+            fromMilliseconds: fromMilliseconds,
+            toMilliseconds: toMilliseconds,
+            limit: nil
+        )
+        return ActivityRanking(
+            skills: try groupedSkillRanking(from: skillCounts),
             tools: try store.activityCounts(
                 kind: .tool,
                 fromMilliseconds: fromMilliseconds,
@@ -503,6 +502,73 @@ final class DashboardQueryService: @unchecked Sendable {
                 ActivityRankingEntry(name: $0.name, count: Int(clamping: $0.count))
             }
         )
+    }
+
+    private func groupedSkillRanking(
+        from counts: [StoredActivityCount],
+        limit: Int = 20
+    ) throws -> [ActivityRankingEntry] {
+        struct Group {
+            var total: Int64 = 0
+            var standalone: Int64 = 0
+            var details: [String: Int64] = [:]
+        }
+
+        var groups: [String: Group] = [:]
+        for item in counts {
+            let parts = item.name.split(
+                separator: ":",
+                maxSplits: 1,
+                omittingEmptySubsequences: false
+            )
+            let hasNamespace = parts.count == 2 && !parts[0].isEmpty && !parts[1].isEmpty
+            let groupName = hasNamespace ? String(parts[0]) : item.name
+            var group = groups[groupName] ?? Group()
+            group.total = try checkedAdd(
+                group.total,
+                item.count,
+                context: "activity.skills.\(groupName)"
+            )
+            if hasNamespace {
+                group.details[String(parts[1])] = item.count
+            } else {
+                group.standalone = try checkedAdd(
+                    group.standalone,
+                    item.count,
+                    context: "activity.skills.\(groupName).standalone"
+                )
+            }
+            groups[groupName] = group
+        }
+
+        return groups.map { name, group in
+            var details = group.details.map { detailName, count in
+                ActivityRankingDetail(name: detailName, count: Int(clamping: count))
+            }
+            if !details.isEmpty, group.standalone > 0 {
+                details.append(
+                    ActivityRankingDetail(
+                        name: "直接使用",
+                        count: Int(clamping: group.standalone)
+                    )
+                )
+            }
+            details.sort { left, right in
+                if left.count != right.count { return left.count > right.count }
+                return left.name < right.name
+            }
+            return ActivityRankingEntry(
+                name: name,
+                count: Int(clamping: group.total),
+                details: details
+            )
+        }
+        .sorted { left, right in
+            if left.count != right.count { return left.count > right.count }
+            return left.name < right.name
+        }
+        .prefix(limit)
+        .map { $0 }
     }
 
     private func period(

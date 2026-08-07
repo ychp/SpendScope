@@ -546,6 +546,65 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertFalse(sevenDays.tools.contains { $0.name == "future" })
     }
 
+    func testSkillRankingGroupsNamespacesBeforeApplyingTopTwenty() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 7, hour: 12
+        )))
+        var events = (0..<25).map { index in
+            let detailName: String
+            switch index {
+            case 0: detailName = "appkit-interop"
+            case 1: detailName = "build-run-debug"
+            case 2: detailName = "swiftui-patterns"
+            default: detailName = String(format: "detail-%02d", index)
+            }
+            return activity(
+                "grouped-skill-\(index)",
+                kind: .skill,
+                name: "build-macos-apps:\(detailName)",
+                at: now.addingTimeInterval(-1)
+            )
+        }
+        events += (0..<19).flatMap { index in
+            (0..<2).map { invocation in
+                activity(
+                    "standalone-\(index)-\(invocation)",
+                    kind: .skill,
+                    name: String(format: "standalone-%02d", index),
+                    at: now.addingTimeInterval(-1)
+                )
+            }
+        }
+        events.append(activity(
+            "namespaced-tool",
+            kind: .tool,
+            name: "server:call",
+            at: now.addingTimeInterval(-1)
+        ))
+        let store = try makeStore()
+        try store.commit(batch(events: [], quotas: [], activityEvents: events))
+
+        let ranking = try DashboardQueryService(store: store)
+            .snapshot(now: now, calendar: calendar)
+            .activityRankings
+            .ranking(for: .today)
+
+        XCTAssertEqual(ranking.skills.count, 20)
+        XCTAssertEqual(ranking.skills.first?.name, "build-macos-apps")
+        XCTAssertEqual(ranking.skills.first?.count, 25)
+        XCTAssertEqual(ranking.skills.first?.details.count, 25,
+                       "Every sub-skill must contribute before the grouped Top 20 is selected")
+        XCTAssertEqual(ranking.skills.first?.details.map(\.count), Array(repeating: 1, count: 25))
+        XCTAssertTrue(ranking.skills.first?.details.contains {
+            $0.name == "swiftui-patterns"
+        } == true)
+        XCTAssertEqual(ranking.tools.first?.name, "server:call",
+                       "Tools remain ungrouped even when their names contain a namespace")
+        XCTAssertTrue(ranking.tools.first?.details.isEmpty == true)
+    }
+
     func testDisplaysProLiteAsPro5xAndProAsPro20x() throws {
         let now = Date(timeIntervalSince1970: 10_000)
         let store = try makeStore()

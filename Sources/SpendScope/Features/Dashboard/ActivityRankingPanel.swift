@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ActivityRankingPanel: View {
     let ranking: ActivityRanking
+    @State private var hoveredSkillID: ActivityRankingEntry.ID?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -104,7 +105,6 @@ struct ActivityRankingPanel: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(width: 118, alignment: .leading)
-                .help(entry.name)
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
@@ -139,8 +139,35 @@ struct ActivityRankingPanel: View {
                 .frame(width: 48, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, minHeight: 29)
+        .contentShape(Rectangle())
+        .onHover { isHovered in
+            guard !entry.details.isEmpty else { return }
+            if isHovered {
+                hoveredSkillID = entry.id
+            } else if hoveredSkillID == entry.id {
+                hoveredSkillID = nil
+            }
+        }
+        .popover(
+            isPresented: hoverBinding(for: entry),
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .bottom
+        ) {
+            SkillBreakdownPopover(entry: entry)
+                .padding(4)
+        }
+        .help(
+            entry.details.isEmpty
+                ? entry.name
+                : "悬浮查看 \(entry.name) 的细分 Skill 用量"
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("第 \(rank) 名，\(entry.name)，调用 \(entry.count) 次")
+        .accessibilityHint(
+            entry.details.isEmpty
+                ? ""
+                : "悬浮可查看 \(entry.details.count) 个细分 Skill"
+        )
     }
 
     private func compactEmptyState(title: String) -> some View {
@@ -159,5 +186,107 @@ struct ActivityRankingPanel: View {
     private func barWidth(available: CGFloat, count: Int, maximum: Int) -> CGFloat {
         guard maximum > 0, count > 0 else { return 0 }
         return max(5, available * CGFloat(count) / CGFloat(maximum))
+    }
+
+    private func hoverBinding(for entry: ActivityRankingEntry) -> Binding<Bool> {
+        Binding(
+            get: { !entry.details.isEmpty && hoveredSkillID == entry.id },
+            set: { isPresented in
+                if !isPresented, hoveredSkillID == entry.id {
+                    hoveredSkillID = nil
+                }
+            }
+        )
+    }
+}
+
+private struct SkillBreakdownPopover: View {
+    let entry: ActivityRankingEntry
+
+    private var maximum: Int {
+        entry.details.map(\.count).max() ?? 0
+    }
+
+    private var listHeight: CGFloat {
+        min(max(CGFloat(entry.details.count) * 34, 34), 272)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.name)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("\(entry.details.count) 个细分 Skill")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                }
+                Spacer(minLength: 12)
+                Text("\(entry.count) 次")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+            }
+
+            Rectangle()
+                .fill(SpendScopeTheme.dashboardBorder)
+                .frame(height: 1)
+
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 8) {
+                    ForEach(entry.details) { detail in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text(detail.name)
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help("\(entry.name):\(detail.name)")
+                                Spacer(minLength: 8)
+                                Text("\(detail.count) 次")
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .monospacedDigit()
+                            }
+
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(SpendScopeTheme.dashboardControlBackground)
+                                    Capsule()
+                                        .fill(SpendScopeTheme.dashboardAccent)
+                                        .frame(
+                                            width: maximum > 0
+                                                ? geometry.size.width
+                                                    * CGFloat(detail.count)
+                                                    / CGFloat(maximum)
+                                                : 0
+                                        )
+                                }
+                            }
+                            .frame(height: 4)
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(detail.name)，调用 \(detail.count) 次")
+                    }
+                }
+            }
+            .scrollIndicators(entry.details.count > 8 ? .visible : .hidden)
+            .frame(height: listHeight)
+        }
+        .padding(12)
+        .frame(width: 270)
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+            shape
+                .fill(.thinMaterial)
+                .overlay { shape.fill(SpendScopeTheme.glassTintStrong) }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(entry.name) 细分 Skill 用量")
     }
 }

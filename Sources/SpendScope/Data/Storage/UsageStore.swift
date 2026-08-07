@@ -379,9 +379,9 @@ final class UsageStore: @unchecked Sendable {
         kind: ActivityKind,
         fromMilliseconds: Int64? = nil,
         toMilliseconds: Int64? = nil,
-        limit: Int = 20
+        limit: Int? = 20
     ) throws -> [StoredActivityCount] {
-        guard limit > 0 else { return [] }
+        if let limit, limit <= 0 { return [] }
         var predicates = ["kind = ?"]
         var bindings: [SQLiteValue] = [.text(kind.rawValue)]
         if let fromMilliseconds {
@@ -392,7 +392,13 @@ final class UsageStore: @unchecked Sendable {
             predicates.append("observed_at_ms < ?")
             bindings.append(.integer(toMilliseconds))
         }
-        bindings.append(.integer(Int64(limit)))
+        let limitClause: String
+        if let limit {
+            bindings.append(.integer(Int64(limit)))
+            limitClause = "LIMIT ?"
+        } else {
+            limitClause = ""
+        }
         let rows = try database.query(
             sql: """
             SELECT name, COUNT(*) AS count
@@ -400,7 +406,7 @@ final class UsageStore: @unchecked Sendable {
             WHERE \(predicates.joined(separator: " AND "))
             GROUP BY name
             ORDER BY count DESC, name ASC
-            LIMIT ?
+            \(limitClause)
             """,
             bindings: bindings
         )

@@ -119,9 +119,23 @@ enum ActivityRange: String, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
+struct ActivityRankingDetail: Identifiable, Equatable, Sendable {
+    let name: String
+    let count: Int
+
+    var id: String { name }
+}
+
 struct ActivityRankingEntry: Identifiable, Equatable, Sendable {
     let name: String
     let count: Int
+    let details: [ActivityRankingDetail]
+
+    init(name: String, count: Int, details: [ActivityRankingDetail] = []) {
+        self.name = name
+        self.count = count
+        self.details = details
+    }
 
     var id: String { name }
 }
