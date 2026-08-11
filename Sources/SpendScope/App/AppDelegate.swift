@@ -3,19 +3,27 @@ import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = DashboardStore.live()
+    let store: DashboardStore
     let updateService = AppUpdateService()
     lazy var usageReminderController = UsageReminderController(store: store)
 
+    private let isRunningTests: Bool
     private var statusItemController: StatusItemController?
     private var openDashboardAction: (() -> Void)?
     private var openSettingsAction: (() -> Void)?
+
+    override init() {
+        isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        store = isRunningTests ? DashboardStore.testHost() : DashboardStore.live()
+        super.init()
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !isRunningTests else { return }
         NSApp.setActivationPolicy(.regular)
         statusItemController = StatusItemController(
             store: store,

@@ -410,10 +410,69 @@ struct SettingsView: View {
                     .buttonStyle(.bordered)
                     .disabled(store.isRefreshing || store.isRebuildingData)
                 }
+                if store.isRebuildingData, let progress = store.rebuildProgress {
+                    rebuildProgressView(progress)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             .padding(.horizontal, Layout.cardHorizontalPadding)
             .settingsCard()
+            .animation(.easeOut(duration: 0.16), value: store.isRebuildingData)
         }
+    }
+
+    private func rebuildProgressView(_ progress: CodexImportProgress) -> some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Text(rebuildProgressTitle(progress))
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 8)
+
+                    if let total = progress.totalFileCount {
+                        Text("\(progress.completedFileCount) / \(total) 个文件")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Group {
+                    if let fraction = progress.fractionCompleted {
+                        ProgressView(value: fraction)
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .progressViewStyle(.linear)
+            }
+            .frame(width: Layout.controlWidth)
+        }
+        .padding(.bottom, 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("本地数据重建进度")
+        .accessibilityValue(rebuildProgressAccessibilityValue(progress))
+    }
+
+    private func rebuildProgressTitle(_ progress: CodexImportProgress) -> String {
+        switch progress.stage {
+        case .resetting: "正在清空旧统计"
+        case .discovering: "正在扫描 Codex 数据"
+        case .importing:
+            progress.totalFileCount == 0 ? "未发现可抓取文件" : "正在抓取本地记录"
+        case .finalizing: "正在生成统计结果"
+        }
+    }
+
+    private func rebuildProgressAccessibilityValue(_ progress: CodexImportProgress) -> String {
+        guard let total = progress.totalFileCount else {
+            return rebuildProgressTitle(progress)
+        }
+        let percentage = Int(((progress.fractionCompleted ?? 0) * 100).rounded())
+        return "\(rebuildProgressTitle(progress))，已处理 \(progress.completedFileCount) / \(total) 个文件，\(percentage)%"
     }
 
     private var planAndBillingSettings: some View {

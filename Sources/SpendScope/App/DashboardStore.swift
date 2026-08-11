@@ -50,7 +50,15 @@ protocol DashboardDataClient: Sendable {
     func refreshUsage() async throws -> DashboardDataResult
     func refreshQuota() async throws -> DashboardDataResult
     func backfillHistory() async throws -> DashboardDataResult
-    func rebuildFromLocalData() async throws -> DashboardDataResult
+    func rebuildFromLocalData(
+        progress: @escaping CodexImportProgressHandler
+    ) async throws -> DashboardDataResult
+}
+
+extension DashboardDataClient {
+    func rebuildFromLocalData() async throws -> DashboardDataResult {
+        try await rebuildFromLocalData(progress: { _ in })
+    }
 }
 
 actor LiveDashboardDataClient: DashboardDataClient {
@@ -152,14 +160,20 @@ actor LiveDashboardDataClient: DashboardDataClient {
         return try await makeResult(importResult: importResult)
     }
 
-    func rebuildFromLocalData() async throws -> DashboardDataResult {
+    func rebuildFromLocalData(
+        progress: @escaping CodexImportProgressHandler
+    ) async throws -> DashboardDataResult {
         try await acquireOperation()
         defer { releaseOperation() }
         try Task.checkCancellation()
+        await progress(.resetting)
         await beforeImport(.history)
         try Task.checkCancellation()
-        let importResult = await importer.rebuildFromLocalData()
+        let importResult = await importer.rebuildFromLocalData(progress: progress)
         try Task.checkCancellation()
+        let totalFileCount = importResult.discoveredFileIDs?.count
+            ?? importResult.processedFileCount + importResult.skippedFileCount
+        await progress(.finalizing(total: totalFileCount))
         try store.persistSourceStatus(
             indexHealth: importResult.indexHealth,
             discoveredFileIDs: importResult.discoveredFileIDs,
@@ -337,7 +351,9 @@ private actor UnavailableDashboardDataClient: DashboardDataClient {
         throw LiveDashboardDataError.initializationFailed
     }
 
-    func rebuildFromLocalData() async throws -> DashboardDataResult {
+    func rebuildFromLocalData(
+        progress: @escaping CodexImportProgressHandler
+    ) async throws -> DashboardDataResult {
         throw LiveDashboardDataError.initializationFailed
     }
 }
@@ -351,6 +367,7 @@ final class DashboardStore {
     private(set) var state: DashboardLoadState = .loading
     private(set) var isRefreshing = false
     private(set) var isRebuildingData = false
+    private(set) var rebuildProgress: CodexImportProgress?
     private(set) var isAutomaticRefreshEnabled: Bool
     private(set) var quotaRefreshRequiresProxy: Bool
     private(set) var quotaRefreshBlocker: QuotaRefreshBlocker?
@@ -424,6 +441,14 @@ final class DashboardStore {
             await store?.start()
         }
         return store
+    }
+
+    static func testHost() -> DashboardStore {
+        DashboardStore(
+            client: UnavailableDashboardDataClient(),
+            automaticRefreshEnabled: false,
+            quotaRefreshRequiresProxy: false
+        )
     }
 
     var snapshot: DashboardSnapshot? {
@@ -568,13 +593,17 @@ final class DashboardStore {
         publicationRevision &+= 1
         let previousUsage = usageFingerprint
         isRebuildingData = true
+        rebuildProgress = .resetting
         sourceSummary = nil
         state = .loading
 
         let client = self.client
         let task = Task { @MainActor [weak self, client] in
+            let progressHandler: CodexImportProgressHandler = { [weak self] progress in
+                await self?.updateRebuildProgress(progress)
+            }
             do {
-                let result = try await client.rebuildFromLocalData()
+                let result = try await client.rebuildFromLocalData(progress: progressHandler)
                 guard !Task.isCancelled else { return }
                 self?.publishUsageResult(result, previousUsage: previousUsage)
             } catch {
@@ -587,6 +616,12 @@ final class DashboardStore {
         await task.value
         inFlightRebuild = nil
         isRebuildingData = false
+        rebuildProgress = nil
+    }
+
+    private func updateRebuildProgress(_ progress: CodexImportProgress) {
+        guard isRebuildingData else { return }
+        rebuildProgress = progress
     }
 
     func setAutomaticRefreshEnabled(_ isEnabled: Bool) {

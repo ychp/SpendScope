@@ -56,19 +56,28 @@ enum CodexIndexHealth: Equatable, Sendable {
 struct CodexSourceInventory: Equatable, Sendable {
     let rollouts: [RolloutFile]
     let threadIndex: [ThreadIndexRecord]
+    let workspaceMetadata: [CodexWorkspaceMetadata]
     let indexHealth: CodexIndexHealth
+}
+
+struct CodexWorkspaceMetadata: Equatable, Sendable {
+    let name: String
+    let rootPaths: [String]
 }
 
 struct CodexSourceDiscovery {
     private let fileManager: FileManager
     private let indexReader: CodexThreadIndexReader
+    private let workspaceMetadataReader: CodexWorkspaceMetadataReader
 
     init(
         fileManager: FileManager = .default,
-        indexReader: CodexThreadIndexReader = CodexThreadIndexReader()
+        indexReader: CodexThreadIndexReader = CodexThreadIndexReader(),
+        workspaceMetadataReader: CodexWorkspaceMetadataReader = CodexWorkspaceMetadataReader()
     ) {
         self.fileManager = fileManager
         self.indexReader = indexReader
+        self.workspaceMetadataReader = workspaceMetadataReader
     }
 
     func discover(rootURL: URL) throws -> CodexSourceInventory {
@@ -96,6 +105,7 @@ struct CodexSourceDiscovery {
         return CodexSourceInventory(
             rollouts: rollouts,
             threadIndex: indexResult.records,
+            workspaceMetadata: workspaceMetadataReader.read(rootURL: rootURL),
             indexHealth: indexResult.health
         )
     }
@@ -232,6 +242,92 @@ struct CodexSourceDiscovery {
     }
 }
 
+struct CodexWorkspaceMetadataReader {
+    private let fileManager: FileManager
+
+    init(fileManager: FileManager = .default) {
+        self.fileManager = fileManager
+    }
+
+    func read(rootURL: URL) -> [CodexWorkspaceMetadata] {
+        let candidates = stateFiles(rootURL: rootURL).sorted { left, right in
+            let leftDate = modificationDate(left)
+            let rightDate = modificationDate(right)
+            if leftDate != rightDate { return leftDate < rightDate }
+            return left.lastPathComponent < right.lastPathComponent
+        }
+        var metadataByPathIdentity: [String: CodexWorkspaceMetadata] = [:]
+        for url in candidates {
+            guard let data = try? Data(contentsOf: url),
+                  let state = try? JSONDecoder().decode(CodexGlobalState.self, from: data) else {
+                continue
+            }
+            for project in state.localProjects.values {
+                guard let identity = WorkspaceIdentity.resolve(rootPaths: project.rootPaths) else {
+                    continue
+                }
+                let normalizedName = project.name
+                    .split(whereSeparator: \.isWhitespace)
+                    .joined(separator: " ")
+                guard !normalizedName.isEmpty else { continue }
+                metadataByPathIdentity[identity.id] = CodexWorkspaceMetadata(
+                    name: String(normalizedName.prefix(120)),
+                    rootPaths: project.rootPaths
+                )
+            }
+        }
+        return metadataByPathIdentity.values.sorted { left, right in
+            let leftIdentity = WorkspaceIdentity.resolve(rootPaths: left.rootPaths)?.id ?? ""
+            let rightIdentity = WorkspaceIdentity.resolve(rootPaths: right.rootPaths)?.id ?? ""
+            return leftIdentity < rightIdentity
+        }
+    }
+
+    private func stateFiles(rootURL: URL) -> [URL] {
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey]
+        ) else {
+            return []
+        }
+        return entries.filter { url in
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                return false
+            }
+            let name = url.lastPathComponent
+            return name == ".codex-global-state.json"
+                || name == ".codex-global-state.json.bak"
+                || name.hasPrefix("..codex-global-state.json.tmp-")
+        }
+    }
+
+    private func modificationDate(_ url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+            ?? .distantPast
+    }
+}
+
+private struct CodexGlobalState: Decodable {
+    let localProjects: [String: CodexLocalProject]
+
+    enum CodingKeys: String, CodingKey {
+        case localProjects = "local-projects"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        localProjects = try container.decodeIfPresent(
+            [String: CodexLocalProject].self,
+            forKey: .localProjects
+        ) ?? [:]
+    }
+}
+
+private struct CodexLocalProject: Decodable {
+    let name: String
+    let rootPaths: [String]
+}
+
 enum CodexSourceDiscoveryError: Error {
     case unreadableDirectory
     case missingFileAttributes
@@ -291,11 +387,16 @@ struct CodexThreadIndexReader {
         let modelExpression = threadColumns.contains("model") ? "model" : "NULL"
         let nameExpression = threadColumns.contains("name") ? "name" : "NULL"
         let titleExpression = threadColumns.contains("title") ? "title" : "NULL"
+        let agentNicknameExpression = threadColumns.contains("agent_nickname")
+            ? "agent_nickname" : "NULL"
+        let agentRoleExpression = threadColumns.contains("agent_role") ? "agent_role" : "NULL"
         let createdExpression = usesMillisecondCreatedAt ? "created_at_ms" : "created_at"
         let updatedExpression = usesMillisecondUpdatedAt ? "updated_at_ms" : "updated_at"
         let sql = """
             SELECT id, rollout_path, source, \(modelExpression) AS model,
                    \(nameExpression) AS display_name, \(titleExpression) AS title,
+                   \(agentNicknameExpression) AS agent_nickname,
+                   \(agentRoleExpression) AS agent_role,
                    \(createdExpression) AS created_value,
                    \(updatedExpression) AS updated_value, archived
             FROM threads ORDER BY id
@@ -370,10 +471,14 @@ struct CodexThreadIndexReader {
         while true {
             switch sqlite3_step(statement) {
             case SQLITE_ROW:
-                let created = try requiredInteger(statement, column: 6, name: "threads.created_at")
-                let updated = try requiredInteger(statement, column: 7, name: "threads.updated_at")
+                let created = try requiredInteger(statement, column: 8, name: "threads.created_at")
+                let updated = try requiredInteger(statement, column: 9, name: "threads.updated_at")
                 let displayName = try optionalText(statement, column: 4, name: "threads.name")
                 let title = try optionalText(statement, column: 5, name: "threads.title")
+                let agentNickname = try optionalText(
+                    statement, column: 6, name: "threads.agent_nickname"
+                )
+                let agentRole = try optionalText(statement, column: 7, name: "threads.agent_role")
                 let sourceRaw = try requiredText(statement, column: 2, name: "threads.source")
                 records.append(ThreadIndexRecord(
                     threadID: try requiredText(statement, column: 0, name: "threads.id"),
@@ -383,11 +488,13 @@ struct CodexThreadIndexReader {
                     displayTitle: resolvedDisplayTitle(
                         displayName: displayName,
                         title: title,
+                        agentNickname: agentNickname,
+                        agentRole: agentRole,
                         sourceRaw: sourceRaw
                     ),
                     createdAtMilliseconds: try milliseconds(created, alreadyMilliseconds: createdAtIsMilliseconds),
                     updatedAtMilliseconds: try milliseconds(updated, alreadyMilliseconds: updatedAtIsMilliseconds),
-                    archived: try requiredBoolean(statement, column: 8, name: "threads.archived"),
+                    archived: try requiredBoolean(statement, column: 10, name: "threads.archived"),
                     childEdgeStatus: nil
                 ))
             case SQLITE_DONE:
@@ -401,6 +508,8 @@ struct CodexThreadIndexReader {
     private func resolvedDisplayTitle(
         displayName: String?,
         title: String?,
+        agentNickname: String?,
+        agentRole: String?,
         sourceRaw: String
     ) -> String? {
         if let displayName = normalizedDisplayTitle(displayName) {
@@ -409,14 +518,32 @@ struct CodexThreadIndexReader {
         if let title = normalizedDisplayTitle(title), !isSystemTemplateTitle(title) {
             return title
         }
+        if let nickname = normalizedDisplayTitle(agentNickname) {
+            return "Codex 子任务 · \(nickname)"
+        }
+        if let role = normalizedDisplayTitle(agentRole) {
+            return "Codex 子任务 · \(role)"
+        }
 
-        let normalizedSource = sourceRaw.lowercased()
-        if normalizedSource.contains("guardian") {
+        let sourceMetadata = try? JSONDecoder().decode(
+            SafeThreadSourceMetadata.self,
+            from: Data(sourceRaw.utf8)
+        )
+        if sourceMetadata?.subagent?.other?.lowercased() == "guardian" {
             return "命令权限检查"
         }
-        if normalizedSource.contains("subagent") {
+        if let spawn = sourceMetadata?.subagent?.threadSpawn {
+            if let nickname = normalizedDisplayTitle(spawn.agentNickname) {
+                return "Codex 子任务 · \(nickname)"
+            }
+            if let role = normalizedDisplayTitle(spawn.agentRole) {
+                return "Codex 子任务 · \(role)"
+            }
             return "Codex 子任务"
         }
+        let normalizedSource = sourceRaw.lowercased()
+        if normalizedSource.contains("guardian") { return "命令权限检查" }
+        if normalizedSource.contains("subagent") { return "Codex 子任务" }
         return nil
     }
 
@@ -503,6 +630,30 @@ struct CodexThreadIndexReader {
         let (result, overflow) = value.multipliedReportingOverflow(by: 1_000)
         guard !overflow else { throw CodexThreadIndexError.timestampOverflow }
         return result
+    }
+}
+
+private struct SafeThreadSourceMetadata: Decodable {
+    let subagent: SafeSubagentMetadata?
+}
+
+private struct SafeSubagentMetadata: Decodable {
+    let other: String?
+    let threadSpawn: SafeThreadSpawnMetadata?
+
+    enum CodingKeys: String, CodingKey {
+        case other
+        case threadSpawn = "thread_spawn"
+    }
+}
+
+private struct SafeThreadSpawnMetadata: Decodable {
+    let agentNickname: String?
+    let agentRole: String?
+
+    enum CodingKeys: String, CodingKey {
+        case agentNickname = "agent_nickname"
+        case agentRole = "agent_role"
     }
 }
 

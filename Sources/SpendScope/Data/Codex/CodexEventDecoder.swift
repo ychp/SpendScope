@@ -49,7 +49,12 @@ struct CodexEventDecoder {
             else {
                 return nil
             }
-            return .turn(.init(turnID: turnID, model: model))
+            return .turn(.init(
+                turnID: turnID,
+                model: model,
+                workspace: WorkspaceIdentity.resolve(rootPaths: envelope.payload.workspaceRoots),
+                workspaceRootPaths: envelope.payload.workspaceRoots
+            ))
 
         case "event_msg":
             let eventDiscriminator = try decoder.decode(EventDiscriminatorEnvelope.self, from: line)
@@ -249,10 +254,12 @@ private extension CodexEventDecoder {
     struct TurnPayload: Decodable {
         let turnID: String?
         let model: String?
+        let workspaceRoots: [String]?
 
         enum CodingKeys: String, CodingKey {
             case turnID = "turn_id"
             case model
+            case workspaceRoots = "workspace_roots"
         }
     }
 

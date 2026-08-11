@@ -15,7 +15,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
     private let onDismiss: () -> Void
 
     init(
-        entry: ProjectUsageEntry,
+        entry: WorkspaceUsageEntry,
         rank: Int,
         parentWindow: NSWindow,
         onDismiss: @escaping () -> Void
@@ -31,7 +31,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         )
         super.init(window: panel)
 
-        panel.title = "项目详情"
+        panel.title = "工作区详情"
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.titlebarSeparatorStyle = .none
@@ -101,7 +101,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         panel.makeKeyAndOrderFront(nil)
     }
 
-    func update(entry: ProjectUsageEntry, rank: Int) {
+    func update(entry: WorkspaceUsageEntry, rank: Int) {
         hostingController?.rootView = AnyView(
             ProjectDetailView(
                 entry: entry,

@@ -8,7 +8,7 @@ struct DashboardSnapshot: Sendable {
     let models: [ModelUsage]
     let dailyUsage: [DailyUsage]
     let activityRankings: ActivityRankingSnapshot
-    let projectUsage: ProjectUsageSnapshot
+    let workspaceUsage: WorkspaceUsageSnapshot
     let modelUsage: ModelUsageSnapshot
     let issues: [DashboardIssue]
 
@@ -20,7 +20,7 @@ struct DashboardSnapshot: Sendable {
         models: [ModelUsage],
         dailyUsage: [DailyUsage],
         activityRankings: ActivityRankingSnapshot = .empty,
-        projectUsage: ProjectUsageSnapshot = .empty,
+        workspaceUsage: WorkspaceUsageSnapshot = .empty,
         modelUsage: ModelUsageSnapshot = .empty,
         issues: [DashboardIssue] = []
     ) {
@@ -31,7 +31,7 @@ struct DashboardSnapshot: Sendable {
         self.models = models
         self.dailyUsage = dailyUsage
         self.activityRankings = activityRankings
-        self.projectUsage = projectUsage
+        self.workspaceUsage = workspaceUsage
         self.modelUsage = modelUsage
         self.issues = issues
     }
@@ -170,13 +170,38 @@ struct ActivityRankingSnapshot: Equatable, Sendable {
     }
 }
 
-struct ProjectUsageEntry: Identifiable, Equatable, Sendable {
+struct WorkspaceUsageEntry: Identifiable, Equatable, Sendable {
+    let id: String
+    let name: String
+    let rootCount: Int
+    let isInferred: Bool
+    let tokens: Int
+    let share: Double
+    let projects: [WorkspaceProjectUsageEntry]
+    let conversations: [ProjectConversationUsage]
+    let dailyUsage: [ProjectDailyUsage]
+
+    var visibleConversations: [ProjectConversationUsage] {
+        conversations.filter(\.isIncludedInTaskMetrics)
+    }
+
+    var visibleReplyCount: Int {
+        visibleConversations.reduce(0) { $0 + $1.replies.count }
+    }
+
+    var lastVisibleActivityAtMilliseconds: Int64? {
+        visibleConversations.compactMap(\.lastMessageAtMilliseconds).max()
+    }
+}
+
+struct WorkspaceProjectUsageEntry: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let tokens: Int
     let share: Double
-    let conversations: [ProjectConversationUsage]
-    let dailyUsage: [ProjectDailyUsage]
+    let conversationCount: Int
+    let replyCount: Int
+    let lastActivityAtMilliseconds: Int64?
 }
 
 struct ProjectDailyUsage: Identifiable, Equatable, Sendable {
@@ -211,6 +236,15 @@ struct ProjectConversationUsage: Identifiable, Equatable, Sendable {
     }
 
     var id: String { shortThreadID }
+
+    var isIncludedInTaskMetrics: Bool {
+        Self.isIncludedInTaskMetrics(displayTitle: displayTitle)
+    }
+
+    static func isIncludedInTaskMetrics(displayTitle: String?) -> Bool {
+        let normalizedTitle = displayTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedTitle != "命令权限检查"
+    }
 }
 
 enum ProjectReplyUsageStatus: String, Equatable, Sendable {
@@ -288,28 +322,34 @@ enum ProjectConversationSortOrder: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
-struct ProjectUsageRanking: Equatable, Sendable {
-    let entries: [ProjectUsageEntry]
+struct WorkspaceUsageRanking: Equatable, Sendable {
+    let entries: [WorkspaceUsageEntry]
     let totalTokens: Int
+    let workspaceCount: Int
     let projectCount: Int
 
-    static let empty = ProjectUsageRanking(entries: [], totalTokens: 0, projectCount: 0)
+    static let empty = WorkspaceUsageRanking(
+        entries: [],
+        totalTokens: 0,
+        workspaceCount: 0,
+        projectCount: 0
+    )
 }
 
-struct ProjectUsageSnapshot: Equatable, Sendable {
-    let today: ProjectUsageRanking
-    let sevenDays: ProjectUsageRanking
-    let thirtyDays: ProjectUsageRanking
-    let allTime: ProjectUsageRanking
+struct WorkspaceUsageSnapshot: Equatable, Sendable {
+    let today: WorkspaceUsageRanking
+    let sevenDays: WorkspaceUsageRanking
+    let thirtyDays: WorkspaceUsageRanking
+    let allTime: WorkspaceUsageRanking
 
-    static let empty = ProjectUsageSnapshot(
+    static let empty = WorkspaceUsageSnapshot(
         today: .empty,
         sevenDays: .empty,
         thirtyDays: .empty,
         allTime: .empty
     )
 
-    func ranking(for range: ActivityRange) -> ProjectUsageRanking {
+    func ranking(for range: ActivityRange) -> WorkspaceUsageRanking {
         switch range {
         case .today: today
         case .sevenDays: sevenDays

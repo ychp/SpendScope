@@ -2,7 +2,7 @@ import Charts
 import SwiftUI
 
 struct ProjectDetailView: View {
-    let entry: ProjectUsageEntry
+    let entry: WorkspaceUsageEntry
     let rank: Int
     let onClose: () -> Void
     let onReplyHover: (ProjectReplyDetailRow?) -> Void
@@ -67,7 +67,7 @@ struct ProjectDetailView: View {
                 Image(systemName: "circle.grid.3x3.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(SpendScopeTheme.dashboardMutedText.opacity(0.55))
-                Text("项目详情")
+                Text("工作区详情")
                     .font(.system(size: 12, weight: .semibold))
             }
 
@@ -80,7 +80,7 @@ struct ProjectDetailView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("关闭项目详情")
+                .help("关闭工作区详情")
                 .keyboardShortcut(.cancelAction)
             }
         }
@@ -130,8 +130,25 @@ struct ProjectDetailView: View {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .stroke(SpendScopeTheme.dashboardAccent.opacity(0.34), lineWidth: 1)
                         }
+
+                    if entry.isInferred {
+                        Text("工作目录推测")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(SpendScopeTheme.dashboardInput)
+                            .padding(.horizontal, 8)
+                            .frame(height: 22)
+                            .background(
+                                SpendScopeTheme.dashboardInput.opacity(0.09),
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(SpendScopeTheme.dashboardInput.opacity(0.32), lineWidth: 1)
+                            }
+                            .help("Codex 未记录 workspace_roots；此工作区由会话工作目录推测，未与确定工作区合并。")
+                    }
                 }
-                Text("最近活动 \(ProjectUsageDateFormatter.relative(lastActivityMilliseconds))")
+                Text("\(entry.rootCount) 个根目录 · 最近活动 \(ProjectUsageDateFormatter.relative(lastActivityMilliseconds))")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(SpendScopeTheme.dashboardMutedText)
             }
@@ -150,7 +167,7 @@ struct ProjectDetailView: View {
                 tint: SpendScopeTheme.dashboardAccent
             )
             metricCard(
-                "项目占比",
+                "工作区占比",
                 value: TokenFormatter.percentage(entry.share),
                 icon: "chart.pie.fill",
                 tint: SpendScopeTheme.dashboardInput
@@ -262,7 +279,55 @@ struct ProjectDetailView: View {
                 }
             }
             .frame(height: 148)
+            workspaceProjectCard
             conversationTable
+        }
+    }
+
+    private var workspaceProjectCard: some View {
+        detailCard(title: "本期涉及目录用量", icon: "folder.fill") {
+            VStack(spacing: 0) {
+                ForEach(entry.projects) { project in
+                    HStack(spacing: 10) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(SpendScopeTheme.dashboardAccentSecondary)
+                            .frame(width: 18)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(project.name)
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .lineLimit(1)
+                            Text("\(project.conversationCount) 个任务 · \(project.replyCount) 次回复 · \(ProjectUsageDateFormatter.relative(project.lastActivityAtMilliseconds))")
+                                .font(.system(size: 8.5, weight: .medium))
+                                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 12)
+
+                        Text(TokenFormatter.percentage(project.share))
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                            .monospacedDigit()
+                            .frame(width: 48, alignment: .trailing)
+
+                        Text(TokenFormatter.compact(project.tokens))
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .frame(width: 76, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 42)
+
+                    if project.id != entry.projects.last?.id {
+                        Rectangle()
+                            .fill(SpendScopeTheme.dashboardBorder.opacity(0.62))
+                            .frame(height: 1)
+                            .padding(.leading, 40)
+                    }
+                }
+            }
         }
     }
 
@@ -751,7 +816,7 @@ struct ProjectDetailView: View {
                         .foregroundStyle(SpendScopeTheme.dashboardMutedText.opacity(0.68))
                     Text("暂无回复记录")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("该项目还没有可展示的回复")
+                    Text("该工作区还没有可展示的回复")
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
                 }
@@ -1037,11 +1102,7 @@ struct ProjectDetailView: View {
     }
 
     private var visibleConversations: [ProjectConversationUsage] {
-        entry.conversations.filter { conversation in
-            let title = conversation.displayTitle?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return title != "命令权限检查"
-        }
+        entry.visibleConversations
     }
 
     private var tokenSegments: [ProjectTokenSegment] {
@@ -1087,7 +1148,7 @@ struct ProjectDetailView: View {
     }
 
     private var lastActivityMilliseconds: Int64? {
-        visibleConversations.compactMap(\.lastMessageAtMilliseconds).max()
+        entry.lastVisibleActivityAtMilliseconds
     }
 
     private var trendYAxisMaximum: Int {

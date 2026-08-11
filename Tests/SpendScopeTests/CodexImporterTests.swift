@@ -24,6 +24,15 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(second.skippedFileCount, 1)
         XCTAssertEqual(try store.totalUsage(), 1_100)
         XCTAssertEqual(try store.usageEvents().first?.project.name, "SpendScopeFixture")
+        XCTAssertEqual(try store.usageEvents().first?.workspace.name, "SpendScopeFixture")
+        XCTAssertTrue(try store.usageEvents().first?.workspace.isInferred ?? false)
+        let inferredWorkspace = try XCTUnwrap(store.usageEvents().first?.workspace)
+        let fileID = try XCTUnwrap(first.discoveredFileIDs?.first)
+        XCTAssertEqual(try store.fileCheckpoint(fileID: fileID)?.workspace, inferredWorkspace)
+        XCTAssertEqual(
+            try store.threadCheckpoint(threadID: CodexFixture.threadID)?.currentWorkspace,
+            inferredWorkspace
+        )
         XCTAssertEqual(try store.usageEvents().first?.turnID, "turn-1")
         XCTAssertEqual(try store.latestQuotas().map(\.observation.kind), [.fiveHour, .weekly])
         XCTAssertEqual(try store.sessions().first?.activity, .completed)
@@ -31,6 +40,74 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.usageEventCount(), 1)
         XCTAssertEqual(try store.quotaEventCount(), 2)
         XCTAssertEqual(try store.sessionStateEventCount(), 2)
+    }
+
+    func testImporterAttributesUsageAndCheckpointsToTurnWorkspace() async throws {
+        let roots = [
+            "/synthetic/guide-performance",
+            "/synthetic/retail-sales"
+        ]
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turnInWorkspace(model: "gpt-synthetic", roots: roots),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let result = await CodexImporter(rootURL: fixture.codexRoot, store: store)
+            .refresh(scope: .history)
+
+        XCTAssertTrue(result.isSuccessful, "workspace import issues: \(result.issues)")
+        let expected = try XCTUnwrap(WorkspaceIdentity.resolve(rootPaths: roots))
+        XCTAssertEqual(try store.usageEvents().first?.workspace, expected)
+        XCTAssertFalse(try store.usageEvents().first?.workspace.isInferred ?? true)
+        let fileID = try XCTUnwrap(result.discoveredFileIDs?.first)
+        XCTAssertEqual(try store.fileCheckpoint(fileID: fileID)?.workspace, expected)
+        XCTAssertEqual(
+            try store.threadCheckpoint(threadID: CodexFixture.threadID)?.currentWorkspace,
+            expected
+        )
+    }
+
+    func testImporterUsesArchivedCodexWorkspaceNameAndKeepsItAcrossRebuilds() async throws {
+        let roots = ["/synthetic/retail-sales", "/synthetic/guide-performance"]
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turnInWorkspace(model: "gpt-synthetic", roots: roots),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        let archivedState = fixture.codexRoot
+            .appending(path: "..codex-global-state.json.tmp-archived")
+        try Data(#"{"local-projects":{"archived":{"name":"open-api","rootPaths":["/synthetic/retail-sales","/synthetic/guide-performance"]}}}"#.utf8)
+            .write(to: archivedState)
+        let repositoryResolver = MappingRepositoryIdentityResolver(repositoryIDs: [
+            "/synthetic/retail-sales": "retail-repository",
+            "/synthetic/guide-performance": "guide-repository"
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let firstImporter = CodexImporter(
+            rootURL: fixture.codexRoot,
+            store: store,
+            repositoryResolver: repositoryResolver
+        )
+
+        let first = await firstImporter.refresh(scope: .history)
+
+        XCTAssertTrue(first.isSuccessful)
+        let firstWorkspace = try XCTUnwrap(store.usageEvents().first?.workspace)
+        XCTAssertEqual(firstWorkspace.name, "open-api")
+        XCTAssertEqual(firstWorkspace.rootCount, 2)
+
+        try FileManager.default.removeItem(at: archivedState)
+        let secondImporter = CodexImporter(
+            rootURL: fixture.codexRoot,
+            store: store,
+            repositoryResolver: repositoryResolver
+        )
+        let rebuilt = await secondImporter.rebuildFromLocalData()
+
+        XCTAssertTrue(rebuilt.isSuccessful)
+        XCTAssertEqual(try store.usageEvents().first?.workspace, firstWorkspace)
+        XCTAssertEqual(try store.workspaceCatalog()[firstWorkspace.id]?.name, "open-api")
     }
 
     func testImporterPersistsRepositoryIdentityResolvedFromSessionWorkingDirectory() async throws {
@@ -123,11 +200,24 @@ final class CodexImporterTests: XCTestCase {
         XCTAssertEqual(try store.totalUsage(), 620)
         XCTAssertEqual(try store.activityEventCount(), 3)
 
-        let result = await importer.rebuildFromLocalData()
+        let progressRecorder = ImportProgressRecorder()
+        let result = await importer.rebuildFromLocalData { progress in
+            await progressRecorder.record(progress)
+        }
 
         XCTAssertTrue(result.isSuccessful)
         XCTAssertEqual(result.scope, .history)
         XCTAssertEqual(result.processedFileCount, 1)
+        let progressUpdates = await progressRecorder.updates
+        XCTAssertEqual(
+            progressUpdates,
+            [
+                .resetting,
+                .discovering,
+                .importing(completed: 0, total: 1),
+                .importing(completed: 1, total: 1)
+            ]
+        )
         XCTAssertEqual(try store.totalUsage(), 120)
         XCTAssertEqual(try store.activityEventCount(), 2)
         XCTAssertNil(try store.fileCheckpoint(fileID: "stale-file"))
@@ -600,11 +690,27 @@ final class CodexImporterTests: XCTestCase {
     }
 }
 
+private actor ImportProgressRecorder {
+    private(set) var updates: [CodexImportProgress] = []
+
+    func record(_ progress: CodexImportProgress) {
+        updates.append(progress)
+    }
+}
+
 private struct FixedRepositoryIdentityResolver: RepositoryIdentityResolving {
     let repositoryID: String?
 
     func repositoryID(forWorkingDirectory workingDirectory: String) -> String? {
         repositoryID
+    }
+}
+
+private struct MappingRepositoryIdentityResolver: RepositoryIdentityResolving {
+    let repositoryIDs: [String: String]
+
+    func repositoryID(forWorkingDirectory workingDirectory: String) -> String? {
+        repositoryIDs[workingDirectory]
     }
 }
 
@@ -744,6 +850,7 @@ private final class CodexFixture: @unchecked Sendable {
         case sessionCLI
         case sessionCLIWithRepository
         case turn(model: String)
+        case turnInWorkspace(model: String, roots: [String])
         case started
         case completed
         case activity
@@ -774,6 +881,11 @@ private final class CodexFixture: @unchecked Sendable {
             case let .turn(model):
                 return """
                 {"type":"turn_context","payload":{"turn_id":"turn-1","model":"\(model)"}}
+                """
+            case let .turnInWorkspace(model, roots):
+                let rootsJSON = roots.map { "\"\($0)\"" }.joined(separator: ",")
+                return """
+                {"type":"turn_context","payload":{"turn_id":"turn-1","model":"\(model)","workspace_roots":[\(rootsJSON)]}}
                 """
             case .started:
                 return """

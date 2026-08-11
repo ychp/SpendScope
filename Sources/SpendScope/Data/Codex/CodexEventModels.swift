@@ -46,6 +46,98 @@ struct ProjectIdentity: Equatable, Sendable {
     }
 }
 
+struct WorkspaceIdentity: Equatable, Sendable {
+    let id: String
+    let name: String
+    let rootCount: Int
+    let isInferred: Bool
+
+    init(id: String, name: String, rootCount: Int, isInferred: Bool = false) {
+        self.id = id
+        self.name = name
+        self.rootCount = rootCount
+        self.isInferred = isInferred
+    }
+
+    static let unknown = WorkspaceIdentity(
+        id: "unknown",
+        name: "未识别工作区",
+        rootCount: 0,
+        isInferred: false
+    )
+
+    static func resolve(
+        rootPaths: [String]?,
+        repositoryIDsByRootPath: [String: String] = [:],
+        fallbackSingletonRepositoryID: String? = nil,
+        displayName: String? = nil
+    ) -> WorkspaceIdentity? {
+        let roots = Array(Set((rootPaths ?? []).compactMap { rawPath -> String? in
+            let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+        })).sorted()
+        guard !roots.isEmpty else { return nil }
+
+        var normalizedRepositoryIDs: [String: String] = [:]
+        for (path, repositoryID) in repositoryIDsByRootPath {
+            normalizedRepositoryIDs[
+                URL(fileURLWithPath: path).standardizedFileURL.path
+            ] = repositoryID
+        }
+        let rootIDs = roots.map { path -> String in
+            if let repositoryID = normalizedRepositoryIDs[path], !repositoryID.isEmpty {
+                return "repository:\(repositoryID)"
+            }
+            if roots.count == 1,
+               let fallbackSingletonRepositoryID,
+               !fallbackSingletonRepositoryID.isEmpty {
+                return "repository:\(fallbackSingletonRepositoryID)"
+            }
+            let pathID = SHA256.hash(data: Data(path.utf8))
+                .map { String(format: "%02x", $0) }
+                .joined()
+            return "path:\(pathID)"
+        }
+        let canonical = "workspace-v2|" + rootIDs.sorted().joined(separator: "|")
+        let id = SHA256.hash(data: Data(canonical.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let names = roots.map {
+            URL(fileURLWithPath: $0).lastPathComponent
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+        let preferredName = displayName?
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        let name = if let preferredName, !preferredName.isEmpty {
+            String(preferredName.prefix(120))
+        } else {
+            names.isEmpty ? "未识别工作区" : names.joined(separator: " + ")
+        }
+        return WorkspaceIdentity(
+            id: id,
+            name: name,
+            rootCount: roots.count,
+            isInferred: false
+        )
+    }
+
+    static func inferFromProject(_ project: ProjectIdentity?) -> WorkspaceIdentity? {
+        guard let project, project != .unknown else { return nil }
+        let canonical = "workspace-cwd-inference-v1|\(project.id)"
+        let id = SHA256.hash(data: Data(canonical.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return WorkspaceIdentity(
+            id: id,
+            name: project.name,
+            rootCount: 1,
+            isInferred: true
+        )
+    }
+}
+
 struct SessionMetadata: Equatable, Sendable {
     let threadID: String
     let source: CodexSourceKind
@@ -166,6 +258,20 @@ struct GitRepositoryIdentityResolver: RepositoryIdentityResolving {
 struct TurnContext: Equatable, Sendable {
     let turnID: String
     let model: String
+    let workspace: WorkspaceIdentity?
+    let workspaceRootPaths: [String]?
+
+    init(
+        turnID: String,
+        model: String,
+        workspace: WorkspaceIdentity?,
+        workspaceRootPaths: [String]? = nil
+    ) {
+        self.turnID = turnID
+        self.model = model
+        self.workspace = workspace
+        self.workspaceRootPaths = workspaceRootPaths
+    }
 }
 
 struct PlanResolution: Equatable, Sendable {

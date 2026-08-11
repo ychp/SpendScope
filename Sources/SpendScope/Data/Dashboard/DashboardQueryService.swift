@@ -49,6 +49,11 @@ final class DashboardQueryService: @unchecked Sendable {
             fromMilliseconds: milliseconds(for: thirtyDayStart), toMilliseconds: end
         )
         let allRows = try store.usageEvents()
+        let historicalRows = allRows.filter { $0.observedAtMilliseconds < end }
+        let workspaceAliases = makeWorkspaceUsageAliases(
+            from: historicalRows,
+            explicitAliases: try store.workspaceAliases()
+        )
         let trendRows = try store.usageEvents(toMilliseconds: end)
         let allActivityRows = try store.activityEvents(toMilliseconds: end)
         let turnLifecycleFacts = makeTurnLifecycleFacts(
@@ -83,57 +88,61 @@ final class DashboardQueryService: @unchecked Sendable {
             ),
             allTime: try activityRanking(fromMilliseconds: nil, toMilliseconds: end)
         )
-        let projectTrendDayStarts = try (0..<7).map { offset in
+        let workspaceTrendDayStarts = try (0..<7).map { offset in
             guard let day = calendar.date(byAdding: .day, value: offset, to: sevenDayStart) else {
                 throw DashboardQueryError.invalidCalendarBoundary
             }
             return milliseconds(for: day)
         }
-        let projectUsage = ProjectUsageSnapshot(
-            today: try projectRanking(
+        let workspaceUsage = WorkspaceUsageSnapshot(
+            today: try workspaceRanking(
                 from: todayRows,
                 trendRows: sevenDayRows,
-                trendDayStarts: projectTrendDayStarts,
+                trendDayStarts: workspaceTrendDayStarts,
                 calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
                 threadTitlesByThreadID: threadTitlesByThreadID,
                 turnLifecycleFacts: turnLifecycleFacts,
+                workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: todayStart)
                 }
             ),
-            sevenDays: try projectRanking(
+            sevenDays: try workspaceRanking(
                 from: sevenDayRows,
                 trendRows: sevenDayRows,
-                trendDayStarts: projectTrendDayStarts,
+                trendDayStarts: workspaceTrendDayStarts,
                 calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
                 threadTitlesByThreadID: threadTitlesByThreadID,
                 turnLifecycleFacts: turnLifecycleFacts,
+                workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: sevenDayStart)
                 }
             ),
-            thirtyDays: try projectRanking(
+            thirtyDays: try workspaceRanking(
                 from: thirtyDayRows,
                 trendRows: sevenDayRows,
-                trendDayStarts: projectTrendDayStarts,
+                trendDayStarts: workspaceTrendDayStarts,
                 calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
                 threadTitlesByThreadID: threadTitlesByThreadID,
                 turnLifecycleFacts: turnLifecycleFacts,
+                workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: thirtyDayStart)
                 }
             ),
-            allTime: try projectRanking(
-                from: allRows.filter { $0.observedAtMilliseconds < end },
+            allTime: try workspaceRanking(
+                from: historicalRows,
                 trendRows: sevenDayRows,
-                trendDayStarts: projectTrendDayStarts,
+                trendDayStarts: workspaceTrendDayStarts,
                 calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
                 threadTitlesByThreadID: threadTitlesByThreadID,
                 turnLifecycleFacts: turnLifecycleFacts,
+                workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows
             )
         )
@@ -141,7 +150,7 @@ final class DashboardQueryService: @unchecked Sendable {
             today: try modelRanking(from: todayRows),
             sevenDays: try modelRanking(from: sevenDayRows),
             thirtyDays: try modelRanking(from: thirtyDayRows),
-            allTime: try modelRanking(from: allRows.filter { $0.observedAtMilliseconds < end })
+            allTime: try modelRanking(from: historicalRows)
         )
 
         return DashboardSnapshot(
@@ -157,7 +166,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 calendar: resolvedUsageCalendar
             ),
             activityRankings: activityRankings,
-            projectUsage: projectUsage,
+            workspaceUsage: workspaceUsage,
             modelUsage: modelUsage,
             issues: quotaResult.issues
         )
@@ -213,7 +222,7 @@ final class DashboardQueryService: @unchecked Sendable {
         )
     }
 
-    private func projectRanking(
+    private func workspaceRanking(
         from rows: [StoredUsageQueryRow],
         trendRows: [StoredUsageQueryRow],
         trendDayStarts: [Int64],
@@ -221,8 +230,9 @@ final class DashboardQueryService: @unchecked Sendable {
         sessionLastMessageTimes: [String: Int64],
         threadTitlesByThreadID: [String: String],
         turnLifecycleFacts: [ThreadTurnKey: TurnLifecycleFact],
+        workspaceAliases: [WorkspaceUsageKey: WorkspaceUsageKey],
         activityRows: [StoredActivityEvent]
-    ) throws -> ProjectUsageRanking {
+    ) throws -> WorkspaceUsageRanking {
         let turnActivityFacts = makeTurnActivityFacts(from: activityRows)
         var identityGraph = ProjectUsageIdentityGraph()
         for row in rows + trendRows {
@@ -242,26 +252,54 @@ final class DashboardQueryService: @unchecked Sendable {
             }
         }
 
-        var totals: [ProjectUsageIdentityNode: ProjectUsageAccumulator] = [:]
-        var conversationTotals:
-            [ProjectUsageIdentityNode: [String: ProjectConversationUsageAccumulator]] = [:]
-        var dailyTotals: [ProjectUsageIdentityNode: [Int64: Int64]] = [:]
+        var workspaceTotals: [WorkspaceUsageKey: Int64] = [:]
+        var projectTotals: [WorkspaceUsageKey: [ProjectUsageIdentityNode: ProjectUsageAccumulator]] = [:]
+        var projectThreads: [WorkspaceUsageKey: [ProjectUsageIdentityNode: Set<String>]] = [:]
+        var projectTurns: [WorkspaceUsageKey: [ProjectUsageIdentityNode: Set<ThreadTurnKey>]] = [:]
+        var projectLastActivity: [WorkspaceUsageKey: [ProjectUsageIdentityNode: Int64]] = [:]
+        var conversationTotals: [WorkspaceUsageKey: [String: ProjectConversationUsageAccumulator]] = [:]
+        var dailyTotals: [WorkspaceUsageKey: [Int64: Int64]] = [:]
         var overall: Int64 = 0
         for row in rows {
+            let rawWorkspaceKey = WorkspaceUsageKey(identity: row.workspace)
+            let workspaceKey = workspaceAliases[rawWorkspaceKey] ?? rawWorkspaceKey
             let pathNode = ProjectUsageIdentityNode(
                 name: row.project.name,
                 identity: "path:\(row.project.id)"
             )
-            let key = identityGraph.root(of: pathNode)
-            let current = totals[key] ?? ProjectUsageAccumulator(
+            let projectKey = identityGraph.root(of: pathNode)
+            workspaceTotals[workspaceKey] = try checkedAdd(
+                workspaceTotals[workspaceKey] ?? 0,
+                row.totalTokens,
+                context: "workspace.total"
+            )
+            let current = projectTotals[workspaceKey]?[projectKey] ?? ProjectUsageAccumulator(
                 representativePathID: row.project.id,
                 tokens: 0
             )
-            totals[key] = ProjectUsageAccumulator(
+            projectTotals[workspaceKey, default: [:]][projectKey] = ProjectUsageAccumulator(
                 representativePathID: min(current.representativePathID, row.project.id),
-                tokens: try checkedAdd(current.tokens, row.totalTokens, context: "project.total")
+                tokens: try checkedAdd(current.tokens, row.totalTokens, context: "workspace.project.total")
             )
-            let currentConversation = conversationTotals[key]?[row.threadID]
+            let isIncludedInTaskMetrics = ProjectConversationUsage.isIncludedInTaskMetrics(
+                displayTitle: threadTitlesByThreadID[row.threadID]
+            )
+            if isIncludedInTaskMetrics {
+                projectThreads[workspaceKey, default: [:]][projectKey, default: []].insert(
+                    row.threadID
+                )
+                if let turnID = row.turnID, !turnID.isEmpty {
+                    projectTurns[workspaceKey, default: [:]][projectKey, default: []].insert(
+                        ThreadTurnKey(threadID: row.threadID, turnID: turnID)
+                    )
+                }
+                let activityAt = sessionLastMessageTimes[row.threadID] ?? row.observedAtMilliseconds
+                projectLastActivity[workspaceKey, default: [:]][projectKey] = max(
+                    projectLastActivity[workspaceKey]?[projectKey] ?? Int64.min,
+                    activityAt
+                )
+            }
+            let currentConversation = conversationTotals[workspaceKey]?[row.threadID]
                 ?? ProjectConversationUsageAccumulator(
                     tokens: 0,
                     lastUsageAtMilliseconds: row.observedAtMilliseconds,
@@ -272,7 +310,7 @@ final class DashboardQueryService: @unchecked Sendable {
             updatedConversation.tokens = try checkedAdd(
                 currentConversation.tokens,
                 row.totalTokens,
-                context: "project.conversation.total"
+                context: "workspace.conversation.total"
             )
             updatedConversation.lastUsageAtMilliseconds = max(
                 currentConversation.lastUsageAtMilliseconds,
@@ -293,27 +331,27 @@ final class DashboardQueryService: @unchecked Sendable {
                 reply.uncachedInputTokens = try checkedAdd(
                     reply.uncachedInputTokens,
                     row.uncachedInputTokens,
-                    context: "project.reply.uncachedInput"
+                    context: "workspace.reply.uncachedInput"
                 )
                 reply.cachedInputTokens = try checkedAdd(
                     reply.cachedInputTokens,
                     row.cachedInputTokens,
-                    context: "project.reply.cachedInput"
+                    context: "workspace.reply.cachedInput"
                 )
                 reply.visibleOutputTokens = try checkedAdd(
                     reply.visibleOutputTokens,
                     row.visibleOutputTokens,
-                    context: "project.reply.visibleOutput"
+                    context: "workspace.reply.visibleOutput"
                 )
                 reply.reasoningTokens = try checkedAdd(
                     reply.reasoningTokens,
                     row.reasoningTokens,
-                    context: "project.reply.reasoning"
+                    context: "workspace.reply.reasoning"
                 )
                 reply.totalTokens = try checkedAdd(
                     reply.totalTokens,
                     row.totalTokens,
-                    context: "project.reply.total"
+                    context: "workspace.reply.total"
                 )
                 reply.lastUsageAtMilliseconds = max(
                     reply.lastUsageAtMilliseconds,
@@ -324,95 +362,146 @@ final class DashboardQueryService: @unchecked Sendable {
                 updatedConversation.unattributedTokens = try checkedAdd(
                     updatedConversation.unattributedTokens,
                     row.totalTokens,
-                    context: "project.conversation.unattributed"
+                    context: "workspace.conversation.unattributed"
                 )
             }
-            conversationTotals[key, default: [:]][row.threadID] = updatedConversation
-            overall = try checkedAdd(overall, row.totalTokens, context: "projects.total")
+            conversationTotals[workspaceKey, default: [:]][row.threadID] = updatedConversation
+            overall = try checkedAdd(overall, row.totalTokens, context: "workspaces.total")
         }
 
         for row in trendRows {
-            let pathNode = ProjectUsageIdentityNode(
-                name: row.project.name,
-                identity: "path:\(row.project.id)"
-            )
-            let key = identityGraph.root(of: pathNode)
+            let rawWorkspaceKey = WorkspaceUsageKey(identity: row.workspace)
+            let workspaceKey = workspaceAliases[rawWorkspaceKey] ?? rawWorkspaceKey
             let observedDate = Date(
                 timeIntervalSince1970: TimeInterval(row.observedAtMilliseconds) / 1_000
             )
             let dayStart = milliseconds(for: calendar.startOfDay(for: observedDate))
-            let current = dailyTotals[key]?[dayStart] ?? 0
-            dailyTotals[key, default: [:]][dayStart] = try checkedAdd(
+            let current = dailyTotals[workspaceKey]?[dayStart] ?? 0
+            dailyTotals[workspaceKey, default: [:]][dayStart] = try checkedAdd(
                 current,
                 row.totalTokens,
-                context: "project.daily"
+                context: "workspace.daily"
             )
         }
         guard overall > 0 else { return .empty }
 
-        let ordered = totals.map { key, value in
-            (key: key, id: value.representativePathID, name: key.name, tokens: value.tokens)
+        let ordered = workspaceTotals.map { key, tokens in
+            (key: key, tokens: tokens)
         }.sorted { left, right in
             if left.tokens != right.tokens { return left.tokens > right.tokens }
-            if left.name != right.name { return left.name < right.name }
-            return left.id < right.id
+            if left.key.name != right.key.name { return left.key.name < right.key.name }
+            return left.key.id < right.key.id
         }
-        return ProjectUsageRanking(
-            entries: ordered.map { entry in
-                let conversations = (conversationTotals[entry.key] ?? [:]).map {
-                    threadID, aggregate in
-                    let replies = aggregate.replies.map { turnID, usage in
-                        let turnKey = ThreadTurnKey(threadID: threadID, turnID: turnID)
-                        let lifecycle = turnLifecycleFacts[turnKey]
-                        let activity = turnActivityFacts[turnKey]
-                        return ProjectReplyUsage(
-                            id: turnID,
-                            status: lifecycle?.status ?? .unknown,
-                            model: usage.model,
-                            uncachedInputTokens: Int(clamping: usage.uncachedInputTokens),
-                            cachedInputTokens: Int(clamping: usage.cachedInputTokens),
-                            visibleOutputTokens: Int(clamping: usage.visibleOutputTokens),
-                            reasoningTokens: Int(clamping: usage.reasoningTokens),
-                            totalTokens: Int(clamping: usage.totalTokens),
-                            startedAtMilliseconds: lifecycle?.startedAtMilliseconds,
-                            endedAtMilliseconds: lifecycle?.endedAtMilliseconds,
-                            lastUsageAtMilliseconds: usage.lastUsageAtMilliseconds,
-                            skillCalls: activity?.skills ?? [],
-                            toolCalls: activity?.tools ?? []
-                        )
-                    }.sorted { left, right in
-                        if left.displayAtMilliseconds != right.displayAtMilliseconds {
-                            return left.displayAtMilliseconds > right.displayAtMilliseconds
-                        }
-                        return left.id < right.id
+        let entries = ordered.map { entry in
+            let projects = (projectTotals[entry.key] ?? [:]).map { projectKey, aggregate in
+                WorkspaceProjectUsageEntry(
+                    id: aggregate.representativePathID,
+                    name: projectKey.name,
+                    tokens: Int(clamping: aggregate.tokens),
+                    share: min(max(Double(aggregate.tokens) / Double(entry.tokens), 0), 1),
+                    conversationCount: projectThreads[entry.key]?[projectKey]?.count ?? 0,
+                    replyCount: projectTurns[entry.key]?[projectKey]?.count ?? 0,
+                    lastActivityAtMilliseconds: projectLastActivity[entry.key]?[projectKey]
+                )
+            }.sorted { left, right in
+                if left.tokens != right.tokens { return left.tokens > right.tokens }
+                if left.name != right.name { return left.name < right.name }
+                return left.id < right.id
+            }
+            let conversations = (conversationTotals[entry.key] ?? [:]).map {
+                threadID, aggregate in
+                let replies = aggregate.replies.map { turnID, usage in
+                    let turnKey = ThreadTurnKey(threadID: threadID, turnID: turnID)
+                    let lifecycle = turnLifecycleFacts[turnKey]
+                    let activity = turnActivityFacts[turnKey]
+                    return ProjectReplyUsage(
+                        id: turnID,
+                        status: lifecycle?.status ?? .unknown,
+                        model: usage.model,
+                        uncachedInputTokens: Int(clamping: usage.uncachedInputTokens),
+                        cachedInputTokens: Int(clamping: usage.cachedInputTokens),
+                        visibleOutputTokens: Int(clamping: usage.visibleOutputTokens),
+                        reasoningTokens: Int(clamping: usage.reasoningTokens),
+                        totalTokens: Int(clamping: usage.totalTokens),
+                        startedAtMilliseconds: lifecycle?.startedAtMilliseconds,
+                        endedAtMilliseconds: lifecycle?.endedAtMilliseconds,
+                        lastUsageAtMilliseconds: usage.lastUsageAtMilliseconds,
+                        skillCalls: activity?.skills ?? [],
+                        toolCalls: activity?.tools ?? []
+                    )
+                }.sorted { left, right in
+                    if left.displayAtMilliseconds != right.displayAtMilliseconds {
+                        return left.displayAtMilliseconds > right.displayAtMilliseconds
                     }
-                    return ProjectConversationUsage(
-                        shortThreadID: ThreadDisplayIdentifier.make(from: threadID),
-                        displayTitle: threadTitlesByThreadID[threadID],
-                        tokens: Int(clamping: aggregate.tokens),
-                        lastMessageAtMilliseconds: sessionLastMessageTimes[threadID]
-                            ?? aggregate.lastUsageAtMilliseconds,
-                        replies: replies,
-                        unattributedTokens: Int(clamping: aggregate.unattributedTokens)
+                    return left.id < right.id
+                }
+                return ProjectConversationUsage(
+                    shortThreadID: ThreadDisplayIdentifier.make(from: threadID),
+                    displayTitle: threadTitlesByThreadID[threadID],
+                    tokens: Int(clamping: aggregate.tokens),
+                    lastMessageAtMilliseconds: sessionLastMessageTimes[threadID]
+                        ?? aggregate.lastUsageAtMilliseconds,
+                    replies: replies,
+                    unattributedTokens: Int(clamping: aggregate.unattributedTokens)
+                )
+            }
+            return WorkspaceUsageEntry(
+                id: entry.key.id,
+                name: entry.key.name,
+                rootCount: entry.key.rootCount,
+                isInferred: entry.key.isInferred,
+                tokens: Int(clamping: entry.tokens),
+                share: min(max(Double(entry.tokens) / Double(overall), 0), 1),
+                projects: projects,
+                conversations: ProjectConversationSortOrder.defaultOrder.sorted(conversations),
+                dailyUsage: trendDayStarts.map { dayStart in
+                    ProjectDailyUsage(
+                        dayStartMilliseconds: dayStart,
+                        tokens: Int(clamping: dailyTotals[entry.key]?[dayStart] ?? 0)
                     )
                 }
-                return ProjectUsageEntry(
-                    id: entry.id,
-                    name: entry.name,
-                    tokens: Int(clamping: entry.tokens),
-                    share: min(max(Double(entry.tokens) / Double(overall), 0), 1),
-                    conversations: ProjectConversationSortOrder.defaultOrder.sorted(conversations),
-                    dailyUsage: trendDayStarts.map { dayStart in
-                        ProjectDailyUsage(
-                            dayStartMilliseconds: dayStart,
-                            tokens: Int(clamping: dailyTotals[entry.key]?[dayStart] ?? 0)
-                        )
-                    }
-                )
-            },
+            )
+        }
+        return WorkspaceUsageRanking(
+            entries: entries,
             totalTokens: Int(clamping: overall),
-            projectCount: totals.count
+            workspaceCount: entries.count,
+            projectCount: entries.reduce(0) { $0 + $1.projects.count }
         )
+    }
+
+    private func makeWorkspaceUsageAliases(
+        from rows: [StoredUsageQueryRow],
+        explicitAliases: [String: String]
+    ) -> [WorkspaceUsageKey: WorkspaceUsageKey] {
+        var graph = WorkspaceUsageIdentityGraph()
+        for row in rows {
+            graph.add(row)
+        }
+        for sourceWorkspaceID in explicitAliases.keys.sorted() {
+            guard let targetWorkspaceID = resolvedWorkspaceAliasTarget(
+                for: sourceWorkspaceID,
+                aliases: explicitAliases
+            ) else { continue }
+            graph.merge(
+                sourceWorkspaceID: sourceWorkspaceID,
+                into: targetWorkspaceID
+            )
+        }
+        return graph.canonicalAliases()
+    }
+
+    private func resolvedWorkspaceAliasTarget(
+        for sourceWorkspaceID: String,
+        aliases: [String: String]
+    ) -> String? {
+        var visited: Set<String> = [sourceWorkspaceID]
+        var current = sourceWorkspaceID
+        while let next = aliases[current] {
+            guard visited.insert(next).inserted else { return nil }
+            current = next
+        }
+        return current == sourceWorkspaceID ? nil : current
     }
 
     private func makeTurnLifecycleFacts(
@@ -722,6 +811,148 @@ final class DashboardQueryService: @unchecked Sendable {
 private struct ProjectUsageIdentityNode: Hashable {
     let name: String
     let identity: String
+}
+
+private struct WorkspaceUsageKey: Hashable {
+    let id: String
+    let name: String
+    let rootCount: Int
+    let isInferred: Bool
+
+    init(identity: WorkspaceIdentity) {
+        id = identity.id
+        name = identity.name
+        rootCount = identity.rootCount
+        isInferred = identity.isInferred
+    }
+}
+
+private struct WorkspaceUsageMergeAnchor: Hashable {
+    let workspaceName: String
+    let identity: String
+}
+
+private struct WorkspaceUsageIdentityGraph {
+    private var parents: [WorkspaceUsageKey: WorkspaceUsageKey] = [:]
+    private var workspaceByAnchor: [WorkspaceUsageMergeAnchor: WorkspaceUsageKey] = [:]
+    private var workspacesByID: [String: Set<WorkspaceUsageKey>] = [:]
+    private var repositoryBackedWorkspaces: Set<WorkspaceUsageKey> = []
+    private var explicitTargets: Set<WorkspaceUsageKey> = []
+
+    mutating func add(_ row: StoredUsageQueryRow) {
+        let workspace = WorkspaceUsageKey(identity: row.workspace)
+        add(workspace)
+        workspacesByID[workspace.id, default: []].insert(workspace)
+
+        if let repositoryID = row.project.repositoryID, !repositoryID.isEmpty {
+            repositoryBackedWorkspaces.insert(workspace)
+        }
+        guard workspace.id != WorkspaceIdentity.unknown.id,
+              workspace.name != WorkspaceIdentity.unknown.name,
+              workspace.rootCount == 1,
+              !workspace.isInferred else { return }
+
+        if row.project.id != ProjectIdentity.unknown.id {
+            union(
+                workspace,
+                through: WorkspaceUsageMergeAnchor(
+                    workspaceName: workspace.name,
+                    identity: "path:\(row.project.id)"
+                )
+            )
+        }
+        if let repositoryID = row.project.repositoryID, !repositoryID.isEmpty {
+            union(
+                workspace,
+                through: WorkspaceUsageMergeAnchor(
+                    workspaceName: workspace.name,
+                    identity: "repository:\(repositoryID)"
+                )
+            )
+        }
+    }
+
+    mutating func merge(sourceWorkspaceID: String, into targetWorkspaceID: String) {
+        guard let sources = workspacesByID[sourceWorkspaceID],
+              let targets = workspacesByID[targetWorkspaceID],
+              !sources.isEmpty,
+              !targets.isEmpty else { return }
+        for source in sources {
+            for target in targets {
+                union(source, target)
+            }
+        }
+        explicitTargets.formUnion(targets)
+    }
+
+    mutating func canonicalAliases() -> [WorkspaceUsageKey: WorkspaceUsageKey] {
+        var membersByRoot: [WorkspaceUsageKey: [WorkspaceUsageKey]] = [:]
+        for workspace in Array(parents.keys) {
+            membersByRoot[root(of: workspace), default: []].append(workspace)
+        }
+
+        var aliases: [WorkspaceUsageKey: WorkspaceUsageKey] = [:]
+        for members in membersByRoot.values {
+            guard let representative = members.sorted(by: isPreferredRepresentative).first else {
+                continue
+            }
+            for workspace in members {
+                aliases[workspace] = representative
+            }
+        }
+        return aliases
+    }
+
+    private mutating func add(_ workspace: WorkspaceUsageKey) {
+        if parents[workspace] == nil { parents[workspace] = workspace }
+    }
+
+    private mutating func union(
+        _ workspace: WorkspaceUsageKey,
+        through anchor: WorkspaceUsageMergeAnchor
+    ) {
+        guard let existing = workspaceByAnchor[anchor] else {
+            workspaceByAnchor[anchor] = workspace
+            return
+        }
+        union(existing, workspace)
+    }
+
+    private mutating func union(_ left: WorkspaceUsageKey, _ right: WorkspaceUsageKey) {
+        let leftRoot = root(of: left)
+        let rightRoot = root(of: right)
+        if leftRoot != rightRoot {
+            parents[rightRoot] = leftRoot
+        }
+    }
+
+    private mutating func root(of workspace: WorkspaceUsageKey) -> WorkspaceUsageKey {
+        add(workspace)
+        guard let parent = parents[workspace], parent != workspace else { return workspace }
+        let resolved = root(of: parent)
+        parents[workspace] = resolved
+        return resolved
+    }
+
+    private func isPreferredRepresentative(
+        _ left: WorkspaceUsageKey,
+        _ right: WorkspaceUsageKey
+    ) -> Bool {
+        let leftIsExplicitTarget = explicitTargets.contains(left)
+        let rightIsExplicitTarget = explicitTargets.contains(right)
+        if leftIsExplicitTarget != rightIsExplicitTarget {
+            return leftIsExplicitTarget
+        }
+        let leftHasRepository = repositoryBackedWorkspaces.contains(left)
+        let rightHasRepository = repositoryBackedWorkspaces.contains(right)
+        if leftHasRepository != rightHasRepository {
+            return leftHasRepository
+        }
+        if left.id != right.id { return left.id < right.id }
+        if left.name != right.name { return left.name < right.name }
+        if left.rootCount != right.rootCount { return left.rootCount < right.rootCount }
+        return !left.isInferred && right.isInferred
+    }
 }
 
 private struct ProjectUsageIdentityGraph {

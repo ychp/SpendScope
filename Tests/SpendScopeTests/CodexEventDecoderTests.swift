@@ -9,7 +9,50 @@ final class CodexEventDecoderTests: XCTestCase {
         let turn = #"{"timestamp":"2026-07-14T06:55:01.000Z","type":"turn_context","payload":{"turn_id":"turn-1","model":"gpt-5.6-sol"}}"#
 
         XCTAssertEqual(try decoder.decode(line: Data(session.utf8)), .session(.init(threadID: "thread-1", source: .desktop, formatVersion: "0.144.4")))
-        XCTAssertEqual(try decoder.decode(line: Data(turn.utf8)), .turn(.init(turnID: "turn-1", model: "gpt-5.6-sol")))
+        XCTAssertEqual(
+            try decoder.decode(line: Data(turn.utf8)),
+            .turn(.init(turnID: "turn-1", model: "gpt-5.6-sol", workspace: nil))
+        )
+    }
+
+    func testTurnCapturesStableWorkspaceIdentityWithoutKeepingFullRootPaths() throws {
+        let turn = #"{"type":"turn_context","payload":{"turn_id":"turn-workspace","model":"gpt-5.6-sol","workspace_roots":["/Users/example/work/retail-sales/","/Users/example/work/guide-performance","/Users/example/work/retail-sales"]}}"#
+
+        guard case let .turn(context) = try decoder.decode(line: Data(turn.utf8)) else {
+            return XCTFail("Expected turn context")
+        }
+        let workspace = try XCTUnwrap(context.workspace)
+        XCTAssertEqual(workspace.name, "guide-performance + retail-sales")
+        XCTAssertEqual(workspace.rootCount, 2)
+        XCTAssertFalse(workspace.isInferred)
+        XCTAssertEqual(workspace.id.count, 64)
+        XCTAssertFalse(workspace.id.contains("/Users/example"))
+        XCTAssertEqual(
+            workspace,
+            WorkspaceIdentity.resolve(rootPaths: [
+                "/Users/example/work/guide-performance",
+                "/Users/example/work/retail-sales"
+            ])
+        )
+    }
+
+    func testRepositoryBackedWorkspaceIdentityMergesLinkedWorktreeAndUsesCatalogName() throws {
+        let mainPath = "/Users/example/work/SpendScope"
+        let worktreePath = "/Users/example/.codex/worktrees/abc/SpendScope"
+        let main = try XCTUnwrap(WorkspaceIdentity.resolve(
+            rootPaths: [mainPath],
+            repositoryIDsByRootPath: [mainPath: "repository-id"],
+            displayName: "SpendScope Workspace"
+        ))
+        let worktree = try XCTUnwrap(WorkspaceIdentity.resolve(
+            rootPaths: [worktreePath],
+            fallbackSingletonRepositoryID: "repository-id",
+            displayName: "SpendScope Workspace"
+        ))
+
+        XCTAssertEqual(main, worktree)
+        XCTAssertEqual(main.name, "SpendScope Workspace")
+        XCTAssertFalse(main.id.contains("/Users/example"))
     }
 
     func testSessionCapturesHashedProjectIdentityWithoutKeepingFullPath() throws {

@@ -32,6 +32,55 @@ struct ImportResult: Sendable {
     var isSuccessful: Bool { issues.isEmpty }
 }
 
+struct CodexImportProgress: Sendable, Equatable {
+    enum Stage: Sendable, Equatable {
+        case resetting
+        case discovering
+        case importing
+        case finalizing
+    }
+
+    let stage: Stage
+    let completedFileCount: Int
+    let totalFileCount: Int?
+
+    static let resetting = CodexImportProgress(
+        stage: .resetting,
+        completedFileCount: 0,
+        totalFileCount: nil
+    )
+
+    static let discovering = CodexImportProgress(
+        stage: .discovering,
+        completedFileCount: 0,
+        totalFileCount: nil
+    )
+
+    static func importing(completed: Int, total: Int) -> CodexImportProgress {
+        CodexImportProgress(
+            stage: .importing,
+            completedFileCount: completed,
+            totalFileCount: total
+        )
+    }
+
+    static func finalizing(total: Int) -> CodexImportProgress {
+        CodexImportProgress(
+            stage: .finalizing,
+            completedFileCount: total,
+            totalFileCount: total
+        )
+    }
+
+    var fractionCompleted: Double? {
+        guard let totalFileCount else { return nil }
+        guard totalFileCount > 0 else { return 1 }
+        return min(max(Double(completedFileCount) / Double(totalFileCount), 0), 1)
+    }
+}
+
+typealias CodexImportProgressHandler = @Sendable (CodexImportProgress) async -> Void
+
 actor CodexImporter {
     private let rootURL: URL
     private let store: UsageStore
@@ -41,6 +90,9 @@ actor CodexImporter {
     private let repositoryResolver: any RepositoryIdentityResolving
     private let calendar: Calendar
     private var resolvedProjects: [String: ProjectIdentity] = [:]
+    private var workspaceCatalogByID: [String: WorkspaceIdentity] = [:]
+    private var workspaceRootRepositoryIDs: [String: String] = [:]
+    private var attemptedWorkspaceRootRepositories: Set<String> = []
 
     init(
         rootURL: URL,
@@ -60,7 +112,13 @@ actor CodexImporter {
         self.calendar = calendar
     }
 
-    func rebuildFromLocalData() async -> ImportResult {
+    func rebuildFromLocalData(
+        progress: CodexImportProgressHandler? = nil
+    ) async -> ImportResult {
+        await progress?(.resetting)
+        resolvedProjects = [:]
+        workspaceRootRepositoryIDs = [:]
+        attemptedWorkspaceRootRepositories = []
         do {
             try store.resetImportedData()
         } catch {
@@ -73,10 +131,14 @@ actor CodexImporter {
                 discoveredFileIDs: nil
             )
         }
-        return await refresh(scope: .history)
+        return await refresh(scope: .history, progress: progress)
     }
 
-    func refresh(scope: ImportScope) async -> ImportResult {
+    func refresh(
+        scope: ImportScope,
+        progress: CodexImportProgressHandler? = nil
+    ) async -> ImportResult {
+        await progress?(.discovering)
         let inventory: CodexSourceInventory
         do {
             inventory = try discovery.discover(rootURL: rootURL)
@@ -88,6 +150,27 @@ actor CodexImporter {
                 issues: [.init(kind: .discovery, fileID: nil, detail: "discovery-failed")],
                 indexHealth: .degraded("discovery failed"),
                 discoveredFileIDs: nil
+            )
+        }
+
+        do {
+            let discoveredWorkspaces = inventory.workspaceMetadata.compactMap { metadata in
+                resolvedWorkspace(
+                    rootPaths: metadata.rootPaths,
+                    project: nil,
+                    preferredName: metadata.name
+                )
+            }
+            try store.upsertWorkspaceCatalog(discoveredWorkspaces)
+            workspaceCatalogByID = try store.workspaceCatalog()
+        } catch {
+            return ImportResult(
+                scope: scope,
+                processedFileCount: 0,
+                skippedFileCount: 0,
+                issues: [.init(kind: .store, fileID: nil, detail: "workspace-catalog-failed")],
+                indexHealth: inventory.indexHealth,
+                discoveredFileIDs: inventory.rollouts.map(\.fileID)
             )
         }
 
@@ -116,6 +199,8 @@ actor CodexImporter {
         }
         var processed = 0
         var skipped = inventory.rollouts.count - selected.count
+        var completed = 0
+        await progress?(.importing(completed: completed, total: selected.count))
         var archiveFacts = seedArchiveFacts(inventory: inventory, issues: &issues)
         for rollout in selected {
             switch importRollout(
@@ -131,6 +216,8 @@ actor CodexImporter {
             case .failed(let issue):
                 issues.append(issue)
             }
+            completed += 1
+            await progress?(.importing(completed: completed, total: selected.count))
         }
 
         return ImportResult(
@@ -296,7 +383,8 @@ actor CodexImporter {
                         currentPlan: previousThread?.currentPlan,
                         counters: nil,
                         counterSegment: (previousThread?.counterSegment ?? 0) + 1,
-                        lastTokenAtMilliseconds: previousThread?.lastTokenAtMilliseconds
+                        lastTokenAtMilliseconds: previousThread?.lastTokenAtMilliseconds,
+                        currentWorkspace: previousThread?.currentWorkspace
                     )]
                 } catch {
                     return .failed(.init(
@@ -468,7 +556,8 @@ actor CodexImporter {
                 currentPlan: context.currentPlan,
                 counters: context.counters,
                 counterSegment: context.counterSegment,
-                lastTokenAtMilliseconds: context.lastTokenAtMilliseconds
+                lastTokenAtMilliseconds: context.lastTokenAtMilliseconds,
+                currentWorkspace: context.workspace
             )]
         }
 
@@ -531,6 +620,12 @@ actor CodexImporter {
             guard context.threadID != nil else { throw ImportContextIssue.missingThread }
             context.currentTurnID = turn.turnID
             context.model = turn.model
+            context.workspace = resolvedWorkspace(
+                rootPaths: turn.workspaceRootPaths,
+                project: context.project
+            ) ?? turn.workspace.flatMap { workspaceCatalogByID[$0.id] ?? $0 }
+                ?? WorkspaceIdentity.inferFromProject(context.project)
+                ?? .unknown
 
         case .token(let snapshot):
             guard let threadID = context.threadID else { throw ImportContextIssue.missingThread }
@@ -571,7 +666,10 @@ actor CodexImporter {
                         usage: delta,
                         sourceFileID: rollout.fileID,
                         sourceOffset: lineOffset,
-                        project: context.project ?? .unknown
+                        project: context.project ?? .unknown,
+                        workspace: context.workspace
+                            ?? WorkspaceIdentity.inferFromProject(context.project)
+                            ?? .unknown
                     ))
                 }
                 context.counters = counters
@@ -706,6 +804,7 @@ actor CodexImporter {
             counterSegment: 0,
             lastTokenAtMilliseconds: nil,
             project: metadata.project,
+            workspace: nil,
             state: storedSession?.state ?? .empty(threadID: metadata.threadID),
             createdAtMilliseconds: matchingIndex?.createdAtMilliseconds ?? storedSession?.createdAtMilliseconds,
             updatedAtMilliseconds: matchingIndex?.updatedAtMilliseconds ?? storedSession?.updatedAtMilliseconds
@@ -747,6 +846,7 @@ actor CodexImporter {
             counterSegment: previousFile?.counterSegment ?? 0,
             lastTokenAtMilliseconds: previousFile?.lastTokenAtMilliseconds,
             project: previousFile?.project,
+            workspace: previousFile?.workspace,
             state: session?.state ?? threadID.map(SessionStateSnapshot.empty(threadID:)),
             createdAtMilliseconds: rollout.thread?.createdAtMilliseconds ?? session?.createdAtMilliseconds,
             updatedAtMilliseconds: rollout.thread?.updatedAtMilliseconds ?? session?.updatedAtMilliseconds
@@ -848,12 +948,67 @@ actor CodexImporter {
             counterSegment: context?.counterSegment ?? 0,
             lastTokenAtMilliseconds: context?.lastTokenAtMilliseconds,
             activityCommittedOffset: activityCommittedOffset,
-            project: context?.project
+            project: context?.project,
+            workspace: context?.workspace
         )
     }
 
     private func sourceKind(from raw: String?) -> CodexSourceKind {
         raw == "cli" ? .cli : .unknown
+    }
+
+    private func resolvedWorkspace(
+        rootPaths: [String]?,
+        project: ProjectIdentity?,
+        preferredName: String? = nil
+    ) -> WorkspaceIdentity? {
+        let normalizedRoots = Array(Set((rootPaths ?? []).compactMap { rawPath -> String? in
+            let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+        })).sorted()
+        guard !normalizedRoots.isEmpty else { return nil }
+
+        var repositoryIDsByRootPath: [String: String] = [:]
+        for rootPath in normalizedRoots {
+            if let repositoryID = workspaceRepositoryID(for: rootPath) {
+                repositoryIDsByRootPath[rootPath] = repositoryID
+            }
+        }
+        let rootName = normalizedRoots.count == 1
+            ? URL(fileURLWithPath: normalizedRoots[0]).lastPathComponent : nil
+        let fallbackRepositoryID: String?
+        if normalizedRoots.count == 1, rootName == project?.name {
+            fallbackRepositoryID = project?.repositoryID
+        } else {
+            fallbackRepositoryID = nil
+        }
+        guard let identity = WorkspaceIdentity.resolve(
+            rootPaths: normalizedRoots,
+            repositoryIDsByRootPath: repositoryIDsByRootPath,
+            fallbackSingletonRepositoryID: fallbackRepositoryID,
+            displayName: preferredName
+        ) else {
+            return nil
+        }
+        if preferredName != nil { return identity }
+        guard let catalogIdentity = workspaceCatalogByID[identity.id] else { return identity }
+        return WorkspaceIdentity(
+            id: identity.id,
+            name: catalogIdentity.name,
+            rootCount: identity.rootCount,
+            isInferred: false
+        )
+    }
+
+    private func workspaceRepositoryID(for rootPath: String) -> String? {
+        if let cached = workspaceRootRepositoryIDs[rootPath] { return cached }
+        guard attemptedWorkspaceRootRepositories.insert(rootPath).inserted else { return nil }
+        guard let resolved = repositoryResolver.repositoryID(forWorkingDirectory: rootPath) else {
+            return nil
+        }
+        workspaceRootRepositoryIDs[rootPath] = resolved
+        return resolved
     }
 
     private func countersRolledBack(from previous: TokenCounters, to current: TokenCounters) -> Bool {
@@ -903,6 +1058,7 @@ private struct ImportContext {
     var counterSegment: Int64
     var lastTokenAtMilliseconds: Int64?
     var project: ProjectIdentity?
+    var workspace: WorkspaceIdentity?
     var state: SessionStateSnapshot?
     var createdAtMilliseconds: Int64?
     var updatedAtMilliseconds: Int64?

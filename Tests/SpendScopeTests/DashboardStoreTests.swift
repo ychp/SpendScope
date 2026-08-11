@@ -118,7 +118,11 @@ final class DashboardStoreTests: XCTestCase {
             loadResult: .loaded(.fixture(todayTokens: 17), .fixture),
             refreshResults: [],
             rebuildResult: .loaded(.fixture(todayTokens: 84), .fixture),
-            pauseRebuild: true
+            pauseRebuild: true,
+            rebuildProgressUpdates: [
+                .discovering,
+                .importing(completed: 2, total: 4)
+            ]
         )
         let store = DashboardStore(client: client, usageRefreshInterval: .seconds(60))
         await store.loadCached()
@@ -128,6 +132,8 @@ final class DashboardStoreTests: XCTestCase {
         await eventually { await client.rebuildCount == 1 }
 
         XCTAssertTrue(store.isRebuildingData)
+        XCTAssertEqual(store.rebuildProgress, .importing(completed: 2, total: 4))
+        XCTAssertEqual(store.rebuildProgress?.fractionCompleted, 0.5)
         XCTAssertNil(store.snapshot)
         guard case .loading = store.state else { return XCTFail("Expected loading state") }
 
@@ -141,6 +147,7 @@ final class DashboardStoreTests: XCTestCase {
         let rebuildCount = await client.rebuildCount
         XCTAssertEqual(rebuildCount, 1)
         XCTAssertFalse(store.isRebuildingData)
+        XCTAssertNil(store.rebuildProgress)
     }
 
     func testNoCodexDataPublishesEmptyInsteadOfPreview() async {
@@ -882,6 +889,7 @@ private actor FakeDashboardDataClient: DashboardDataClient {
     private let pauseRefresh: Bool
     private let pauseBackfill: Bool
     private let pauseRebuild: Bool
+    private let rebuildProgressUpdates: [CodexImportProgress]
     private var refreshContinuations: [CheckedContinuation<Void, Never>] = []
     private var backfillContinuations: [CheckedContinuation<Void, Never>] = []
     private var rebuildContinuations: [CheckedContinuation<Void, Never>] = []
@@ -903,7 +911,8 @@ private actor FakeDashboardDataClient: DashboardDataClient {
         quotaFailure: FakeClientError? = nil,
         pauseRefresh: Bool = false,
         pauseBackfill: Bool = false,
-        pauseRebuild: Bool = false
+        pauseRebuild: Bool = false,
+        rebuildProgressUpdates: [CodexImportProgress] = []
     ) {
         self.loadResult = loadResult
         currentResult = loadResult
@@ -916,6 +925,7 @@ private actor FakeDashboardDataClient: DashboardDataClient {
         self.pauseRefresh = pauseRefresh
         self.pauseBackfill = pauseBackfill
         self.pauseRebuild = pauseRebuild
+        self.rebuildProgressUpdates = rebuildProgressUpdates
     }
 
     func loadCached() async throws -> DashboardDataResult {
@@ -953,7 +963,12 @@ private actor FakeDashboardDataClient: DashboardDataClient {
         return backfillResult
     }
 
-    func rebuildFromLocalData() async throws -> DashboardDataResult {
+    func rebuildFromLocalData(
+        progress: @escaping CodexImportProgressHandler
+    ) async throws -> DashboardDataResult {
+        for update in rebuildProgressUpdates {
+            await progress(update)
+        }
         rebuildCount += 1
         if pauseRebuild {
             await withCheckedContinuation { rebuildContinuations.append($0) }

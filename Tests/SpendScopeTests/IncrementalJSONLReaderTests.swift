@@ -97,6 +97,36 @@ final class IncrementalJSONLReaderTests: XCTestCase {
         XCTAssertEqual(inventory.threadIndex, [])
     }
 
+    func testDiscoveryRecoversArchivedWorkspaceNamesAndPrefersNewestMetadata() throws {
+        let root = try temporaryDirectory()
+        let historicalState = root.appending(path: "..codex-global-state.json.tmp-older")
+        let currentState = root.appending(path: ".codex-global-state.json")
+        try write(
+            #"{"local-projects":{"archived":{"name":"open-api","rootPaths":["/repo/retail-sales","/repo/guide-performance"]},"active":{"name":"SpendScope-old","rootPaths":["/repo/SpendScope"]}}}"#,
+            to: historicalState
+        )
+        try write(
+            #"{"local-projects":{"active":{"name":"SpendScope","rootPaths":["/repo/SpendScope"]}}}"#,
+            to: currentState
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1)],
+            ofItemAtPath: historicalState.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 2)],
+            ofItemAtPath: currentState.path
+        )
+
+        let metadata = try CodexSourceDiscovery().discover(rootURL: root).workspaceMetadata
+
+        XCTAssertEqual(metadata.map(\.name).sorted(), ["SpendScope", "open-api"])
+        XCTAssertEqual(
+            metadata.first { $0.name == "open-api" }?.rootPaths,
+            ["/repo/retail-sales", "/repo/guide-performance"]
+        )
+    }
+
     func testDiscoveryUsesNewestNumericStateDatabaseAndMergesThreadByStandardizedPath() throws {
         let root = try temporaryDirectory()
         let rollout = root.appending(path: "sessions/2026/07/14/rollout.jsonl")
@@ -242,7 +272,7 @@ final class IncrementalJSONLReaderTests: XCTestCase {
                 .text("The following is the Codex desktop context"),
                 .integer(5_000), .integer(6_000), .integer(0),
                 .text("subagent"), .text("/tmp/subagent.jsonl"),
-                .text(#"{"subagent":true}"#), .null, .null,
+                .text(#"{"subagent":{"thread_spawn":{"agent_nickname":"Ada","agent_role":null}}}"#), .null, .null,
                 .text("The following is the Codex task context"),
                 .integer(7_000), .integer(8_000), .integer(0)
             ]
@@ -267,7 +297,7 @@ final class IncrementalJSONLReaderTests: XCTestCase {
         XCTAssertEqual(recordsByID["renamed"]?.displayTitle, "手动 名称")
         XCTAssertEqual(recordsByID["titled"]?.displayTitle, "修复 项目用量")
         XCTAssertEqual(recordsByID["guardian"]?.displayTitle, "命令权限检查")
-        XCTAssertEqual(recordsByID["subagent"]?.displayTitle, "Codex 子任务")
+        XCTAssertEqual(recordsByID["subagent"]?.displayTitle, "Codex 子任务 · Ada")
         XCTAssertNil(recordsByID["plain-template"]?.displayTitle)
         XCTAssertEqual(
             CodexSourceDiscovery().threadDisplayTitles(rootURL: root),
@@ -275,7 +305,7 @@ final class IncrementalJSONLReaderTests: XCTestCase {
                 "renamed": "手动 名称",
                 "titled": "修复 项目用量",
                 "guardian": "命令权限检查",
-                "subagent": "Codex 子任务"
+                "subagent": "Codex 子任务 · Ada"
             ]
         )
     }

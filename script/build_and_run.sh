@@ -82,7 +82,11 @@ printf '%s\n' "$CURRENT_BUILD_INPUT_FINGERPRINT" >"$BUILD_INPUT_FINGERPRINT_FILE
 APP_BINARY_FINGERPRINT="$(shasum -a 256 "$APP_BINARY" | awk '{print substr($1, 1, 12)}')"
 
 open_app() {
-  /usr/bin/open -n "$APP_BUNDLE"
+  # Another Run action may have completed while this invocation was building.
+  # Stop once more immediately before launch, then let LaunchServices reuse the
+  # bundle identity instead of explicitly forcing a parallel app instance.
+  stop_app
+  /usr/bin/open "$APP_BUNDLE"
 }
 
 verify_app() {

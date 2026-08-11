@@ -740,8 +740,8 @@ private struct DashboardContentView: View {
         snapshot.activityRankings.ranking(for: selectedActivityRange)
     }
 
-    private var selectedProjectRanking: ProjectUsageRanking {
-        snapshot.projectUsage.ranking(for: selectedProjectRange)
+    private var selectedWorkspaceRanking: WorkspaceUsageRanking {
+        snapshot.workspaceUsage.ranking(for: selectedProjectRange)
     }
 
     private var selectedModelRanking: ModelUsageRanking {
@@ -780,7 +780,7 @@ private struct DashboardContentView: View {
                 case .activity:
                     ActivityRankingPanel(ranking: selectedActivityRanking)
                 case .project:
-                    ProjectUsagePanel(ranking: selectedProjectRanking)
+                    ProjectUsagePanel(ranking: selectedWorkspaceRanking)
                 case .model:
                     ModelUsagePanel(ranking: selectedModelRanking)
                 }
@@ -834,7 +834,7 @@ private struct DashboardContentView: View {
     private var projectRangeSelector: some View {
         analyticsRangeSelector(
             selectedRange: selectedProjectRange,
-            accessibilityLabel: "项目用量时间范围"
+            accessibilityLabel: "工作区用量时间范围"
         ) { selectedProjectRange = $0 }
     }
 
@@ -1137,7 +1137,7 @@ private struct DashboardContentView: View {
 private enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
     case trend = "用量趋势"
     case activity = "Skills / Tools"
-    case project = "项目用量"
+    case project = "工作区用量"
     case model = "模型用量"
 
     static let defaultTab: DashboardAnalyticsTab = .trend

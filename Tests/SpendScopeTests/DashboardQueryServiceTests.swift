@@ -152,10 +152,10 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.dailyUsage.isEmpty)
         XCTAssertEqual(snapshot.planName, "Free")
         XCTAssertEqual(snapshot.activityRankings, .empty)
-        XCTAssertEqual(snapshot.projectUsage, .empty)
+        XCTAssertEqual(snapshot.workspaceUsage, .empty)
     }
 
-    func testBuildsProjectUsageForTodaySevenThirtyAndAllTimeRanges() throws {
+    func testBuildsWorkspaceUsageForTodaySevenThirtyAndAllTimeRanges() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
         let now = try XCTUnwrap(calendar.date(from: DateComponents(
@@ -180,25 +180,29 @@ final class DashboardQueryServiceTests: XCTestCase {
         ], quotas: []))
 
         let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: calendar)
-        let today = snapshot.projectUsage.ranking(for: .today)
-        let sevenDays = snapshot.projectUsage.ranking(for: .sevenDays)
-        let thirtyDays = snapshot.projectUsage.ranking(for: .thirtyDays)
-        let allTime = snapshot.projectUsage.ranking(for: .allTime)
+        let today = snapshot.workspaceUsage.ranking(for: .today)
+        let sevenDays = snapshot.workspaceUsage.ranking(for: .sevenDays)
+        let thirtyDays = snapshot.workspaceUsage.ranking(for: .thirtyDays)
+        let allTime = snapshot.workspaceUsage.ranking(for: .allTime)
 
-        XCTAssertEqual(today.entries.map(\.id), ["project-a"])
+        XCTAssertEqual(today.entries.map(\.id), ["workspace-project-a"])
+        XCTAssertEqual(today.workspaceCount, 1)
+        XCTAssertEqual(today.projectCount, 1)
         XCTAssertEqual(today.totalTokens, 100)
         XCTAssertEqual(today.entries.first?.dailyUsage.count, 7)
         XCTAssertEqual(today.entries.first?.dailyUsage.map(\.tokens), [20, 0, 0, 0, 0, 0, 100])
-        XCTAssertEqual(sevenDays.entries.map(\.id), ["project-a"])
+        XCTAssertEqual(sevenDays.entries.map(\.id), ["workspace-project-a"])
         XCTAssertEqual(sevenDays.totalTokens, 120)
         XCTAssertEqual(sevenDays.entries.first?.share, 1)
         XCTAssertEqual(thirtyDays.entries.map(\.tokens), [120, 80, 30])
+        XCTAssertEqual(thirtyDays.workspaceCount, 3)
         XCTAssertEqual(thirtyDays.projectCount, 3)
         XCTAssertEqual(allTime.totalTokens, 280)
+        XCTAssertEqual(allTime.workspaceCount, 4)
         XCTAssertEqual(allTime.projectCount, 4)
         XCTAssertEqual(allTime.entries.filter { $0.name == "SpendScope" }.count, 2,
                        "Same leaf names from different project paths remain distinct")
-        XCTAssertFalse(allTime.entries.contains { $0.id == "project-future" })
+        XCTAssertFalse(allTime.entries.contains { $0.id == "workspace-project-future" })
     }
 
     func testProjectUsageIncludesConversationsSortedByLastMessageWithUsageSortAvailable() throws {
@@ -280,9 +284,9 @@ final class DashboardQueryServiceTests: XCTestCase {
             .snapshot(
                 now: now,
                 calendar: .current,
-                threadTitlesByThreadID: ["recent-thread": "项目用量对话名称"]
+                threadTitlesByThreadID: ["recent-thread": "工作区用量对话名称"]
             )
-            .projectUsage
+            .workspaceUsage
             .ranking(for: .allTime)
         let entry = try XCTUnwrap(ranking.entries.first)
 
@@ -293,7 +297,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         )
         XCTAssertTrue(entry.conversations.allSatisfy { $0.shortThreadID.hasPrefix("thread-") })
         XCTAssertFalse(entry.conversations.contains { $0.shortThreadID == "recent-thread" })
-        XCTAssertEqual(entry.conversations.map(\.displayTitle), ["项目用量对话名称", nil])
+        XCTAssertEqual(entry.conversations.map(\.displayTitle), ["工作区用量对话名称", nil])
         let recentReplies = entry.conversations[0].replies
         XCTAssertEqual(recentReplies.map(\.id), ["recent-turn-2", "recent-turn-1"])
         XCTAssertEqual(recentReplies.map(\.status), [.inProgress, .completed])
@@ -325,6 +329,55 @@ final class DashboardQueryServiceTests: XCTestCase {
             ProjectConversationSortOrder.usage.sorted(entry.conversations).map(\.tokens),
             [100, 50]
         )
+    }
+
+    func testGuardianUsageKeepsTokensButIsExcludedFromEveryTaskAndReplyMetric() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let project = ProjectIdentity(id: "project-a", name: "SpendScope")
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "visible", at: now.addingTimeInterval(-20), total: 30,
+                    project: project, threadID: "visible-thread", turnID: "visible-turn"
+                ),
+                usage(
+                    "guardian", at: now.addingTimeInterval(-10), total: 70,
+                    project: project, threadID: "guardian-thread", turnID: "guardian-turn"
+                )
+            ],
+            quotas: [],
+            sessions: [
+                session(threadID: "visible-thread", updatedAtMilliseconds: 10_000),
+                session(threadID: "guardian-thread", updatedAtMilliseconds: 19_000)
+            ]
+        ))
+
+        let entry = try XCTUnwrap(
+            DashboardQueryService(store: store)
+                .snapshot(
+                    now: now,
+                    calendar: .current,
+                    threadTitlesByThreadID: [
+                        "visible-thread": "可见任务",
+                        "guardian-thread": "命令权限检查"
+                    ]
+                )
+                .workspaceUsage
+                .ranking(for: .allTime)
+                .entries
+                .first
+        )
+        let projectEntry = try XCTUnwrap(entry.projects.first)
+
+        XCTAssertEqual(entry.tokens, 100, "Internal checks still contribute to actual usage")
+        XCTAssertEqual(entry.conversations.count, 2, "Raw conversations remain available for usage")
+        XCTAssertEqual(entry.visibleConversations.map(\.displayTitle), ["可见任务"])
+        XCTAssertEqual(entry.visibleReplyCount, 1)
+        XCTAssertEqual(entry.lastVisibleActivityAtMilliseconds, 10_000)
+        XCTAssertEqual(projectEntry.conversationCount, 1)
+        XCTAssertEqual(projectEntry.replyCount, 1)
+        XCTAssertEqual(projectEntry.lastActivityAtMilliseconds, 10_000)
     }
 
     func testBuildsModelUsageRankingBreakdownAndStandardAPIEstimate() throws {
@@ -413,7 +466,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertNil(ModelPricingCatalog.rule(for: "codex-auto-review"))
     }
 
-    func testProjectUsageReturnsEveryProjectInSelectedRange() throws {
+    func testWorkspaceUsageReturnsEveryWorkspaceInSelectedRange() throws {
         let now = Date(timeIntervalSince1970: 20_000)
         let store = try makeStore()
         let events = (0..<25).map { index in
@@ -430,58 +483,250 @@ final class DashboardQueryServiceTests: XCTestCase {
             now: now,
             calendar: .current
         )
-        let allTime = snapshot.projectUsage.ranking(for: .allTime)
+        let allTime = snapshot.workspaceUsage.ranking(for: .allTime)
 
+        XCTAssertEqual(allTime.workspaceCount, 25)
         XCTAssertEqual(allTime.projectCount, 25)
         XCTAssertEqual(allTime.entries.count, 25)
         XCTAssertEqual(allTime.entries.first?.tokens, 25)
         XCTAssertEqual(allTime.entries.last?.tokens, 1)
     }
 
-    func testProjectUsageGroupsByNameThenGitRepositoryIdentity() throws {
+    func testWorkspaceUsageGroupsChildDirectoriesByNameThenGitRepositoryIdentity() throws {
         let now = Date(timeIntervalSince1970: 20_000)
         let observedAt = now.addingTimeInterval(-1)
         let store = try makeStore()
+        let workspace = WorkspaceIdentity(id: "workspace-shop", name: "Shop workspace", rootCount: 4)
         try store.commit(batch(events: [
             usage(
                 "same-repo-a",
                 at: observedAt,
                 total: 100,
-                project: ProjectIdentity(id: "path-a", name: "Shop", repositoryID: "repo-1")
+                project: ProjectIdentity(id: "path-a", name: "Shop", repositoryID: "repo-1"),
+                workspace: workspace
             ),
             usage(
                 "same-repo-b",
                 at: observedAt,
                 total: 50,
-                project: ProjectIdentity(id: "path-b", name: "Shop", repositoryID: "repo-1")
+                project: ProjectIdentity(id: "path-b", name: "Shop", repositoryID: "repo-1"),
+                workspace: workspace
             ),
             usage(
                 "same-path-changed-remote",
                 at: observedAt,
                 total: 10,
-                project: ProjectIdentity(id: "path-a", name: "Shop", repositoryID: "repo-3")
+                project: ProjectIdentity(id: "path-a", name: "Shop", repositoryID: "repo-3"),
+                workspace: workspace
             ),
             usage(
                 "different-repo",
                 at: observedAt,
                 total: 30,
-                project: ProjectIdentity(id: "path-c", name: "Shop", repositoryID: "repo-2")
+                project: ProjectIdentity(id: "path-c", name: "Shop", repositoryID: "repo-2"),
+                workspace: workspace
             ),
             usage(
                 "different-name",
                 at: observedAt,
                 total: 20,
-                project: ProjectIdentity(id: "path-d", name: "ShopCopy", repositoryID: "repo-1")
+                project: ProjectIdentity(id: "path-d", name: "ShopCopy", repositoryID: "repo-1"),
+                workspace: workspace
             )
         ], quotas: []))
 
         let ranking = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
-            .projectUsage.ranking(for: .allTime)
+            .workspaceUsage.ranking(for: .allTime)
 
+        XCTAssertEqual(ranking.workspaceCount, 1)
         XCTAssertEqual(ranking.projectCount, 3)
-        XCTAssertEqual(ranking.entries.filter { $0.name == "Shop" }.map(\.tokens), [160, 30])
-        XCTAssertEqual(ranking.entries.first { $0.tokens == 160 }?.id, "path-a")
-        XCTAssertEqual(ranking.entries.first { $0.name == "ShopCopy" }?.tokens, 20)
+        let entry = try XCTUnwrap(ranking.entries.first)
+        XCTAssertEqual(entry.name, "Shop workspace")
+        XCTAssertEqual(entry.tokens, 210)
+        XCTAssertEqual(entry.projects.filter { $0.name == "Shop" }.map(\.tokens), [160, 30])
+        XCTAssertEqual(entry.projects.first { $0.tokens == 160 }?.id, "path-a")
+        XCTAssertEqual(entry.projects.first { $0.name == "ShopCopy" }?.tokens, 20)
+    }
+
+    func testSameDirectoryUsageIsSeparatedByWorkspaceIdentity() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let retailSales = ProjectIdentity(id: "retail-path", name: "retail-sales")
+        let retailOnly = WorkspaceIdentity(
+            id: "workspace-retail-only", name: "retail-sales", rootCount: 1
+        )
+        let openAPI = WorkspaceIdentity(
+            id: "workspace-open-api",
+            name: "guide-performance + retail-sales",
+            rootCount: 2
+        )
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage(
+                "retail-only", at: now.addingTimeInterval(-2), total: 10,
+                project: retailSales, workspace: retailOnly,
+                threadID: "retail-thread", turnID: "retail-turn"
+            ),
+            usage(
+                "open-api", at: now.addingTimeInterval(-1), total: 90,
+                project: retailSales, workspace: openAPI,
+                threadID: "open-api-thread", turnID: "open-api-turn"
+            )
+        ], quotas: []))
+
+        let ranking = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
+            .workspaceUsage.ranking(for: .allTime)
+
+        XCTAssertEqual(ranking.workspaceCount, 2)
+        XCTAssertEqual(ranking.projectCount, 2)
+        XCTAssertEqual(ranking.totalTokens, 100)
+        XCTAssertEqual(ranking.entries.map(\.id), ["workspace-open-api", "workspace-retail-only"])
+        XCTAssertEqual(ranking.entries.map(\.tokens), [90, 10])
+        XCTAssertTrue(ranking.entries.allSatisfy { $0.projects.map(\.name) == ["retail-sales"] })
+        XCTAssertEqual(ranking.entries.map { $0.conversations.count }, [1, 1])
+    }
+
+    func testSameNamedSingletonWorkspaceMergesPathAndRepositoryIdentities() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let projectPath = "shared-project-path"
+        let pathBackedWorkspace = WorkspaceIdentity(
+            id: "workspace-path-backed", name: "data-work", rootCount: 1
+        )
+        let repositoryBackedWorkspace = WorkspaceIdentity(
+            id: "workspace-repository-backed", name: "data-work", rootCount: 1
+        )
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage(
+                "path-backed", at: now.addingTimeInterval(-2), total: 40,
+                project: ProjectIdentity(id: projectPath, name: "data-work"),
+                workspace: pathBackedWorkspace,
+                threadID: "path-thread", turnID: "path-turn"
+            ),
+            usage(
+                "repository-backed", at: now.addingTimeInterval(-1), total: 60,
+                project: ProjectIdentity(
+                    id: projectPath,
+                    name: "data-work",
+                    repositoryID: "shared-repository"
+                ),
+                workspace: repositoryBackedWorkspace,
+                threadID: "repository-thread", turnID: "repository-turn"
+            )
+        ], quotas: []))
+
+        let ranking = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
+            .workspaceUsage.ranking(for: .allTime)
+
+        XCTAssertEqual(ranking.workspaceCount, 1)
+        XCTAssertEqual(ranking.projectCount, 1)
+        XCTAssertEqual(ranking.totalTokens, 100)
+        let entry = try XCTUnwrap(ranking.entries.first)
+        XCTAssertEqual(entry.id, repositoryBackedWorkspace.id)
+        XCTAssertEqual(entry.name, "data-work")
+        XCTAssertEqual(entry.tokens, 100)
+        XCTAssertEqual(entry.projects.map(\.tokens), [100])
+        XCTAssertEqual(entry.conversations.count, 2)
+    }
+
+    func testSameNamedSingletonWorkspacesWithDifferentProjectsRemainSeparate() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage(
+                "first-copy", at: now.addingTimeInterval(-2), total: 40,
+                project: ProjectIdentity(id: "first-path", name: "website"),
+                workspace: WorkspaceIdentity(
+                    id: "first-workspace", name: "website", rootCount: 1
+                ),
+                threadID: "first-thread"
+            ),
+            usage(
+                "second-copy", at: now.addingTimeInterval(-1), total: 60,
+                project: ProjectIdentity(id: "second-path", name: "website"),
+                workspace: WorkspaceIdentity(
+                    id: "second-workspace", name: "website", rootCount: 1
+                ),
+                threadID: "second-thread"
+            )
+        ], quotas: []))
+
+        let ranking = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
+            .workspaceUsage.ranking(for: .allTime)
+
+        XCTAssertEqual(ranking.workspaceCount, 2)
+        XCTAssertEqual(ranking.projectCount, 2)
+        XCTAssertEqual(ranking.entries.map(\.name), ["website", "website"])
+        XCTAssertEqual(ranking.entries.map(\.tokens), [60, 40])
+    }
+
+    func testExplicitWorkspaceAliasMergesDifferentNamesIntoChosenTarget() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let temporaryWorkspace = WorkspaceIdentity(
+            id: "temporary-new-chat", name: "new-chat", rootCount: 1
+        )
+        let targetWorkspace = WorkspaceIdentity(
+            id: "expectant-father-workspace", name: "expectant-father", rootCount: 1
+        )
+        let store = try makeStore()
+        try store.setWorkspaceAlias(
+            sourceWorkspaceID: temporaryWorkspace.id,
+            targetWorkspaceID: targetWorkspace.id
+        )
+        try store.commit(batch(events: [
+            usage(
+                "temporary-task", at: now.addingTimeInterval(-2), total: 40,
+                project: ProjectIdentity(id: "temporary-path", name: "new-chat"),
+                workspace: temporaryWorkspace,
+                threadID: "temporary-thread"
+            ),
+            usage(
+                "target-task", at: now.addingTimeInterval(-1), total: 60,
+                project: ProjectIdentity(id: "target-path", name: "expectant-father"),
+                workspace: targetWorkspace,
+                threadID: "target-thread"
+            )
+        ], quotas: []))
+
+        let ranking = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
+            .workspaceUsage.ranking(for: .allTime)
+
+        XCTAssertEqual(ranking.workspaceCount, 1)
+        XCTAssertEqual(ranking.projectCount, 2)
+        XCTAssertEqual(ranking.totalTokens, 100)
+        let entry = try XCTUnwrap(ranking.entries.first)
+        XCTAssertEqual(entry.id, targetWorkspace.id)
+        XCTAssertEqual(entry.name, targetWorkspace.name)
+        XCTAssertEqual(entry.tokens, 100)
+        XCTAssertEqual(entry.conversations.count, 2)
+        XCTAssertEqual(Set(entry.projects.map(\.name)), ["new-chat", "expectant-father"])
+    }
+
+    func testInferredWorkspaceRemainsSeparateFromConfirmedSingletonWorkspace() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let project = ProjectIdentity(id: "expectant-path", name: "expectant-father")
+        let inferred = try XCTUnwrap(WorkspaceIdentity.inferFromProject(project))
+        let confirmed = WorkspaceIdentity(
+            id: "confirmed-expectant", name: "expectant-father", rootCount: 1
+        )
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage(
+                "inferred", at: now.addingTimeInterval(-2), total: 70,
+                project: project, workspace: inferred, threadID: "inferred-thread"
+            ),
+            usage(
+                "confirmed", at: now.addingTimeInterval(-1), total: 30,
+                project: project, workspace: confirmed, threadID: "confirmed-thread"
+            )
+        ], quotas: []))
+
+        let ranking = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
+            .workspaceUsage.ranking(for: .allTime)
+
+        XCTAssertEqual(ranking.workspaceCount, 2)
+        XCTAssertEqual(ranking.entries.map(\.name), ["expectant-father", "expectant-father"])
+        XCTAssertEqual(ranking.entries.map(\.isInferred), [true, false])
+        XCTAssertNotEqual(ranking.entries[0].id, ranking.entries[1].id)
     }
 
     func testBuildsActivityRankingsForTodaySevenThirtyAndAllTimeLocalDayBoundaries() throws {
@@ -735,6 +980,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         model: String = "test-model",
         planRaw: String = "plus",
         project: ProjectIdentity = .unknown,
+        workspace: WorkspaceIdentity? = nil,
         threadID: String = "thread-1",
         turnID: String? = nil
     ) -> StoredUsageEvent {
@@ -749,7 +995,12 @@ final class DashboardQueryServiceTests: XCTestCase {
             usage: usage ?? .init(uncachedInput: total, cachedInput: 0, visibleOutput: 0, reasoning: 0),
             sourceFileID: "file-1",
             sourceOffset: 1,
-            project: project
+            project: project,
+            workspace: workspace ?? WorkspaceIdentity(
+                id: "workspace-\(project.id)",
+                name: project.name,
+                rootCount: project == .unknown ? 0 : 1
+            )
         )
     }
 

@@ -324,7 +324,9 @@ private actor ReminderDashboardClient: DashboardDataClient {
     func refreshUsage() async throws -> DashboardDataResult { result }
     func refreshQuota() async throws -> DashboardDataResult { result }
     func backfillHistory() async throws -> DashboardDataResult { result }
-    func rebuildFromLocalData() async throws -> DashboardDataResult { result }
+    func rebuildFromLocalData(
+        progress: @escaping CodexImportProgressHandler
+    ) async throws -> DashboardDataResult { result }
 }
 
 private enum ReminderTestError: Error {

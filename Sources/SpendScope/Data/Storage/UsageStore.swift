@@ -12,6 +12,7 @@ struct StoredUsageEvent: Sendable {
     let sourceFileID: String
     let sourceOffset: Int64
     let project: ProjectIdentity
+    let workspace: WorkspaceIdentity
 
     init(
         fingerprint: String,
@@ -24,7 +25,8 @@ struct StoredUsageEvent: Sendable {
         usage: TokenUsageDelta,
         sourceFileID: String,
         sourceOffset: Int64,
-        project: ProjectIdentity = .unknown
+        project: ProjectIdentity = .unknown,
+        workspace: WorkspaceIdentity = .unknown
     ) {
         self.fingerprint = fingerprint
         self.observedAtMilliseconds = observedAtMilliseconds
@@ -37,6 +39,7 @@ struct StoredUsageEvent: Sendable {
         self.sourceFileID = sourceFileID
         self.sourceOffset = sourceOffset
         self.project = project
+        self.workspace = workspace
     }
 }
 
@@ -112,6 +115,7 @@ struct FileCheckpoint: Sendable {
     let lastTokenAtMilliseconds: Int64?
     let activityCommittedOffset: Int64
     let project: ProjectIdentity?
+    let workspace: WorkspaceIdentity?
 
     init(
         fileID: String,
@@ -133,7 +137,8 @@ struct FileCheckpoint: Sendable {
         counterSegment: Int64 = 0,
         lastTokenAtMilliseconds: Int64? = nil,
         activityCommittedOffset: Int64 = 0,
-        project: ProjectIdentity? = nil
+        project: ProjectIdentity? = nil,
+        workspace: WorkspaceIdentity? = nil
     ) {
         self.fileID = fileID
         self.deviceID = deviceID
@@ -155,6 +160,7 @@ struct FileCheckpoint: Sendable {
         self.lastTokenAtMilliseconds = lastTokenAtMilliseconds
         self.activityCommittedOffset = activityCommittedOffset
         self.project = project
+        self.workspace = workspace
     }
 }
 
@@ -166,6 +172,7 @@ struct ThreadCheckpoint: Sendable {
     let counters: TokenCounters?
     let counterSegment: Int64
     let lastTokenAtMilliseconds: Int64?
+    let currentWorkspace: WorkspaceIdentity?
 
     init(
         threadID: String,
@@ -174,7 +181,8 @@ struct ThreadCheckpoint: Sendable {
         currentPlan: PlanResolution?,
         counters: TokenCounters?,
         counterSegment: Int64,
-        lastTokenAtMilliseconds: Int64?
+        lastTokenAtMilliseconds: Int64?,
+        currentWorkspace: WorkspaceIdentity? = nil
     ) {
         self.threadID = threadID
         self.currentModel = currentModel
@@ -183,6 +191,7 @@ struct ThreadCheckpoint: Sendable {
         self.counters = counters
         self.counterSegment = counterSegment
         self.lastTokenAtMilliseconds = lastTokenAtMilliseconds
+        self.currentWorkspace = currentWorkspace
     }
 }
 
@@ -238,6 +247,7 @@ struct StoredUsageQueryRow: Sendable {
     let reasoningTokens: Int64
     let totalTokens: Int64
     let project: ProjectIdentity
+    let workspace: WorkspaceIdentity
 }
 
 struct StoredTurnLifecycleQueryRow: Sendable {
@@ -371,7 +381,8 @@ final class UsageStore: @unchecked Sendable {
             counterSegment: try row.requiredInt64("counter_segment"),
             lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms"),
             activityCommittedOffset: try row.requiredInt64("activity_committed_offset"),
-            project: try projectIdentity(from: row)
+            project: try projectIdentity(from: row),
+            workspace: try workspaceIdentity(from: row)
         )
     }
 
@@ -467,6 +478,80 @@ final class UsageStore: @unchecked Sendable {
         }
     }
 
+    func upsertWorkspaceCatalog(_ workspaces: [WorkspaceIdentity]) throws {
+        try database.inTransaction {
+            for workspace in workspaces where workspace != .unknown && !workspace.isInferred {
+                try database.execute(
+                    sql: """
+                        INSERT INTO workspace_catalog(workspace_id, workspace_name, root_count)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(workspace_id) DO UPDATE SET
+                          workspace_name = excluded.workspace_name,
+                          root_count = excluded.root_count
+                        """,
+                    bindings: [
+                        .text(workspace.id), .text(workspace.name),
+                        .integer(Int64(workspace.rootCount))
+                    ]
+                )
+            }
+        }
+    }
+
+    func workspaceCatalog() throws -> [String: WorkspaceIdentity] {
+        let rows = try database.query(
+            sql: """
+                SELECT workspace_id, workspace_name, root_count
+                FROM workspace_catalog ORDER BY workspace_id
+                """
+        )
+        return try Dictionary(uniqueKeysWithValues: rows.map { values in
+            let row = SQLiteRow(table: "workspace_catalog", values: values)
+            let identity = WorkspaceIdentity(
+                id: try row.requiredString("workspace_id"),
+                name: try row.requiredString("workspace_name"),
+                rootCount: Int(clamping: try row.requiredInt64("root_count")),
+                isInferred: false
+            )
+            return (identity.id, identity)
+        })
+    }
+
+    func setWorkspaceAlias(sourceWorkspaceID: String, targetWorkspaceID: String) throws {
+        guard !sourceWorkspaceID.isEmpty,
+              !targetWorkspaceID.isEmpty,
+              sourceWorkspaceID != WorkspaceIdentity.unknown.id,
+              targetWorkspaceID != WorkspaceIdentity.unknown.id,
+              sourceWorkspaceID != targetWorkspaceID else {
+            throw UsageStoreError.invalidWorkspaceAlias
+        }
+        try database.execute(
+            sql: """
+                INSERT INTO workspace_aliases(source_workspace_id, target_workspace_id)
+                VALUES (?, ?)
+                ON CONFLICT(source_workspace_id) DO UPDATE SET
+                  target_workspace_id = excluded.target_workspace_id
+                """,
+            bindings: [.text(sourceWorkspaceID), .text(targetWorkspaceID)]
+        )
+    }
+
+    func workspaceAliases() throws -> [String: String] {
+        let rows = try database.query(
+            sql: """
+                SELECT source_workspace_id, target_workspace_id
+                FROM workspace_aliases ORDER BY source_workspace_id
+                """
+        )
+        return try Dictionary(uniqueKeysWithValues: rows.map { values in
+            let row = SQLiteRow(table: "workspace_aliases", values: values)
+            return (
+                try row.requiredString("source_workspace_id"),
+                try row.requiredString("target_workspace_id")
+            )
+        })
+    }
+
     func threadCheckpoint(threadID: String) throws -> ThreadCheckpoint? {
         let rows = try database.query(
             sql: "SELECT * FROM thread_checkpoints WHERE thread_id = ?",
@@ -490,7 +575,8 @@ final class UsageStore: @unchecked Sendable {
             currentPlan: try planResolution(from: row),
             counters: counters,
             counterSegment: try row.requiredInt64("counter_segment"),
-            lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms")
+            lastTokenAtMilliseconds: try row.optionalInt64("last_token_at_ms"),
+            currentWorkspace: try workspaceIdentity(from: row)
         )
     }
 
@@ -626,7 +712,8 @@ final class UsageStore: @unchecked Sendable {
             sql: """
             SELECT fingerprint, observed_at_ms, thread_id, turn_id, model, plan, plan_raw, plan_is_inferred,
                    uncached_input_tokens, cached_input_tokens, visible_output_tokens,
-                   reasoning_tokens, total_tokens, project_id, project_name, repository_id
+                   reasoning_tokens, total_tokens, project_id, project_name, repository_id,
+                   workspace_id, workspace_name, workspace_root_count, workspace_is_inferred
             FROM usage_events\(whereClause)
             ORDER BY observed_at_ms, fingerprint
             """,
@@ -646,7 +733,8 @@ final class UsageStore: @unchecked Sendable {
                 visibleOutputTokens: try row.requiredInt64("visible_output_tokens"),
                 reasoningTokens: try row.requiredInt64("reasoning_tokens"),
                 totalTokens: try row.requiredInt64("total_tokens"),
-                project: try projectIdentity(from: row) ?? .unknown
+                project: try projectIdentity(from: row) ?? .unknown,
+                workspace: try workspaceIdentity(from: row) ?? .unknown
             )
         }
     }
@@ -955,16 +1043,20 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 10 else {
+            guard versions.last ?? 0 <= 15 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(10) {
+            if versions.contains(15) {
                 try validateVersionTwoSchema()
                 try validateVersionThreeSchema()
                 try validateVersionFiveSchema()
                 try validateVersionSevenSchema()
                 try validateVersionNineSchema()
                 try validateVersionTenSchema()
+                try validateVersionElevenSchema()
+                try validateVersionTwelveSchema()
+                try validateVersionThirteenSchema()
+                try validateVersionFifteenSchema()
                 return
             }
 
@@ -1036,19 +1128,62 @@ final class UsageStore: @unchecked Sendable {
                 try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (9)")
             }
 
-            for statement in Self.versionTenStatements {
-                try database.execute(sql: statement)
+            if !versions.contains(10) {
+                for statement in Self.versionTenStatements {
+                    try database.execute(sql: statement)
+                }
+                // v10 attributes each cumulative usage delta to its active turn. Rebuild
+                // from untouched rollouts so the complete reply history is available.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (10)")
             }
-            // v10 attributes each cumulative usage delta to its active turn. Rebuild
-            // from untouched rollouts so the complete reply history is available.
-            try resetImportedDataInCurrentTransaction()
-            try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (10)")
+            if !versions.contains(11) {
+                for statement in Self.versionElevenStatements {
+                    try database.execute(sql: statement)
+                }
+                // v11 attributes every usage delta to the workspace root set active for its turn.
+                // Rebuild from untouched rollouts so historical workspace detail is complete.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (11)")
+            }
+            if !versions.contains(12) {
+                for statement in Self.versionTwelveStatements {
+                    try database.execute(sql: statement)
+                }
+                // v12 distinguishes explicit root sets from safe working-directory inference.
+                // Rebuild so old turns without workspace_roots receive an honest inferred identity.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (12)")
+            }
+            if !versions.contains(13) {
+                for statement in Self.versionThirteenStatements {
+                    try database.execute(sql: statement)
+                }
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (13)")
+            }
+            if !versions.contains(14) {
+                // v14 uses Codex project metadata for display names and Git repository
+                // identity for roots. Rebuild so archived labels and linked worktrees
+                // use the same semantics as current workspaces.
+                try resetImportedDataInCurrentTransaction()
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (14)")
+            }
+            if !versions.contains(15) {
+                for statement in Self.versionFifteenStatements {
+                    try database.execute(sql: statement)
+                }
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (15)")
+            }
             try validateVersionTwoSchema()
             try validateVersionThreeSchema()
             try validateVersionFiveSchema()
             try validateVersionSevenSchema()
             try validateVersionNineSchema()
             try validateVersionTenSchema()
+            try validateVersionElevenSchema()
+            try validateVersionTwelveSchema()
+            try validateVersionThirteenSchema()
+            try validateVersionFifteenSchema()
         }
     }
 
@@ -1072,15 +1207,31 @@ final class UsageStore: @unchecked Sendable {
 
     @discardableResult
     private func insertUsageEvent(_ event: StoredUsageEvent, total: Int64) throws -> Int32 {
+        let alreadyExists = !(try database.query(
+            sql: "SELECT 1 AS present FROM usage_events WHERE fingerprint = ? LIMIT 1",
+            bindings: [.text(event.fingerprint)]
+        )).isEmpty
         try database.execute(
             sql: """
             INSERT INTO usage_events(
               fingerprint, observed_at_ms, thread_id, turn_id, source_kind, model, plan, plan_raw,
               plan_is_inferred, uncached_input_tokens, cached_input_tokens,
               visible_output_tokens, reasoning_tokens, total_tokens, source_file_id, source_offset,
-              project_id, project_name, repository_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(fingerprint) DO NOTHING
+              project_id, project_name, repository_id,
+              workspace_id, workspace_name, workspace_root_count, workspace_is_inferred
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fingerprint) DO UPDATE SET
+              workspace_id = excluded.workspace_id,
+              workspace_name = excluded.workspace_name,
+              workspace_root_count = excluded.workspace_root_count,
+              workspace_is_inferred = excluded.workspace_is_inferred
+            WHERE
+              (usage_events.workspace_id = 'unknown' AND excluded.workspace_id <> 'unknown')
+              OR (
+                usage_events.workspace_is_inferred = 1
+                AND excluded.workspace_is_inferred = 0
+                AND excluded.workspace_id <> 'unknown'
+              )
             """,
             bindings: [
                 .text(event.fingerprint), .integer(event.observedAtMilliseconds), .text(event.threadID),
@@ -1091,9 +1242,13 @@ final class UsageStore: @unchecked Sendable {
                 .integer(event.usage.visibleOutput), .integer(event.usage.reasoning),
                 .integer(total), .text(event.sourceFileID), .integer(event.sourceOffset),
                 .text(event.project.id), .text(event.project.name),
-                event.project.repositoryID.sqliteValue
+                event.project.repositoryID.sqliteValue,
+                .text(event.workspace.id), .text(event.workspace.name),
+                .integer(Int64(event.workspace.rootCount)),
+                .integer(event.workspace.isInferred ? 1 : 0)
             ]
         )
+        return alreadyExists ? 0 : 1
     }
 
     private func addToHourlyUsage(_ event: StoredUsageEvent, total: Int64) throws {
@@ -1264,8 +1419,9 @@ final class UsageStore: @unchecked Sendable {
             INSERT INTO thread_checkpoints(
               thread_id, current_model, current_turn_id, plan, plan_raw, plan_is_inferred,
               input_tokens, cached_input_tokens, output_tokens,
-              reasoning_tokens, counter_segment, last_token_at_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              reasoning_tokens, counter_segment, last_token_at_ms,
+              workspace_id, workspace_name, workspace_root_count, workspace_is_inferred
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(thread_id) DO UPDATE SET
               current_model = excluded.current_model, current_turn_id = excluded.current_turn_id,
               plan = excluded.plan,
@@ -1273,7 +1429,10 @@ final class UsageStore: @unchecked Sendable {
               input_tokens = excluded.input_tokens,
               cached_input_tokens = excluded.cached_input_tokens, output_tokens = excluded.output_tokens,
               reasoning_tokens = excluded.reasoning_tokens, counter_segment = excluded.counter_segment,
-              last_token_at_ms = excluded.last_token_at_ms
+              last_token_at_ms = excluded.last_token_at_ms,
+              workspace_id = excluded.workspace_id, workspace_name = excluded.workspace_name,
+              workspace_root_count = excluded.workspace_root_count,
+              workspace_is_inferred = excluded.workspace_is_inferred
             """,
             bindings: [
                 .text(checkpoint.threadID), checkpoint.currentModel.sqliteValue,
@@ -1283,7 +1442,11 @@ final class UsageStore: @unchecked Sendable {
                 checkpoint.currentPlan.map { $0.isInferred ? Int64(1) : Int64(0) }.sqliteValue,
                 (checkpoint.counters?.input).sqliteValue, (checkpoint.counters?.cachedInput).sqliteValue,
                 (checkpoint.counters?.output).sqliteValue, (checkpoint.counters?.reasoning).sqliteValue,
-                .integer(checkpoint.counterSegment), checkpoint.lastTokenAtMilliseconds.sqliteValue
+                .integer(checkpoint.counterSegment), checkpoint.lastTokenAtMilliseconds.sqliteValue,
+                checkpoint.currentWorkspace.map(\.id).sqliteValue,
+                checkpoint.currentWorkspace.map(\.name).sqliteValue,
+                checkpoint.currentWorkspace.map { Int64($0.rootCount) }.sqliteValue,
+                checkpoint.currentWorkspace.map { $0.isInferred ? Int64(1) : Int64(0) }.sqliteValue
             ]
         )
     }
@@ -1307,8 +1470,9 @@ final class UsageStore: @unchecked Sendable {
               current_model, current_turn_id, plan, plan_raw, plan_is_inferred,
               input_tokens, cached_input_tokens, output_tokens, reasoning_tokens,
               counter_segment, last_token_at_ms, activity_committed_offset,
-              project_id, project_name, repository_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              project_id, project_name, repository_id,
+              workspace_id, workspace_name, workspace_root_count, workspace_is_inferred
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_id) DO UPDATE SET
               device_id = excluded.device_id, inode = excluded.inode, path = excluded.path,
               file_size = excluded.file_size, committed_offset = excluded.committed_offset,
@@ -1328,7 +1492,11 @@ final class UsageStore: @unchecked Sendable {
               activity_committed_offset = excluded.activity_committed_offset,
               project_id = excluded.project_id,
               project_name = excluded.project_name,
-              repository_id = excluded.repository_id
+              repository_id = excluded.repository_id,
+              workspace_id = excluded.workspace_id,
+              workspace_name = excluded.workspace_name,
+              workspace_root_count = excluded.workspace_root_count,
+              workspace_is_inferred = excluded.workspace_is_inferred
             """,
             bindings: [
                 .text(checkpoint.fileID), .integer(checkpoint.deviceID), .integer(checkpoint.inode),
@@ -1350,7 +1518,11 @@ final class UsageStore: @unchecked Sendable {
                 .integer(checkpoint.activityCommittedOffset),
                 checkpoint.project.map(\.id).sqliteValue,
                 checkpoint.project.map(\.name).sqliteValue,
-                checkpoint.project.flatMap(\.repositoryID).sqliteValue
+                checkpoint.project.flatMap(\.repositoryID).sqliteValue,
+                checkpoint.workspace.map(\.id).sqliteValue,
+                checkpoint.workspace.map(\.name).sqliteValue,
+                checkpoint.workspace.map { Int64($0.rootCount) }.sqliteValue,
+                checkpoint.workspace.map { $0.isInferred ? Int64(1) : Int64(0) }.sqliteValue
             ]
         )
     }
@@ -1546,6 +1718,45 @@ final class UsageStore: @unchecked Sendable {
         "CREATE INDEX usage_events_turn_idx ON usage_events(thread_id, turn_id, observed_at_ms)"
     ]
 
+    private static let versionElevenStatements = [
+        "ALTER TABLE source_files ADD COLUMN workspace_id TEXT",
+        "ALTER TABLE source_files ADD COLUMN workspace_name TEXT",
+        "ALTER TABLE source_files ADD COLUMN workspace_root_count INTEGER",
+        "ALTER TABLE thread_checkpoints ADD COLUMN workspace_id TEXT",
+        "ALTER TABLE thread_checkpoints ADD COLUMN workspace_name TEXT",
+        "ALTER TABLE thread_checkpoints ADD COLUMN workspace_root_count INTEGER",
+        "ALTER TABLE usage_events ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'unknown'",
+        "ALTER TABLE usage_events ADD COLUMN workspace_name TEXT NOT NULL DEFAULT '未识别工作区'",
+        "ALTER TABLE usage_events ADD COLUMN workspace_root_count INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX usage_events_workspace_time_idx ON usage_events(workspace_id, observed_at_ms)"
+    ]
+
+    private static let versionTwelveStatements = [
+        "ALTER TABLE source_files ADD COLUMN workspace_is_inferred INTEGER",
+        "ALTER TABLE thread_checkpoints ADD COLUMN workspace_is_inferred INTEGER",
+        "ALTER TABLE usage_events ADD COLUMN workspace_is_inferred INTEGER NOT NULL DEFAULT 0"
+    ]
+
+    private static let versionThirteenStatements = [
+        """
+        CREATE TABLE IF NOT EXISTS workspace_catalog(
+          workspace_id TEXT PRIMARY KEY,
+          workspace_name TEXT NOT NULL,
+          root_count INTEGER NOT NULL
+        )
+        """
+    ]
+
+    private static let versionFifteenStatements = [
+        """
+        CREATE TABLE IF NOT EXISTS workspace_aliases(
+          source_workspace_id TEXT PRIMARY KEY,
+          target_workspace_id TEXT NOT NULL,
+          CHECK(source_workspace_id <> target_workspace_id)
+        )
+        """
+    ]
+
     private func planResolution(from row: SQLiteRow) throws -> PlanResolution? {
         try SQLitePlanResolution.optional(from: row)
     }
@@ -1558,6 +1769,21 @@ final class UsageStore: @unchecked Sendable {
             id: id,
             name: name,
             repositoryID: try row.optionalString("repository_id")
+        )
+    }
+
+    private func workspaceIdentity(from row: SQLiteRow) throws -> WorkspaceIdentity? {
+        guard let id = try row.optionalString("workspace_id"),
+              let name = try row.optionalString("workspace_name"),
+              let rootCount = try row.optionalInt64("workspace_root_count"),
+              !id.isEmpty, !name.isEmpty, rootCount >= 0 else { return nil }
+        let inferredValue = try row.optionalInt64("workspace_is_inferred") ?? 0
+        guard inferredValue == 0 || inferredValue == 1 else { return nil }
+        return WorkspaceIdentity(
+            id: id,
+            name: name,
+            rootCount: Int(clamping: rootCount),
+            isInferred: inferredValue == 1
         )
     }
 
@@ -1715,6 +1941,78 @@ final class UsageStore: @unchecked Sendable {
             }
         }
     }
+
+    private func validateVersionElevenSchema() throws {
+        let requiredColumns: [(table: String, columns: [String])] = [
+            ("source_files", ["workspace_id", "workspace_name", "workspace_root_count"]),
+            ("thread_checkpoints", ["workspace_id", "workspace_name", "workspace_root_count"]),
+            ("usage_events", ["workspace_id", "workspace_name", "workspace_root_count"])
+        ]
+        for requirement in requiredColumns {
+            let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")
+            let existing = try Set(rows.map {
+                try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+            })
+            let missing = requirement.columns.filter { !existing.contains($0) }
+            if !missing.isEmpty {
+                throw UsageStoreError.rebuildRequired(
+                    table: requirement.table,
+                    missingColumns: missing
+                )
+            }
+        }
+    }
+
+    private func validateVersionTwelveSchema() throws {
+        let requiredColumns: [(table: String, columns: [String])] = [
+            ("source_files", ["workspace_is_inferred"]),
+            ("thread_checkpoints", ["workspace_is_inferred"]),
+            ("usage_events", ["workspace_is_inferred"])
+        ]
+        for requirement in requiredColumns {
+            let rows = try database.query(sql: "PRAGMA table_info(\(requirement.table))")
+            let existing = try Set(rows.map {
+                try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+            })
+            let missing = requirement.columns.filter { !existing.contains($0) }
+            if !missing.isEmpty {
+                throw UsageStoreError.rebuildRequired(
+                    table: requirement.table,
+                    missingColumns: missing
+                )
+            }
+        }
+    }
+
+    private func validateVersionThirteenSchema() throws {
+        let rows = try database.query(sql: "PRAGMA table_info(workspace_catalog)")
+        let existing = try Set(rows.map {
+            try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+        })
+        let required = Set(["workspace_id", "workspace_name", "root_count"])
+        let missing = required.subtracting(existing).sorted()
+        if !missing.isEmpty {
+            throw UsageStoreError.rebuildRequired(
+                table: "workspace_catalog",
+                missingColumns: missing
+            )
+        }
+    }
+
+    private func validateVersionFifteenSchema() throws {
+        let rows = try database.query(sql: "PRAGMA table_info(workspace_aliases)")
+        let existing = try Set(rows.map {
+            try SQLiteRow(table: "pragma_table_info", values: $0).requiredString("name")
+        })
+        let required = Set(["source_workspace_id", "target_workspace_id"])
+        let missing = required.subtracting(existing).sorted()
+        if !missing.isEmpty {
+            throw UsageStoreError.rebuildRequired(
+                table: "workspace_aliases",
+                missingColumns: missing
+            )
+        }
+    }
 }
 
 enum UsageStoreError: Error, Equatable {
@@ -1724,6 +2022,7 @@ enum UsageStoreError: Error, Equatable {
     case invalidUsageComponent(name: String, value: Int64)
     case invalidQuotaRemaining
     case corruptAccountRateLimitCache
+    case invalidWorkspaceAlias
     case tokenOverflow(context: String)
     case corruptColumn(table: String, column: String, expected: String, actual: SQLiteValue?)
     case corruptEnum(table: String, column: String, value: String)

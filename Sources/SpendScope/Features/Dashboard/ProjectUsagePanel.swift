@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 
 struct ProjectUsagePanel: View {
-    let ranking: ProjectUsageRanking
+    let ranking: WorkspaceUsageRanking
 
     @State private var searchText = ""
-    @State private var selectedProjectID: ProjectUsageEntry.ID?
+    @State private var selectedWorkspaceID: WorkspaceUsageEntry.ID?
     @State private var detailWindowController: ProjectDetailWindowController?
 
     var body: some View {
@@ -32,9 +32,9 @@ struct ProjectUsagePanel: View {
         }
         .animation(.easeOut(duration: 0.14), value: detailWindowController != nil)
         .onChange(of: ranking.entries) { _, entries in
-            guard let selectedProjectID else { return }
+            guard let selectedWorkspaceID else { return }
             guard
-                let index = entries.firstIndex(where: { $0.id == selectedProjectID }),
+                let index = entries.firstIndex(where: { $0.id == selectedWorkspaceID }),
                 let detailWindowController
             else {
                 dismissProjectDetail()
@@ -75,7 +75,7 @@ struct ProjectUsagePanel: View {
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
 
-            Text("项目用量排行")
+            Text("工作区用量排行")
                 .font(.system(size: 13, weight: .semibold))
 
             Spacer(minLength: 16)
@@ -92,7 +92,7 @@ struct ProjectUsagePanel: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-            TextField("搜索项目", text: $searchText)
+            TextField("搜索工作区或目录", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 10, weight: .medium))
         }
@@ -121,7 +121,11 @@ struct ProjectUsagePanel: View {
 
             headerSeparator
 
-            headerMetric("项目", value: "\(ranking.projectCount)")
+            headerMetric("工作区", value: "\(ranking.workspaceCount)")
+
+            headerSeparator
+
+            headerMetric("目录", value: "\(ranking.projectCount)")
 
             headerSeparator
 
@@ -148,11 +152,12 @@ struct ProjectUsagePanel: View {
     private var tableHeader: some View {
         projectColumns(
             rank: "排名",
-            project: "项目",
+            project: "工作区 / 目录",
+            projectSummary: nil,
             lastActivity: "最后活动",
             conversations: "任务",
             replies: "回复",
-            share: "项目占比",
+            share: "工作区占比",
             tokens: "Token",
             action: "操作",
             isHeader: true
@@ -195,36 +200,38 @@ struct ProjectUsagePanel: View {
 
     private var emptyState: some View {
         ContentUnavailableView(
-            "暂无项目用量",
-            systemImage: "folder.badge.questionmark",
-            description: Text("使用 Codex 后会按工作目录统计 Token。")
+            "暂无工作区用量",
+            systemImage: "square.grid.3x3.topleft.filled",
+            description: Text("使用 Codex 后会按每次回复的工作区目录集合统计 Token。")
         )
         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
     }
 
-    private func projectRow(_ entry: ProjectUsageEntry, rank: Int) -> some View {
+    private func projectRow(_ entry: WorkspaceUsageEntry, rank: Int) -> some View {
         projectColumns(
             rank: "\(rank)",
             project: projectDisplayName(entry),
+            projectSummary: projectSummary(entry),
             lastActivity: lastActivityText(for: entry),
-            conversations: "\(entry.conversations.count)",
-            replies: "\(entry.conversations.reduce(0) { $0 + $1.replies.count })",
+            conversations: "\(entry.visibleConversations.count)",
+            replies: "\(entry.visibleReplyCount)",
             share: TokenFormatter.percentage(entry.share),
             tokens: TokenFormatter.compact(entry.tokens),
             action: "查看详情",
             isHeader: false,
             shareValue: entry.share,
-            isSelected: selectedProjectID == entry.id
+            isSelected: selectedWorkspaceID == entry.id
         )
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(projectAccessibilityLabel(entry, rank: rank))
-        .accessibilityHint("打开项目详情窗口")
+        .accessibilityHint("打开工作区详情窗口")
     }
 
     private func projectColumns(
         rank: String,
         project: String,
+        projectSummary: String?,
         lastActivity: String,
         conversations: String,
         replies: String,
@@ -258,15 +265,24 @@ struct ProjectUsagePanel: View {
 
             HStack(spacing: 7) {
                 if !isHeader {
-                    Image(systemName: "folder")
+                    Image(systemName: "square.grid.3x3.topleft.filled")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(SpendScopeTheme.dashboardAccentSecondary)
                 }
-                Text(project)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let projectSummary {
+                        Text(projectSummary)
+                            .font(.system(size: 8.5, weight: .medium))
+                            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
             }
-            .frame(width: 164, alignment: .leading)
+            .frame(width: 190, alignment: .leading)
 
             Text(lastActivity)
                 .monospacedDigit()
@@ -306,9 +322,11 @@ struct ProjectUsagePanel: View {
                 }
                 Text(share)
                     .monospacedDigit()
-                    .frame(width: 44, alignment: .trailing)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+                    .frame(width: 60, alignment: .trailing)
             }
-            .frame(minWidth: 92, maxWidth: .infinity)
+            .frame(minWidth: 108, maxWidth: .infinity)
 
             Text(tokens)
                 .font(
@@ -331,7 +349,7 @@ struct ProjectUsagePanel: View {
         }
         .font(font)
         .foregroundStyle(textColor)
-        .frame(maxWidth: .infinity, minHeight: isHeader ? 24 : 34)
+        .frame(maxWidth: .infinity, minHeight: isHeader ? 24 : 44)
         .padding(.horizontal, 6)
         .background(
             isSelected ? SpendScopeTheme.dashboardAccent.opacity(0.09) : Color.clear,
@@ -341,10 +359,12 @@ struct ProjectUsagePanel: View {
 
     private var filteredEntries: [RankedProjectUsageEntry] {
         ranking.entries.enumerated().compactMap { index, entry in
-            guard
-                searchText.isEmpty
+            let matchesProject = entry.projects.contains { project in
+                project.name.localizedCaseInsensitiveContains(searchText)
+            }
+            guard searchText.isEmpty
                     || projectDisplayName(entry).localizedCaseInsensitiveContains(searchText)
-            else {
+                    || matchesProject else {
                 return nil
             }
             return RankedProjectUsageEntry(entry: entry, rank: index + 1)
@@ -352,9 +372,9 @@ struct ProjectUsagePanel: View {
     }
 
     @MainActor
-    private func presentProjectDetail(_ entry: ProjectUsageEntry, rank: Int) {
+    private func presentProjectDetail(_ entry: WorkspaceUsageEntry, rank: Int) {
         guard detailWindowController == nil, let parentWindow = NSApp.keyWindow else { return }
-        selectedProjectID = entry.id
+        selectedWorkspaceID = entry.id
 
         let controller = ProjectDetailWindowController(
             entry: entry,
@@ -362,7 +382,7 @@ struct ProjectUsagePanel: View {
             parentWindow: parentWindow
         ) {
             detailWindowController = nil
-            selectedProjectID = nil
+            selectedWorkspaceID = nil
         }
         detailWindowController = controller
         controller.show()
@@ -372,27 +392,37 @@ struct ProjectUsagePanel: View {
     private func dismissProjectDetail() {
         detailWindowController?.dismiss()
         detailWindowController = nil
-        selectedProjectID = nil
+        selectedWorkspaceID = nil
     }
 
-    private func projectDisplayName(_ entry: ProjectUsageEntry) -> String {
+    private func projectDisplayName(_ entry: WorkspaceUsageEntry) -> String {
+        let baseName = entry.isInferred ? "\(entry.name)（推测）" : entry.name
         guard ranking.entries.filter({ $0.name == entry.name }).count > 1 else {
-            return entry.name
+            return baseName
         }
-        return "\(entry.name) · \(entry.id.prefix(4))"
+        return "\(baseName) · \(entry.id.prefix(4))"
     }
 
-    private func lastActivityText(for entry: ProjectUsageEntry) -> String {
-        let milliseconds = entry.conversations.compactMap(\.lastMessageAtMilliseconds).max()
-        return ProjectUsageDateFormatter.relative(milliseconds)
+    private func projectSummary(_ entry: WorkspaceUsageEntry) -> String {
+        let names = entry.projects.prefix(3).map(\.name).joined(separator: " · ")
+        let suffix = entry.projects.count > 3 ? " 等 \(entry.projects.count) 个目录" : ""
+        let usageSummary = names.isEmpty ? "未识别目录" : names + suffix
+        let inference = entry.isInferred ? "工作目录推测 · " : ""
+        guard entry.rootCount > 0 else { return inference + usageSummary }
+        return "\(inference)\(entry.rootCount) 个根目录 · 用量涉及 \(usageSummary)"
     }
 
-    private func projectAccessibilityLabel(_ entry: ProjectUsageEntry, rank: Int) -> String {
-        let replyCount = entry.conversations.reduce(0) { $0 + $1.replies.count }
-        return "第 \(rank) 名，\(projectDisplayName(entry))，"
+    private func lastActivityText(for entry: WorkspaceUsageEntry) -> String {
+        ProjectUsageDateFormatter.relative(entry.lastVisibleActivityAtMilliseconds)
+    }
+
+    private func projectAccessibilityLabel(_ entry: WorkspaceUsageEntry, rank: Int) -> String {
+        return "第 \(rank) 名工作区，\(projectDisplayName(entry))，"
             + "\(TokenFormatter.compact(entry.tokens)) Token，"
             + "占比 \(TokenFormatter.percentage(entry.share))，"
-            + "\(entry.conversations.count) 个任务，\(replyCount) 次回复"
+            + (entry.isInferred ? "由工作目录推测，" : "")
+            + "\(entry.projects.count) 个目录，\(entry.visibleConversations.count) 个任务，"
+            + "\(entry.visibleReplyCount) 次回复"
     }
 
     private func headerMetric(_ title: String, value: String) -> some View {
@@ -409,8 +439,8 @@ struct ProjectUsagePanel: View {
 }
 
 private struct RankedProjectUsageEntry: Identifiable {
-    let entry: ProjectUsageEntry
+    let entry: WorkspaceUsageEntry
     let rank: Int
 
-    var id: ProjectUsageEntry.ID { entry.id }
+    var id: WorkspaceUsageEntry.ID { entry.id }
 }
