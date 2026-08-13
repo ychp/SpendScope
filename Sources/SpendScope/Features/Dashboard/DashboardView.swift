@@ -1005,7 +1005,11 @@ private struct DashboardContentView: View {
                     .symbolSize(46)
                     .annotation(
                         position: Double(item.total) / Double(trendUpperBound) > 0.72 ? .bottom : .top,
-                        spacing: 8
+                        spacing: 8,
+                        overflowResolution: .init(
+                            x: .fit(to: .chart),
+                            y: .disabled
+                        )
                     ) {
                         DailyUsageHoverCard(usage: item, dateText: item.day)
                     }
