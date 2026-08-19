@@ -80,16 +80,12 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKeys.quotaRefreshRequiresProxy)
     private var quotaRefreshRequiresProxy = false
     @AppStorage(AppPreferenceKeys.usageRemindersEnabled) private var usageRemindersEnabled = false
-    @AppStorage(AppPreferenceKeys.remindsFiveHour) private var remindsFiveHour = true
-    @AppStorage(AppPreferenceKeys.remindsWeekly) private var remindsWeekly = true
     @AppStorage(AppPreferenceKeys.remindsAtTwentyPercent) private var remindsAtTwentyPercent = true
     @AppStorage(AppPreferenceKeys.remindsAtTenPercent) private var remindsAtTenPercent = true
     @AppStorage(AppPreferenceKeys.remindsAtFivePercent) private var remindsAtFivePercent = true
     @AppStorage(AppPreferenceKeys.showsLivePreview) private var showsLivePreview = true
     @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
-    @AppStorage(AppPreferenceKeys.showsFiveHour) private var showsFiveHour = true
-    @AppStorage(AppPreferenceKeys.showsWeekly) private var showsWeekly = true
     @State private var showsRebuildConfirmation = false
 
     var body: some View {
@@ -215,14 +211,6 @@ struct SettingsView: View {
                     }
                     settingsDivider
 
-                    preferenceRow("显示内容", detail: "不可用额度会自动隐藏，至少保留一项") {
-                        segmentedGroup {
-                            multiSelectSegment("5H", isOn: fiveHourVisibilityBinding)
-                            multiSelectSegment("7d", isOn: weeklyVisibilityBinding)
-                        }
-                    }
-                    settingsDivider
-
                     preferenceRow("重置倒计时", detail: "控制状态栏及悬浮提示中的倒计时") {
                         Toggle("", isOn: $showsResetCountdown)
                             .labelsHidden()
@@ -247,13 +235,6 @@ struct SettingsView: View {
                 }
 
                 VStack(spacing: 0) {
-                    settingsDivider
-                    preferenceRow("提醒额度", detail: "选择需要监控的额度，至少保留一项") {
-                        segmentedGroup {
-                            multiSelectSegment("5H", isOn: reminderFiveHourBinding)
-                            multiSelectSegment("7d", isOn: reminderWeeklyBinding)
-                        }
-                    }
                     settingsDivider
                     preferenceRow("预警等级", detail: "剩余额度达到阈值时提醒") {
                         segmentedGroup {
@@ -743,8 +724,8 @@ struct SettingsView: View {
         MenuBarLabelConfiguration(
             showsLivePreview: showsLivePreview,
             quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining,
-            showsFiveHour: showsFiveHour,
-            showsWeekly: showsWeekly,
+            showsFiveHour: false,
+            showsWeekly: true,
             showsResetCountdown: showsResetCountdown
         )
     }
@@ -760,26 +741,6 @@ struct SettingsView: View {
         return NSAppearance(named: .aqua)!
     }
 
-    private var fiveHourVisibilityBinding: Binding<Bool> {
-        Binding(
-            get: { showsFiveHour },
-            set: { isVisible in
-                guard isVisible || showsWeekly else { return }
-                showsFiveHour = isVisible
-            }
-        )
-    }
-
-    private var weeklyVisibilityBinding: Binding<Bool> {
-        Binding(
-            get: { showsWeekly },
-            set: { isVisible in
-                guard isVisible || showsFiveHour else { return }
-                showsWeekly = isVisible
-            }
-        )
-    }
-
     private var usageRemindersEnabledBinding: Binding<Bool> {
         Binding(
             get: { usageRemindersEnabled },
@@ -788,28 +749,6 @@ struct SettingsView: View {
                 reminderController.configurationDidChange(
                     requestAuthorizationIfNeeded: isEnabled
                 )
-            }
-        )
-    }
-
-    private var reminderFiveHourBinding: Binding<Bool> {
-        Binding(
-            get: { remindsFiveHour },
-            set: { isSelected in
-                guard isSelected || remindsWeekly else { return }
-                remindsFiveHour = isSelected
-                reminderController.configurationDidChange()
-            }
-        )
-    }
-
-    private var reminderWeeklyBinding: Binding<Bool> {
-        Binding(
-            get: { remindsWeekly },
-            set: { isSelected in
-                guard isSelected || remindsFiveHour else { return }
-                remindsWeekly = isSelected
-                reminderController.configurationDidChange()
             }
         )
     }

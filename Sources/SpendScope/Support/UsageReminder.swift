@@ -27,19 +27,11 @@ struct UsageReminderConfiguration: Equatable, Sendable {
 
     static let standard = UsageReminderConfiguration(
         isEnabled: false,
-        quotas: Set(UsageReminderQuota.allCases),
+        quotas: [.weekly],
         thresholds: UsageReminderThreshold.defaultValues
     )
 
     static func load(from defaults: UserDefaults) -> UsageReminderConfiguration {
-        var quotas: Set<UsageReminderQuota> = []
-        if defaults.boolValue(forKey: AppPreferenceKeys.remindsFiveHour, default: true) {
-            quotas.insert(.fiveHour)
-        }
-        if defaults.boolValue(forKey: AppPreferenceKeys.remindsWeekly, default: true) {
-            quotas.insert(.weekly)
-        }
-
         var thresholds: Set<UsageReminderThreshold> = []
         if defaults.boolValue(forKey: AppPreferenceKeys.remindsAtTwentyPercent, default: true) {
             thresholds.insert(.twenty)
@@ -56,7 +48,7 @@ struct UsageReminderConfiguration: Equatable, Sendable {
                 forKey: AppPreferenceKeys.usageRemindersEnabled,
                 default: false
             ),
-            quotas: quotas.isEmpty ? Set(UsageReminderQuota.allCases) : quotas,
+            quotas: [.weekly],
             thresholds: thresholds.isEmpty ? UsageReminderThreshold.defaultValues : thresholds
         )
     }
@@ -101,7 +93,7 @@ struct UsageReminderEvent: Equatable, Sendable {
     let remainingPercent: Int
     let threshold: UsageReminderThreshold
     let resetsAtMilliseconds: Int64
-    let resetDescription: String
+    let resetDateText: String
 }
 
 struct UsageReminderEvaluation: Equatable, Sendable {
@@ -115,7 +107,8 @@ enum UsageReminderEvaluator {
         quotas: [QuotaSnapshot],
         configuration: UsageReminderConfiguration,
         checkpoint: UsageReminderCheckpoint,
-        now: Date
+        now: Date,
+        calendar: Calendar = .current
     ) -> UsageReminderEvaluation {
         guard configuration.isEnabled else {
             return UsageReminderEvaluation(
@@ -191,7 +184,10 @@ enum UsageReminderEvaluator {
                 remainingPercent: snapshot.remainingPercent,
                 threshold: mostUrgent,
                 resetsAtMilliseconds: resetMilliseconds,
-                resetDescription: snapshot.resetDescription(now: now) ?? "即将重置"
+                resetDateText: UsageReminderResetFormatter.string(
+                    resetsAtMilliseconds: resetMilliseconds,
+                    calendar: calendar
+                )
             ))
         }
 
@@ -204,6 +200,23 @@ enum UsageReminderEvaluator {
 
     private static func milliseconds(_ date: Date) -> Int64 {
         Int64((date.timeIntervalSince1970 * 1_000).rounded())
+    }
+}
+
+enum UsageReminderResetFormatter {
+    static func string(
+        resetsAtMilliseconds: Int64,
+        calendar: Calendar
+    ) -> String {
+        let resetDate = Date(
+            timeIntervalSince1970: TimeInterval(resetsAtMilliseconds) / 1_000
+        )
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "M月d日 HH:mm"
+        return formatter.string(from: resetDate)
     }
 }
 
@@ -226,7 +239,7 @@ struct UsageReminderNotification: Equatable, Sendable {
         }.joined(separator: ".")
         title = "Codex 额度提醒"
         body = ordered.map {
-            "\($0.quota.title) 剩余 \($0.remainingPercent)%，\($0.resetDescription)。"
+            "\($0.quota.title) 剩余 \($0.remainingPercent)%，\($0.resetDateText) 重置。"
         }.joined(separator: "\n")
     }
 }

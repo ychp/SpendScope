@@ -559,8 +559,8 @@ final class StatusItemController: NSObject {
             quotaDisplay: QuotaDisplayPreference(
                 rawValue: defaults.string(forKey: AppPreferenceKeys.quotaDisplay) ?? ""
             ) ?? .remaining,
-            showsFiveHour: defaults.object(forKey: AppPreferenceKeys.showsFiveHour) as? Bool ?? true,
-            showsWeekly: defaults.object(forKey: AppPreferenceKeys.showsWeekly) as? Bool ?? true,
+            showsFiveHour: false,
+            showsWeekly: true,
             showsResetCountdown: defaults.object(forKey: AppPreferenceKeys.showsResetCountdown) as? Bool ?? true
         )
     }

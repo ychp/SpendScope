@@ -7,8 +7,6 @@ enum AppPreferenceKeys {
     static let automaticRefreshEnabled = "data.automaticRefreshEnabled"
     static let quotaRefreshRequiresProxy = "data.quotaRefreshRequiresProxy"
     static let usageRemindersEnabled = "usageReminders.enabled"
-    static let remindsFiveHour = "usageReminders.quotas.fiveHour"
-    static let remindsWeekly = "usageReminders.quotas.weekly"
     static let remindsAtTwentyPercent = "usageReminders.thresholds.twenty"
     static let remindsAtTenPercent = "usageReminders.thresholds.ten"
     static let remindsAtFivePercent = "usageReminders.thresholds.five"
@@ -16,8 +14,6 @@ enum AppPreferenceKeys {
     static let showsLivePreview = "menuBar.showsLivePreview"
     static let showsResetCountdown = "menuBar.showsResetCountdown"
     static let quotaDisplay = "menuBar.quotaDisplay"
-    static let showsFiveHour = "menuBar.showsFiveHour"
-    static let showsWeekly = "menuBar.showsWeekly"
     static let automaticallyChecksForUpdates = "updates.automaticallyChecks"
     static let automaticallyDownloadsUpdates = "updates.automaticallyDownloads"
 }
@@ -95,7 +91,7 @@ struct MenuBarLabelConfiguration: Equatable, Sendable {
     static let standard = MenuBarLabelConfiguration(
         showsLivePreview: true,
         quotaDisplay: .remaining,
-        showsFiveHour: true,
+        showsFiveHour: false,
         showsWeekly: true,
         showsResetCountdown: true
     )

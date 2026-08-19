@@ -4,13 +4,18 @@ import XCTest
 
 final class UsageReminderEvaluatorTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_000_000)
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
 
-    func testConfigurationDefaultsToDisabledWithEveryQuotaAndThresholdSelected() {
+    func testConfigurationDefaultsToDisabledWithWeeklyQuotaAndEveryThresholdSelected() {
         let defaults = makeDefaults()
         let configuration = UsageReminderConfiguration.load(from: defaults)
 
         XCTAssertFalse(configuration.isEnabled)
-        XCTAssertEqual(configuration.quotas, Set(UsageReminderQuota.allCases))
+        XCTAssertEqual(configuration.quotas, [.weekly])
         XCTAssertEqual(configuration.thresholds, Set(UsageReminderThreshold.allCases))
     }
 
@@ -106,7 +111,8 @@ final class UsageReminderEvaluatorTests: XCTestCase {
             ],
             configuration: configuration,
             checkpoint: .empty,
-            now: now
+            now: now,
+            calendar: calendar
         )
         let notification = try XCTUnwrap(UsageReminderNotification(events: evaluation.events))
 
@@ -114,8 +120,9 @@ final class UsageReminderEvaluatorTests: XCTestCase {
         XCTAssertEqual(notification.title, "Codex 额度提醒")
         XCTAssertEqual(
             notification.body,
-            "5H 剩余 19%，1 小时后重置。\n7d 剩余 9%，1 小时后重置。"
+            "5H 剩余 19%，1月12日 14:46 重置。\n7d 剩余 9%，1月12日 14:46 重置。"
         )
+        XCTAssertFalse(notification.body.contains("后重置"))
         XCTAssertTrue(notification.identifier.hasPrefix(UsageReminderNotification.identifierPrefix))
     }
 
@@ -152,7 +159,8 @@ final class UsageReminderEvaluatorTests: XCTestCase {
                 thresholds: [.twenty, .ten, .five]
             ),
             checkpoint: checkpoint,
-            now: now
+            now: now,
+            calendar: calendar
         )
     }
 
@@ -200,17 +208,17 @@ final class UsageReminderControllerTests: XCTestCase {
 
         controller.start()
         await eventually {
-            controller.authorizationStatus == .denied
+                controller.authorizationStatus == .denied
                 && UsageReminderCheckpointCodec.decode(
                     defaults.data(forKey: AppPreferenceKeys.usageReminderCheckpoint)
-                ).quotas["5h"] != nil
+                ).quotas["7d"] != nil
         }
         XCTAssertTrue(client.deliveries.isEmpty)
         XCTAssertEqual(controller.authorizationStatus, .denied)
         let deniedCheckpoint = UsageReminderCheckpointCodec.decode(
             defaults.data(forKey: AppPreferenceKeys.usageReminderCheckpoint)
         )
-        XCTAssertTrue(deniedCheckpoint.quotas["5h"]?.deliveredThresholds.isEmpty == true)
+        XCTAssertTrue(deniedCheckpoint.quotas["7d"]?.deliveredThresholds.isEmpty == true)
 
         client.status = .authorized
         controller.applicationDidBecomeActive()
@@ -219,7 +227,7 @@ final class UsageReminderControllerTests: XCTestCase {
         let deliveredCheckpoint = UsageReminderCheckpointCodec.decode(
             defaults.data(forKey: AppPreferenceKeys.usageReminderCheckpoint)
         )
-        XCTAssertEqual(deliveredCheckpoint.quotas["5h"]?.deliveredThresholds, [20, 10])
+        XCTAssertEqual(deliveredCheckpoint.quotas["7d"]?.deliveredThresholds, [20, 10])
     }
 
     func testDeliveryFailureDoesNotConsumeThreshold() async {
@@ -243,7 +251,7 @@ final class UsageReminderControllerTests: XCTestCase {
         let checkpoint = UsageReminderCheckpointCodec.decode(
             defaults.data(forKey: AppPreferenceKeys.usageReminderCheckpoint)
         )
-        XCTAssertTrue(checkpoint.quotas["5h"]?.deliveredThresholds.isEmpty == true)
+        XCTAssertTrue(checkpoint.quotas["7d"]?.deliveredThresholds.isEmpty == true)
     }
 
     private func reminderSnapshot(now: Date, remaining: Double) -> DashboardSnapshot {
@@ -258,7 +266,7 @@ final class UsageReminderControllerTests: XCTestCase {
             ],
             quotas: [
                 QuotaSnapshot(
-                    id: "5h", title: "5 小时", remaining: remaining, resetText: "",
+                    id: "7d", title: "7 天", remaining: remaining, resetText: "",
                     resetsAt: now.addingTimeInterval(3_600), observedAt: now
                 )
             ],

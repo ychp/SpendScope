@@ -384,9 +384,9 @@ final class StatusItemPresentationTests: XCTestCase {
             configuration: .standard
         )
 
-        XCTAssertEqual(presentation.metrics.map(\.label), ["5H", "7d"])
-        XCTAssertEqual(presentation.metrics.map(\.value), ["85%", "84%"])
-        XCTAssertEqual(presentation.metrics.map(\.paletteRole), [.fiveHour, .weekly])
+        XCTAssertEqual(presentation.metrics.map(\.label), ["7d"])
+        XCTAssertEqual(presentation.metrics.map(\.value), ["84%"])
+        XCTAssertEqual(presentation.metrics.map(\.paletteRole), [.weekly])
         XCTAssertFalse(presentation.label.contains("今日"))
     }
 
