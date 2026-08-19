@@ -48,7 +48,8 @@ enum StatusItemLayoutMetrics {
     static let leadingContentWidth: CGFloat = iconRect.maxX + elementSpacing
     static let richValueWidth: CGFloat = 38
     static let richMetricWidth: CGFloat = 58
-    static let richResetWidth: CGFloat = 35
+    static let resetTextWidth: CGFloat = 20
+    static let richResetWidth: CGFloat = 12 + resetTextWidth + 5
     static let richMetricSpacing: CGFloat = 5
     static let emptyImageWidth: CGFloat = 24
 }
@@ -315,7 +316,12 @@ struct StatusItemRenderer {
 
     private func drawResetCountdown(_ value: String, x: CGFloat) {
         let color = NSColor.systemBlue
-        let backgroundRect = NSRect(x: x, y: 3, width: 33, height: 16)
+        let backgroundRect = NSRect(
+            x: x,
+            y: 3,
+            width: StatusItemLayoutMetrics.richResetWidth - 2,
+            height: 16
+        )
         color.withAlphaComponent(0.14).setFill()
         NSBezierPath(
             roundedRect: backgroundRect,
@@ -332,7 +338,12 @@ struct StatusItemRenderer {
         }
         drawText(
             value,
-            in: NSRect(x: x + 12, y: 4, width: 18, height: 13),
+            in: NSRect(
+                x: x + 12,
+                y: 4,
+                width: StatusItemLayoutMetrics.resetTextWidth,
+                height: 13
+            ),
             font: .monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold),
             color: color,
             alignment: .left

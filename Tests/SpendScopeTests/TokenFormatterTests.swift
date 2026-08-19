@@ -360,6 +360,21 @@ final class StatusItemPresentationTests: XCTestCase {
         XCTAssertEqual(context.ctm.ty, transformBeforeRendering.ty, accuracy: 0.000_001)
     }
 
+    func testStatusItemRendererAllocatesEnoughWidthForTwoDigitCountdownSuffix() {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
+        let requiredTextWidth = NSAttributedString(
+            string: "24h",
+            attributes: [.font: font]
+        ).size().width
+        let leadingInset: CGFloat = 12
+        let trailingInset: CGFloat = 5
+        let availableTextWidth = StatusItemLayoutMetrics.richResetWidth
+            - leadingInset
+            - trailingInset
+
+        XCTAssertGreaterThanOrEqual(availableTextWidth, requiredTextWidth)
+    }
+
     func testQuotaPillTextMaintainsReadableContrastAcrossEveryPaletteSurface() throws {
         for role in [StatusItemQuotaPaletteRole.fiveHour, .weekly] {
             let palette = StatusItemQuotaPalette.resolve(role)
@@ -667,7 +682,7 @@ final class DashboardSnapshotTests: XCTestCase {
         )
     }
 
-    func testQuotaResetCountdownUsesCompactMinuteHourAndDayUnits() {
+    func testQuotaResetCountdownUsesOnlyCompactHourAndDayUnits() {
         let now = Date(timeIntervalSince1970: 1_000)
 
         XCTAssertEqual(
@@ -675,7 +690,7 @@ final class DashboardSnapshotTests: XCTestCase {
                 id: "5h", title: "5 小时", remaining: 0.8, resetText: "",
                 resetsAt: now.addingTimeInterval(30 * 60)
             ).resetCountdown(now: now),
-            "30m"
+            "1h"
         )
         XCTAssertEqual(
             QuotaSnapshot(
