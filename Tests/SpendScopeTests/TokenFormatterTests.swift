@@ -584,7 +584,7 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.fiveHourQuota?.id, "5h")
         XCTAssertEqual(snapshot.weeklyQuota?.id, "7d")
         XCTAssertEqual(snapshot.visibleQuotas.map(\.id), ["5h", "7d"])
-        XCTAssertEqual(snapshot.menuBarQuotaLabel, "5H 85% · 7d 84%")
+        XCTAssertEqual(snapshot.menuBarQuotaLabel, "7d 84%")
     }
 
     func testMissingFiveHourQuotaOnlyExposesWeeklyQuota() {
@@ -596,7 +596,7 @@ final class DashboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.menuBarQuotaLabel, "7d 84%")
     }
 
-    func testExhaustedFiveHourQuotaRemainsVisible() {
+    func testStandardMenuBarLabelIgnoresExhaustedFiveHourQuota() {
         let exhaustedFiveHourQuota = QuotaSnapshot(
             id: "5h",
             title: "5 小时",
@@ -608,7 +608,7 @@ final class DashboardSnapshotTests: XCTestCase {
 
         XCTAssertNotNil(snapshot.fiveHourQuota)
         XCTAssertEqual(snapshot.visibleQuotas.map(\.id), ["5h", "7d"])
-        XCTAssertEqual(snapshot.menuBarQuotaLabel, "5H 0% · 7d 84%")
+        XCTAssertEqual(snapshot.menuBarQuotaLabel, "7d 84%")
     }
 
     func testMenuBarConfigurationControlsMetricAndVisibleContent() {
