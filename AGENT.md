@@ -57,7 +57,6 @@ docs/                     截图和技术档案
 | 领域 | 入口文件 |
 | --- | --- |
 | 数据源发现 | `Sources/SpendScope/Data/Codex/CodexSourceDiscovery.swift` |
-| 官方额度读取 | `Sources/SpendScope/Data/Codex/CodexAccountRateLimitReader.swift` |
 | 增量 JSONL 读取 | `Sources/SpendScope/Data/Codex/IncrementalJSONLReader.swift` |
 | 事件白名单解码 | `Sources/SpendScope/Data/Codex/CodexEventDecoder.swift` |
 | Token 增量计算 | `Sources/SpendScope/Data/Codex/UsageAccumulator.swift` |
@@ -87,7 +86,7 @@ docs/                     截图和技术档案
 - 每日统计继续按 UTC 日期归属，除非产品明确改变口径并同步迁移、测试和文档。
 - 7 天额度按 `window_minutes = 10080` 识别。
 - 额度过期且没有新观测时不得推断为 100%。
-- 官方额度通过本机 Codex app-server 单独读取并缓存；用量刷新不得顺带无条件触发额度读取。应用启动和用户手动刷新时尝试读取一次额度；若启用额度刷新代理检查，未检测到系统代理时跳过读取并保留待刷新标记。用量指纹变化和失败重试使用待刷新标记。
+- 7 天额度与 Token 用量必须通过同一条本地 rollout 增量导入路径读取；只接受 `limit_id = codex` 且 `window_minutes = 10080` 的额度观测，不启动 Codex app-server、不发起独立账户请求，也不依赖系统代理或额度缓存。
 - API 等值费用只能使用显式收录的模型价格；未知模型必须保持未定价，不能按相似名称猜价。长上下文、缓存写入等无法从聚合事件可靠还原的附加倍率不得计入总额。
 
 ### 增量导入与存储
