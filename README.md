@@ -42,9 +42,9 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ### 详细看板
 
-![SpendScope 详细看板，展示额度、Token 汇总、用量日历和趋势图](docs/images/spendscope-dashboard.png)
+![SpendScope 详细看板，展示 7 天额度、本订阅周期、Token 汇总、用量日历和趋势图](docs/images/spendscope-dashboard.png)
 
-详细看板包含用量趋势、Skills / Tools、工作区用量和模型用量四个分析页，并可在今日、7 日、30 日和累计范围间切换排行。
+详细看板在概览区同时展示 7 天额度、今日、7 日、30 日、累计和可选的本订阅周期用量；下方包含用量趋势、Skills / Tools、工作区用量和模型用量四个分析页，并可在今日、7 日、30 日和累计范围间切换排行。
 
 ### 工作区与回复详情
 
