@@ -1,11 +1,9 @@
 import SwiftUI
-import SystemConfiguration
 
 enum AppPreferenceKeys {
     static let keepsDashboardOnTop = "dashboard.keepsOnTop"
     static let dashboardCloseBehavior = "dashboard.closeBehavior"
     static let automaticRefreshEnabled = "data.automaticRefreshEnabled"
-    static let quotaRefreshRequiresProxy = "data.quotaRefreshRequiresProxy"
     static let usageRemindersEnabled = "usageReminders.enabled"
     static let remindsAtTwentyPercent = "usageReminders.thresholds.twenty"
     static let remindsAtTenPercent = "usageReminders.thresholds.ten"
@@ -90,38 +88,6 @@ enum SubscriptionCycleCalculator {
         calendar: Calendar
     ) -> Date? {
         calendar.date(byAdding: .month, value: cycleIndex, to: firstSubscribedAt)
-    }
-}
-
-enum QuotaRefreshProxyPolicy {
-    static func requiresEnabledProxy(from defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: AppPreferenceKeys.quotaRefreshRequiresProxy) as? Bool ?? false
-    }
-}
-
-enum LocalProxyStatus {
-    private static let enabledKeys = [
-        kSCPropNetProxiesHTTPEnable as String,
-        kSCPropNetProxiesHTTPSEnable as String,
-        kSCPropNetProxiesSOCKSEnable as String,
-        kSCPropNetProxiesProxyAutoConfigEnable as String,
-        kSCPropNetProxiesProxyAutoDiscoveryEnable as String
-    ]
-
-    static func isEnabled() -> Bool {
-        guard let settings = SCDynamicStoreCopyProxies(nil) as? [String: Any] else {
-            return false
-        }
-        return isEnabled(in: settings)
-    }
-
-    static func isEnabled(in settings: [String: Any]) -> Bool {
-        enabledKeys.contains { key in
-            if let value = settings[key] as? Bool {
-                return value
-            }
-            return (settings[key] as? NSNumber)?.boolValue ?? false
-        }
     }
 }
 

@@ -77,8 +77,6 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKeys.dashboardCloseBehavior)
     private var dashboardCloseBehaviorRaw = DashboardCloseBehavior.closeDashboard.rawValue
     @AppStorage(AppPreferenceKeys.automaticRefreshEnabled) private var automaticRefreshEnabled = true
-    @AppStorage(AppPreferenceKeys.quotaRefreshRequiresProxy)
-    private var quotaRefreshRequiresProxy = false
     @AppStorage(AppPreferenceKeys.usageRemindersEnabled) private var usageRemindersEnabled = false
     @AppStorage(AppPreferenceKeys.remindsAtTwentyPercent) private var remindsAtTwentyPercent = true
     @AppStorage(AppPreferenceKeys.remindsAtTenPercent) private var remindsAtTenPercent = true
@@ -336,7 +334,7 @@ struct SettingsView: View {
                 preferenceRow(
                     "自动刷新",
                     detail: automaticRefreshEnabled
-                        ? "每 60 秒更新用量；额度每 120 秒按需检查"
+                        ? "每 60 秒读取本机 Codex 用量与额度"
                         : "已关闭，仍可启动时读取或手动刷新"
                 ) {
                     HStack(spacing: 10) {
@@ -344,22 +342,6 @@ struct SettingsView: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         Toggle("", isOn: automaticRefreshBinding)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                    }
-                }
-                settingsDivider
-                preferenceRow(
-                    "额度刷新检查代理",
-                    detail: quotaRefreshRequiresProxy
-                        ? "仅检测到系统代理已开启时刷新额度"
-                        : "关闭时刷新额度不会检查系统代理"
-                ) {
-                    HStack(spacing: 10) {
-                        Text(quotaRefreshRequiresProxy ? "已开启" : "已关闭")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                        Toggle("", isOn: quotaRefreshRequiresProxyBinding)
                             .labelsHidden()
                             .toggleStyle(.switch)
                     }
@@ -800,16 +782,6 @@ struct SettingsView: View {
             set: { isEnabled in
                 automaticRefreshEnabled = isEnabled
                 store.setAutomaticRefreshEnabled(isEnabled)
-            }
-        )
-    }
-
-    private var quotaRefreshRequiresProxyBinding: Binding<Bool> {
-        Binding(
-            get: { quotaRefreshRequiresProxy },
-            set: { isRequired in
-                quotaRefreshRequiresProxy = isRequired
-                store.setQuotaRefreshRequiresProxy(isRequired)
             }
         )
     }

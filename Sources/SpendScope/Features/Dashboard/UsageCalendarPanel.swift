@@ -557,8 +557,33 @@ struct DailyUsageHoverCard: View {
                 metric("输出", value: usage.output, color: SpendScopeTheme.output)
                 metric("推理", value: usage.reasoning, color: SpendScopeTheme.reasoning)
             }
+
+            if let estimatedCostUSD = usage.estimatedCostUSD {
+                Rectangle()
+                    .fill(SpendScopeTheme.dashboardBorder.opacity(0.8))
+                    .frame(height: 1)
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("API 等值预计花费")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+
+                    Spacer(minLength: 8)
+
+                    Text(ModelCostFormatter.usd(estimatedCostUSD))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                        .monospacedDigit()
+                }
+
+                if usage.unpricedModelCount > 0 {
+                    Text("部分估算 · \(usage.unpricedModelCount) 个模型未定价")
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                }
+            }
         }
-        .frame(width: 174)
+        .frame(width: usage.estimatedCostUSD == nil ? 174 : 210)
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
         .background(
@@ -572,8 +597,16 @@ struct DailyUsageHoverCard: View {
         .shadow(color: SpendScopeTheme.dashboardShadow, radius: 7, y: 3)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(dateText)，总 Token \(usage.total)，输入 \(usage.uncachedInput)，缓存 \(usage.cachedInput)，输出 \(usage.output)，推理 \(usage.reasoning)"
+            "\(dateText)，总 Token \(usage.total)，输入 \(usage.uncachedInput)，缓存 \(usage.cachedInput)，输出 \(usage.output)，推理 \(usage.reasoning)\(costAccessibilityDescription)"
         )
+    }
+
+    private var costAccessibilityDescription: String {
+        guard let estimatedCostUSD = usage.estimatedCostUSD else { return "" }
+        let unpricedDescription = usage.unpricedModelCount > 0
+            ? "，\(usage.unpricedModelCount) 个模型未定价"
+            : ""
+        return "，API 等值预计花费 \(ModelCostFormatter.usd(estimatedCostUSD))\(unpricedDescription)"
     }
 
     private func metric(_ title: String, value: Int, color: Color) -> some View {

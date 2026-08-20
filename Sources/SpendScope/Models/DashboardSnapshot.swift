@@ -8,6 +8,7 @@ struct DashboardSnapshot: Sendable {
     let quotas: [QuotaSnapshot]
     let models: [ModelUsage]
     let dailyUsage: [DailyUsage]
+    let subscriptionCycleUsage: [DailyUsage]
     let activityRankings: ActivityRankingSnapshot
     let workspaceUsage: WorkspaceUsageSnapshot
     let modelUsage: ModelUsageSnapshot
@@ -21,6 +22,7 @@ struct DashboardSnapshot: Sendable {
         quotas: [QuotaSnapshot],
         models: [ModelUsage],
         dailyUsage: [DailyUsage],
+        subscriptionCycleUsage: [DailyUsage] = [],
         activityRankings: ActivityRankingSnapshot = .empty,
         workspaceUsage: WorkspaceUsageSnapshot = .empty,
         modelUsage: ModelUsageSnapshot = .empty,
@@ -33,6 +35,7 @@ struct DashboardSnapshot: Sendable {
         self.quotas = quotas
         self.models = models
         self.dailyUsage = dailyUsage
+        self.subscriptionCycleUsage = subscriptionCycleUsage
         self.activityRankings = activityRankings
         self.workspaceUsage = workspaceUsage
         self.modelUsage = modelUsage
@@ -370,6 +373,7 @@ enum DashboardIssue: Hashable, Sendable {
 enum TrendRange: String, CaseIterable, Identifiable, Sendable {
     case sevenDays = "7 天"
     case thirtyDays = "30 天"
+    case subscriptionCycles = "周期"
 
     static let defaultRange: TrendRange = .sevenDays
 
@@ -379,12 +383,17 @@ enum TrendRange: String, CaseIterable, Identifiable, Sendable {
         self == .sevenDays
     }
 
-    func select(from usage: [DailyUsage]) -> [DailyUsage] {
+    func select(
+        from usage: [DailyUsage],
+        subscriptionCycleUsage: [DailyUsage] = []
+    ) -> [DailyUsage] {
         switch self {
         case .sevenDays:
             return Array(usage.suffix(7))
         case .thirtyDays:
             return Array(usage.suffix(30))
+        case .subscriptionCycles:
+            return subscriptionCycleUsage
         }
     }
 }
@@ -413,7 +422,6 @@ struct QuotaSnapshot: Identifiable, Sendable {
     let resetText: String
     let resetsAt: Date?
     let observedAt: Date?
-    let isOfficialAccountQuota: Bool
 
     init(
         id: String,
@@ -421,8 +429,7 @@ struct QuotaSnapshot: Identifiable, Sendable {
         remaining: Double,
         resetText: String,
         resetsAt: Date? = nil,
-        observedAt: Date? = nil,
-        isOfficialAccountQuota: Bool = false
+        observedAt: Date? = nil
     ) {
         self.id = id
         self.title = title
@@ -430,7 +437,6 @@ struct QuotaSnapshot: Identifiable, Sendable {
         self.resetText = resetText
         self.resetsAt = resetsAt
         self.observedAt = observedAt
-        self.isOfficialAccountQuota = isOfficialAccountQuota
     }
 
     var remainingPercent: Int { Int((remaining * 100).rounded()) }
@@ -601,6 +607,8 @@ struct DailyUsage: Identifiable, Sendable {
     let cachedInput: Int
     let output: Int
     let reasoning: Int
+    let estimatedCostUSD: Double?
+    let unpricedModelCount: Int
 
     init(
         id: String,
@@ -609,7 +617,9 @@ struct DailyUsage: Identifiable, Sendable {
         uncachedInput: Int = 0,
         cachedInput: Int = 0,
         output: Int = 0,
-        reasoning: Int = 0
+        reasoning: Int = 0,
+        estimatedCostUSD: Double? = nil,
+        unpricedModelCount: Int = 0
     ) {
         self.id = id
         self.day = day
@@ -618,5 +628,7 @@ struct DailyUsage: Identifiable, Sendable {
         self.cachedInput = cachedInput
         self.output = output
         self.reasoning = reasoning
+        self.estimatedCostUSD = estimatedCostUSD
+        self.unpricedModelCount = unpricedModelCount
     }
 }

@@ -121,28 +121,6 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(DashboardCloseBehavior.load(from: defaults), .closeDashboard)
     }
 
-    func testQuotaRefreshProxyPolicyDefaultsToDisabledAndPersistsSelection() {
-        let suiteName = "QuotaRefreshProxyPolicyTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        XCTAssertFalse(QuotaRefreshProxyPolicy.requiresEnabledProxy(from: defaults))
-        defaults.set(true, forKey: AppPreferenceKeys.quotaRefreshRequiresProxy)
-        XCTAssertTrue(QuotaRefreshProxyPolicy.requiresEnabledProxy(from: defaults))
-        defaults.set(false, forKey: AppPreferenceKeys.quotaRefreshRequiresProxy)
-        XCTAssertFalse(QuotaRefreshProxyPolicy.requiresEnabledProxy(from: defaults))
-    }
-
-    func testLocalProxyStatusRecognizesSystemProxyModes() {
-        XCTAssertFalse(LocalProxyStatus.isEnabled(in: [:]))
-        XCTAssertFalse(LocalProxyStatus.isEnabled(in: ["HTTPEnable": 0]))
-        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["HTTPEnable": 1]))
-        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["HTTPSEnable": true]))
-        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["SOCKSEnable": 1]))
-        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["ProxyAutoConfigEnable": 1]))
-        XCTAssertTrue(LocalProxyStatus.isEnabled(in: ["ProxyAutoDiscoveryEnable": 1]))
-    }
-
     func testUsageCalendarBuildsMondayFirstSixWeekGrid() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
@@ -511,13 +489,14 @@ final class StatusItemPresentationTests: XCTestCase {
 
 final class DashboardSnapshotTests: XCTestCase {
     func testTrendRangesExposeExpectedLabelsAndDefault() {
-        XCTAssertEqual(TrendRange.allCases.map(\.rawValue), ["7 天", "30 天"])
+        XCTAssertEqual(TrendRange.allCases.map(\.rawValue), ["7 天", "30 天", "周期"])
         XCTAssertEqual(TrendRange.defaultRange, .sevenDays)
     }
 
     func testTrendRangeHidesXAxisOnlyWhenThirtyDaysAreSelected() {
         XCTAssertTrue(TrendRange.sevenDays.showsXAxis)
         XCTAssertFalse(TrendRange.thirtyDays.showsXAxis)
+        XCTAssertFalse(TrendRange.subscriptionCycles.showsXAxis)
     }
 
     func testActivityRangesExposeExpectedLabelsDefaultAndIndependentSnapshots() {
@@ -554,9 +533,17 @@ final class DashboardSnapshotTests: XCTestCase {
 
     func testTrendRangesSelectLatestUsage() {
         let history = makeDailyUsage(count: 45)
+        let cycles = [DailyUsage(id: "cycle", day: "周期", total: 99)]
 
         XCTAssertEqual(TrendRange.sevenDays.select(from: history).map(\.total), Array(39...45))
         XCTAssertEqual(TrendRange.thirtyDays.select(from: history).map(\.total), Array(16...45))
+        XCTAssertEqual(
+            TrendRange.subscriptionCycles.select(
+                from: history,
+                subscriptionCycleUsage: cycles
+            ).map(\.total),
+            [99]
+        )
     }
 
     func testTrendRangeHandlesLimitedAndEmptyUsage() {

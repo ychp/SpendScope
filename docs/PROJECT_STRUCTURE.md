@@ -36,7 +36,7 @@
 | 目录 | 级别 | 主要职责 | 修改注意事项 |
 | --- | --- | --- | --- |
 | `App/` | 核心 | App 入口、生命周期、全局状态、刷新协调和额度提醒 | 避免创建第二套全局状态 |
-| `Data/Codex/` | 核心 | 发现 Codex 数据、只读额度信息、解析 JSONL、计算 Token 增量、归约会话状态并协调导入 | 必须保持隐私白名单和幂等性 |
+| `Data/Codex/` | 核心 | 发现 Codex 数据、解析 JSONL 中的用量与额度、计算 Token 增量、归约会话状态并协调导入 | 必须保持隐私白名单和幂等性 |
 | `Data/Dashboard/` | 核心 | 从本地数据库生成看板和会话查询结果 | 统计口径应与存储层一致 |
 | `Data/Storage/` | 核心 | SQLite 连接、迁移、事务、事件、聚合和文件检查点 | 表结构变化必须提供迁移 |
 | `Features/Dashboard/` | 核心 | Token 看板、趋势、日历、活动/工作区/模型排行、工作区详情窗口、回复调用悬浮面板和费用明细 | 不在 UI 中重复计算业务口径 |
@@ -49,11 +49,10 @@
 核心数据路径如下：
 
 ```text
-Codex 本机文件 / 只读索引 ─→ Data/Codex：发现、读取、解码、增量计算 ─┐
-Codex app-server 官方额度 ──→ Data/Codex：账户额度只读补充 ─────────┤
-                                                                    ↓
-                                Data/Storage：幂等事件与官方额度缓存
-                                                                    ↓
+Codex 本机文件 / 只读索引 ─→ Data/Codex：发现、读取、解码、增量计算
+                                      ↓
+                         Data/Storage：幂等用量与额度事件
+                                      ↓
 Data/Dashboard：周期、活动、工作区、模型和费用聚合查询
         ↓
 App/DashboardStore：发布共享状态
@@ -66,7 +65,6 @@ Features：菜单栏、看板和设置
 | 领域 | 文件 |
 | --- | --- |
 | 数据源发现 | `Sources/SpendScope/Data/Codex/CodexSourceDiscovery.swift` |
-| 额度只读补充 | `Sources/SpendScope/Data/Codex/CodexAccountRateLimitReader.swift` |
 | 增量文件读取 | `Sources/SpendScope/Data/Codex/IncrementalJSONLReader.swift` |
 | 隐私白名单解码 | `Sources/SpendScope/Data/Codex/CodexEventDecoder.swift` |
 | Token 增量口径 | `Sources/SpendScope/Data/Codex/UsageAccumulator.swift` |
@@ -88,9 +86,9 @@ Features：菜单栏、看板和设置
 - `CodexEventDecoderTests`：事件白名单、字段兼容和隐私边界。
 - `IncrementalJSONLReaderTests`：追加、半行、分块、截断、替换、只读索引兼容和任务名安全回退。
 - `UsageAccumulatorTests`：累计值转增量、回退分段和 Token 分类。
-- `CodexImporterTests`、`UsageStoreTests`：导入幂等、事务、检查点、重建进度、迁移和官方额度缓存。
+- `CodexImporterTests`、`UsageStoreTests`：导入幂等、事务、检查点、重建进度和迁移。
 - `DashboardQueryServiceTests`、`SessionQueryServiceTests`：周期统计、额度、活动/工作区/模型排行、同目录跨工作区归属、归档工作区名称、Git worktree 合并、推测工作区回退、Guardian 指标过滤、任务排序、回复 Token 与 Skill / 工具归属、费用估算和会话查询。
-- `DashboardStoreTests`：加载、用量/额度拆分刷新、按需调度、错误和全局状态协调。
+- `DashboardStoreTests`：加载、本地增量刷新、自动调度、错误和全局状态协调。
 - `UsageReminderTests`、`AppUpdateServiceTests`：提醒阈值和软件更新校验。
 - `TokenFormatterTests`、`SessionStateReducerTests`：展示格式与会话事实归约。
 

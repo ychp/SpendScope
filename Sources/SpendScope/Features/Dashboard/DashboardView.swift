@@ -19,8 +19,7 @@ struct DashboardView: View {
             case .loaded(let snapshot, _):
                 DashboardContentView(
                     snapshot: snapshot,
-                    isCollapsed: isCollapsed,
-                    quotaRefreshBlocker: store.quotaRefreshBlocker
+                    isCollapsed: isCollapsed
                 )
             case .empty:
                 unavailableView(
@@ -31,8 +30,7 @@ struct DashboardView: View {
             case .stale(let snapshot, _, let message):
                 DashboardContentView(
                     snapshot: snapshot,
-                    isCollapsed: isCollapsed,
-                    quotaRefreshBlocker: store.quotaRefreshBlocker
+                    isCollapsed: isCollapsed
                 )
                     .overlay(alignment: .topTrailing) {
                         if !isCollapsed {
@@ -333,7 +331,6 @@ private final class DashboardWindowSizingView: NSView {
 private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
     let isCollapsed: Bool
-    let quotaRefreshBlocker: QuotaRefreshBlocker?
     @State private var selectedRange = TrendRange.defaultRange
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
     @State private var selectedActivityRange = ActivityRange.defaultRange
@@ -439,30 +436,9 @@ private struct DashboardContentView: View {
 
     private var currentQuotaSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
-
-                if let officialQuotaSyncText {
-                    Text(officialQuotaSyncText)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                        .accessibilityLabel(officialQuotaSyncText)
-                }
-            }
-
-            if let quotaRefreshBlocker {
-                Label(
-                    quotaRefreshBlocker.message,
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(.orange)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .accessibilityLabel(quotaRefreshBlocker.message)
-            }
+            Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
 
             if snapshot.visibleQuotas.isEmpty {
                 ContentUnavailableView(
@@ -590,21 +566,6 @@ private struct DashboardContentView: View {
             }
         }
         .frame(maxWidth: 200)
-    }
-
-    private var officialQuotaSyncText: String? {
-        let officialQuotas = snapshot.visibleQuotas.filter { $0.isOfficialAccountQuota }
-        guard let observedAt = officialQuotas
-            .compactMap(\.observedAt)
-            .max() else {
-            return nil
-        }
-        let formatter = DateFormatter()
-        formatter.calendar = .current
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.timeZone = .current
-        formatter.dateFormat = Calendar.current.isDateInToday(observedAt) ? "HH:mm" : "MM-dd HH:mm"
-        return "官方额度 · 同步于 \(formatter.string(from: observedAt))"
     }
 
     private func quotaResetRow(_ quota: QuotaSnapshot, color: Color) -> some View {
@@ -875,7 +836,16 @@ private struct DashboardContentView: View {
     }
 
     private var selectedUsage: [DailyUsage] {
-        selectedRange.select(from: snapshot.dailyUsage)
+        selectedRange.select(
+            from: snapshot.dailyUsage,
+            subscriptionCycleUsage: snapshot.subscriptionCycleUsage
+        )
+    }
+
+    private var availableTrendRanges: [TrendRange] {
+        snapshot.subscriptionCycle == nil
+            ? [.sevenDays, .thirtyDays]
+            : TrendRange.allCases
     }
 
     private var selectedActivityRanking: ActivityRanking {
@@ -1091,7 +1061,10 @@ private struct DashboardContentView: View {
                     Rectangle()
                         .fill(SpendScopeTheme.dashboardBorder)
                         .frame(width: 1, height: 24)
-                    trendSummary("日均", value: selectedAverage)
+                    trendSummary(
+                        selectedRange == .subscriptionCycles ? "周期均值" : "日均",
+                        value: selectedAverage
+                    )
                 }
             }
 
@@ -1206,7 +1179,7 @@ private struct DashboardContentView: View {
 
     private var rangeSelector: some View {
         HStack(spacing: 2) {
-            ForEach(TrendRange.allCases) { range in
+            ForEach(availableTrendRanges) { range in
                 Button {
                     withAnimation(.easeOut(duration: 0.16)) {
                         hoveredUsageID = nil

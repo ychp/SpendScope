@@ -354,20 +354,6 @@ struct MenuBarPopoverView: View {
                     .background(availabilityColor.opacity(0.12), in: Capsule())
             }
 
-            if let quotaRefreshBlocker = store.quotaRefreshBlocker {
-                Label(
-                    quotaRefreshBlocker.message,
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.orange)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
-                .accessibilityLabel(quotaRefreshBlocker.message)
-            }
-
             quotaAndTodaySummary
 
             tokenCompositionBar

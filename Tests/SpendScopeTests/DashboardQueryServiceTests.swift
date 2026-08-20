@@ -114,6 +114,107 @@ final class DashboardQueryServiceTests: XCTestCase {
         )
     }
 
+    func testSnapshotGroupsUsageIntoAnchoredSubscriptionCycleTrend() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let firstSubscribedAt = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 1, day: 31, hour: 9, minute: 30
+        )))
+        let februaryBoundary = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 2, day: 28, hour: 9, minute: 30
+        )))
+        let marchBoundary = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 3, day: 31, hour: 9, minute: 30
+        )))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 4, day: 15, hour: 12
+        )))
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage("before-subscription", at: firstSubscribedAt.addingTimeInterval(-1), total: 90),
+                usage("first-cycle", at: firstSubscribedAt, total: 100),
+                usage("second-cycle-boundary", at: februaryBoundary, total: 200),
+                usage("second-cycle-latest", at: marchBoundary.addingTimeInterval(-1), total: 300),
+                usage("third-cycle-boundary", at: marchBoundary, total: 400),
+                usage("third-cycle-current", at: now, total: 500),
+                usage("future", at: now.addingTimeInterval(1), total: 600)
+            ],
+            quotas: []
+        ))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(
+            now: now,
+            calendar: calendar,
+            firstSubscriptionDate: firstSubscribedAt
+        )
+
+        XCTAssertEqual(
+            snapshot.subscriptionCycleUsage.map(\.id),
+            ["2026-01-31T09:30", "2026-02-28T09:30", "2026-03-31T09:30"]
+        )
+        XCTAssertEqual(
+            snapshot.subscriptionCycleUsage.map(\.day),
+            ["1/31–2/28", "2/28–3/31", "3/31–4/30"]
+        )
+        XCTAssertEqual(snapshot.subscriptionCycleUsage.map(\.total), [100, 500, 900])
+    }
+
+    func testSubscriptionCycleTrendEstimatesKnownModelCostAndMarksUnpricedModels() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let firstSubscribedAt = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 1, hour: 9
+        )))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 7, day: 15, hour: 12
+        )))
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage(
+                "sol-cycle-cost",
+                at: firstSubscribedAt.addingTimeInterval(60),
+                total: 10_000_000,
+                usage: .init(
+                    uncachedInput: 1_000_000,
+                    cachedInput: 2_000_000,
+                    visibleOutput: 3_000_000,
+                    reasoning: 4_000_000
+                ),
+                model: "gpt-5.6-sol"
+            ),
+            usage(
+                "terra-cycle-cost",
+                at: firstSubscribedAt.addingTimeInterval(120),
+                total: 4_000_000,
+                usage: .init(
+                    uncachedInput: 1_000_000,
+                    cachedInput: 1_000_000,
+                    visibleOutput: 1_000_000,
+                    reasoning: 1_000_000
+                ),
+                model: "gpt-5.6-terra"
+            ),
+            usage(
+                "unpriced-cycle-cost",
+                at: firstSubscribedAt.addingTimeInterval(180),
+                total: 100,
+                model: "codex-auto-review"
+            )
+        ], quotas: []))
+
+        let cycle = try XCTUnwrap(
+            DashboardQueryService(store: store).snapshot(
+                now: now,
+                calendar: calendar,
+                firstSubscriptionDate: firstSubscribedAt
+            ).subscriptionCycleUsage.first
+        )
+
+        XCTAssertEqual(try XCTUnwrap(cycle.estimatedCostUSD), 248.75, accuracy: 0.000_001)
+        XCTAssertEqual(cycle.unpricedModelCount, 1)
+    }
+
     func testDailyUsageUsesCodexUTCDateWithoutChangingLocalTodayWindow() throws {
         var localCalendar = Calendar(identifier: .gregorian)
         localCalendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
@@ -176,8 +277,8 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.breakdown.output, 30)
         XCTAssertEqual(snapshot.breakdown.reasoning, 10)
         XCTAssertEqual(snapshot.periods.first?.output, 40, "PeriodUsage.output remains raw output")
-        XCTAssertEqual(snapshot.visibleQuotas.map(\.id), ["5h", "7d"])
-        XCTAssertEqual(snapshot.visibleQuotas.map(\.resetText), ["14:00", "07-21"])
+        XCTAssertEqual(snapshot.visibleQuotas.map(\.id), ["7d"])
+        XCTAssertEqual(snapshot.visibleQuotas.map(\.resetText), ["07-21"])
         XCTAssertEqual(snapshot.planName, "Plus")
         XCTAssertTrue(snapshot.issues.isEmpty)
         XCTAssertEqual(snapshot.dailyUsage.count, 31)
@@ -231,7 +332,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         )
     }
 
-    func testOmitsExpiredAndInvalidQuotaObservationsWithSafeIssues() throws {
+    func testIgnoresFiveHourQuotaAndReportsInvalidWeeklyQuota() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
         let now = Date(timeIntervalSince1970: 1_000)
@@ -247,7 +348,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: calendar)
 
         XCTAssertTrue(snapshot.visibleQuotas.isEmpty)
-        XCTAssertEqual(Set(snapshot.issues), [.expiredQuota(id: "5h"), .invalidQuota(id: "7d")])
+        XCTAssertEqual(Set(snapshot.issues), [.invalidQuota(id: "7d")])
     }
 
     func testReturnsFourZeroPeriodsWhenStoreHasNoUsage() throws {

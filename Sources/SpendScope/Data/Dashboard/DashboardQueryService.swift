@@ -188,6 +188,12 @@ final class DashboardQueryService: @unchecked Sendable {
                 through: usageTodayStart,
                 calendar: resolvedUsageCalendar
             ),
+            subscriptionCycleUsage: try subscriptionCycleUsage(
+                from: historicalRows,
+                firstSubscribedAt: firstSubscriptionDate,
+                through: now,
+                calendar: calendar
+            ),
             activityRankings: activityRankings,
             workspaceUsage: workspaceUsage,
             modelUsage: modelUsage,
@@ -769,6 +775,120 @@ final class DashboardQueryService: @unchecked Sendable {
         return result
     }
 
+    private func subscriptionCycleUsage(
+        from rows: [StoredUsageQueryRow],
+        firstSubscribedAt: Date?,
+        through now: Date,
+        calendar: Calendar
+    ) throws -> [DailyUsage] {
+        guard let firstSubscribedAt, firstSubscribedAt <= now else { return [] }
+
+        var totals: [Date: UsageAggregate] = [:]
+        var modelTotals: [Date: [String: UsageAggregate]] = [:]
+        for row in rows {
+            let observedAt = Date(
+                timeIntervalSince1970: TimeInterval(row.observedAtMilliseconds) / 1_000
+            )
+            guard let cycle = SubscriptionCycleCalculator.cycle(
+                containing: observedAt,
+                firstSubscribedAt: firstSubscribedAt,
+                calendar: calendar
+            ) else {
+                continue
+            }
+            var aggregate = totals[cycle.start, default: UsageAggregate()]
+            try aggregate.add(row, context: "subscriptionCycle")
+            totals[cycle.start] = aggregate
+
+            var cycleModelTotals = modelTotals[cycle.start, default: [:]]
+            var modelAggregate = cycleModelTotals[row.model, default: UsageAggregate()]
+            try modelAggregate.add(row, context: "subscriptionCycle.\(row.model)")
+            cycleModelTotals[row.model] = modelAggregate
+            modelTotals[cycle.start] = cycleModelTotals
+        }
+
+        var result: [DailyUsage] = []
+        var cycleIndex = 0
+        while true {
+            guard let start = calendar.date(
+                byAdding: .month,
+                value: cycleIndex,
+                to: firstSubscribedAt
+            ), start <= now,
+            let end = calendar.date(
+                byAdding: .month,
+                value: cycleIndex + 1,
+                to: firstSubscribedAt
+            ), end > start else {
+                break
+            }
+            let aggregate = totals[start, default: UsageAggregate()]
+            let costEstimate = subscriptionCycleCostEstimate(
+                from: modelTotals[start, default: [:]]
+            )
+            result.append(DailyUsage(
+                id: subscriptionCycleID(for: start, calendar: calendar),
+                day: subscriptionCycleLabel(start: start, end: end, calendar: calendar),
+                total: Int(clamping: aggregate.total),
+                uncachedInput: Int(clamping: aggregate.uncachedInput),
+                cachedInput: Int(clamping: aggregate.cachedInput),
+                output: Int(clamping: aggregate.visibleOutput),
+                reasoning: Int(clamping: aggregate.reasoning),
+                estimatedCostUSD: costEstimate.usd,
+                unpricedModelCount: costEstimate.unpricedModelCount
+            ))
+            cycleIndex += 1
+        }
+        return result
+    }
+
+    private func subscriptionCycleCostEstimate(
+        from modelTotals: [String: UsageAggregate]
+    ) -> (usd: Double, unpricedModelCount: Int) {
+        var estimatedCostUSD = 0.0
+        var unpricedModelCount = 0
+        for (model, aggregate) in modelTotals {
+            guard let rule = ModelPricingCatalog.rule(for: model) else {
+                unpricedModelCount += 1
+                continue
+            }
+            estimatedCostUSD += rule.estimate(
+                uncachedInputTokens: aggregate.uncachedInput,
+                cachedInputTokens: aggregate.cachedInput,
+                visibleOutputTokens: aggregate.visibleOutput,
+                reasoningTokens: aggregate.reasoning
+            )
+        }
+        return (estimatedCostUSD, unpricedModelCount)
+    }
+
+    private func subscriptionCycleID(for date: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: date
+        )
+        return String(
+            format: "%04d-%02d-%02dT%02d:%02d",
+            components.year ?? 0,
+            components.month ?? 0,
+            components.day ?? 0,
+            components.hour ?? 0,
+            components.minute ?? 0
+        )
+    }
+
+    private func subscriptionCycleLabel(start: Date, end: Date, calendar: Calendar) -> String {
+        let startComponents = calendar.dateComponents([.month, .day], from: start)
+        let endComponents = calendar.dateComponents([.month, .day], from: end)
+        return String(
+            format: "%d/%d–%d/%d",
+            startComponents.month ?? 0,
+            startComponents.day ?? 0,
+            endComponents.month ?? 0,
+            endComponents.day ?? 0
+        )
+    }
+
     private func quotas(
         now: Date,
         calendar: Calendar
@@ -779,10 +899,10 @@ final class DashboardQueryService: @unchecked Sendable {
         var snapshots: [QuotaSnapshot] = []
         var issues: [DashboardIssue] = []
 
-        for kind in [QuotaKind.fiveHour, .weekly] {
+        for kind in [QuotaKind.weekly] {
             guard let observation = byKind[kind] else { continue }
-            let id = kind == .fiveHour ? "5h" : "7d"
-            let expectedWindowMinutes = kind == .fiveHour ? 300 : 10_080
+            let id = "7d"
+            let expectedWindowMinutes = 10_080
             guard observation.windowMinutes == expectedWindowMinutes,
                   observation.remaining.isFinite, (0...1).contains(observation.remaining),
                   let resetsAt = observation.resetsAtMilliseconds else {
@@ -795,7 +915,7 @@ final class DashboardQueryService: @unchecked Sendable {
             }
             snapshots.append(QuotaSnapshot(
                 id: id,
-                title: kind == .fiveHour ? "5 小时" : "7 天",
+                title: "7 天",
                 remaining: observation.remaining,
                 resetText: QuotaResetFormatter.string(
                     resetsAtMilliseconds: resetsAt, now: now, calendar: calendar

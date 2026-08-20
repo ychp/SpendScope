@@ -1,8 +1,5 @@
 import Foundation
 import Observation
-import OSLog
-
-private let quotaLogger = Logger(subsystem: "com.ychp.SpendScope", category: "quota")
 
 enum DashboardLoadState: Sendable {
     case loading
@@ -34,21 +31,9 @@ enum DashboardDataResult: Sendable {
     case unsupported(String)
 }
 
-enum QuotaRefreshBlocker: Equatable, Sendable {
-    case proxyUnavailable
-
-    var message: String {
-        switch self {
-        case .proxyUnavailable:
-            "未检测到系统代理，额度刷新已暂停"
-        }
-    }
-}
-
 protocol DashboardDataClient: Sendable {
     func loadCached() async throws -> DashboardDataResult
     func refreshUsage() async throws -> DashboardDataResult
-    func refreshQuota() async throws -> DashboardDataResult
     func backfillHistory() async throws -> DashboardDataResult
     func rebuildFromLocalData(
         progress: @escaping CodexImportProgressHandler
@@ -70,7 +55,6 @@ actor LiveDashboardDataClient: DashboardDataClient {
     private let now: @Sendable () -> Date
     private let calendar: Calendar
     private let usageCalendar: Calendar
-    private let accountRateLimitReader: (any CodexAccountRateLimitReading)?
     private let firstSubscriptionDate: @Sendable () -> Date?
     private let beforeImport: @Sendable (ImportScope) async -> Void
     private let beforeQuery: @Sendable () async -> Void
@@ -84,7 +68,6 @@ actor LiveDashboardDataClient: DashboardDataClient {
         calendar: Calendar = .current,
         usageCalendar: Calendar = CodexUsageCalendar.utc,
         fileManager: FileManager = .default,
-        accountRateLimitReader: (any CodexAccountRateLimitReading)? = nil,
         firstSubscriptionDate: @escaping @Sendable () -> Date? = { nil },
         beforeImport: @escaping @Sendable (ImportScope) async -> Void = { _ in },
         beforeQuery: @escaping @Sendable () async -> Void = {}
@@ -106,7 +89,6 @@ actor LiveDashboardDataClient: DashboardDataClient {
         self.now = now
         self.calendar = calendar
         self.usageCalendar = usageCalendar
-        self.accountRateLimitReader = accountRateLimitReader
         self.firstSubscriptionDate = firstSubscriptionDate
         self.beforeImport = beforeImport
         self.beforeQuery = beforeQuery
@@ -134,16 +116,6 @@ actor LiveDashboardDataClient: DashboardDataClient {
             processedFileCount: importResult.processedFileCount
         )
         return try await makeResult(importResult: importResult)
-    }
-
-    func refreshQuota() async throws -> DashboardDataResult {
-        try await acquireOperation()
-        defer { releaseOperation() }
-        try Task.checkCancellation()
-        return try await makeResult(
-            importResult: nil,
-            accountRateLimits: await readAccountRateLimits()
-        )
     }
 
     func backfillHistory() async throws -> DashboardDataResult {
@@ -220,32 +192,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         operationWaiters.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 
-    private func readAccountRateLimits() async -> CodexAccountRateLimits? {
-        guard let accountRateLimitReader else { return nil }
-        do {
-            let rateLimits = try await accountRateLimitReader.read()
-            let windows = rateLimits.windows.map {
-                "\($0.windowMinutes)m used=\($0.usedPercent) reset=\($0.resetsAtSeconds ?? -1)"
-            }.joined(separator: ", ")
-            quotaLogger.debug("Read official account quota: \(windows, privacy: .public)")
-            do {
-                try store.persistAccountRateLimits(rateLimits)
-            } catch {
-                quotaLogger.error(
-                    "Official account quota cache write failed: \(String(describing: error), privacy: .public)"
-                )
-            }
-            return rateLimits
-        } catch {
-            quotaLogger.error("Official account quota read failed: \(String(describing: error), privacy: .public)")
-            return nil
-        }
-    }
-
-    private func makeResult(
-        importResult: ImportResult?,
-        accountRateLimits: CodexAccountRateLimits? = nil
-    ) async throws -> DashboardDataResult {
+    private func makeResult(importResult: ImportResult?) async throws -> DashboardDataResult {
         await beforeQuery()
         try Task.checkCancellation()
         let currentDate = now()
@@ -257,20 +204,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
             firstSubscriptionDate: firstSubscriptionDate(),
             threadTitlesByThreadID: threadTitlesByThreadID
         )
-        let cachedAccountRateLimits: CodexAccountRateLimits?
-        do {
-            cachedAccountRateLimits = try store.accountRateLimits()
-        } catch {
-            quotaLogger.error(
-                "Official account quota cache read failed: \(String(describing: error), privacy: .public)"
-            )
-            cachedAccountRateLimits = nil
-        }
-        let snapshot = (accountRateLimits ?? cachedAccountRateLimits)?.applying(
-            to: storedSnapshot,
-            now: currentDate,
-            calendar: calendar
-        ) ?? storedSnapshot
+        let snapshot = storedSnapshot
         let facts = try store.sourceFacts()
         let summary = SourceSummary(
             cli: facts.hasCLIData ? .connected : .missing,
@@ -347,10 +281,6 @@ private actor UnavailableDashboardDataClient: DashboardDataClient {
         throw LiveDashboardDataError.initializationFailed
     }
 
-    func refreshQuota() async throws -> DashboardDataResult {
-        throw LiveDashboardDataError.initializationFailed
-    }
-
     func backfillHistory() async throws -> DashboardDataResult {
         throw LiveDashboardDataError.initializationFailed
     }
@@ -366,21 +296,16 @@ private actor UnavailableDashboardDataClient: DashboardDataClient {
 @Observable
 final class DashboardStore {
     typealias Sleeper = @Sendable (Duration) async throws -> Void
-    typealias ProxyStatusProvider = @Sendable () async -> Bool
 
     private(set) var state: DashboardLoadState = .loading
     private(set) var isRefreshing = false
     private(set) var isRebuildingData = false
     private(set) var rebuildProgress: CodexImportProgress?
     private(set) var isAutomaticRefreshEnabled: Bool
-    private(set) var quotaRefreshRequiresProxy: Bool
-    private(set) var quotaRefreshBlocker: QuotaRefreshBlocker?
     private(set) var sourceSummary: SourceSummary?
 
     private let client: any DashboardDataClient
     private let usageRefreshInterval: Duration
-    private let quotaCheckInterval: Duration
-    private let proxyStatusProvider: ProxyStatusProvider
     private let sleeper: Sleeper
     private var hasLoadedCached = false
     private var hasStarted = false
@@ -389,30 +314,21 @@ final class DashboardStore {
     private var startTask: Task<Void, Never>?
     private var inFlightManualRefresh: Task<Void, Never>?
     private var inFlightRefresh: Task<Void, Never>?
-    private var inFlightQuotaRefresh: Task<Void, Never>?
     private var inFlightRebuild: Task<Void, Never>?
     private var backfillTask: Task<Void, Never>?
     private var automaticUsageRefreshTask: Task<Void, Never>?
-    private var automaticQuotaCheckTask: Task<Void, Never>?
-    private var quotaRefreshNeeded = true
 
     init(
         client: any DashboardDataClient,
         usageRefreshInterval: Duration = .seconds(60),
-        quotaCheckInterval: Duration = .seconds(120),
         automaticRefreshEnabled: Bool = true,
-        quotaRefreshRequiresProxy: Bool = false,
-        proxyStatusProvider: @escaping ProxyStatusProvider = { LocalProxyStatus.isEnabled() },
         sleeper: @escaping Sleeper = { duration in
             try await ContinuousClock().sleep(for: duration)
         }
     ) {
         self.client = client
         self.usageRefreshInterval = usageRefreshInterval
-        self.quotaCheckInterval = quotaCheckInterval
         isAutomaticRefreshEnabled = automaticRefreshEnabled
-        self.quotaRefreshRequiresProxy = quotaRefreshRequiresProxy
-        self.proxyStatusProvider = proxyStatusProvider
         self.sleeper = sleeper
     }
 
@@ -427,7 +343,6 @@ final class DashboardStore {
             client = try LiveDashboardDataClient(
                 codexRootURL: codexRoot,
                 databaseURL: databaseURL,
-                accountRateLimitReader: CodexAppServerRateLimitReader.discover(),
                 firstSubscriptionDate: { SubscriptionCyclePreference.load() }
             )
         } catch {
@@ -436,11 +351,9 @@ final class DashboardStore {
         let automaticRefreshEnabled = UserDefaults.standard.object(
             forKey: AppPreferenceKeys.automaticRefreshEnabled
         ) as? Bool ?? true
-        let quotaRefreshRequiresProxy = QuotaRefreshProxyPolicy.requiresEnabledProxy()
         let store = DashboardStore(
             client: client,
-            automaticRefreshEnabled: automaticRefreshEnabled,
-            quotaRefreshRequiresProxy: quotaRefreshRequiresProxy
+            automaticRefreshEnabled: automaticRefreshEnabled
         )
         Task { @MainActor [weak store] in
             await store?.start()
@@ -451,8 +364,7 @@ final class DashboardStore {
     static func testHost() -> DashboardStore {
         DashboardStore(
             client: UnavailableDashboardDataClient(),
-            automaticRefreshEnabled: false,
-            quotaRefreshRequiresProxy: false
+            automaticRefreshEnabled: false
         )
     }
 
@@ -505,7 +417,6 @@ final class DashboardStore {
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.refreshUsage()
-            await self.refreshQuota(force: true)
         }
         inFlightManualRefresh = task
         await task.value
@@ -524,13 +435,12 @@ final class DashboardStore {
 
         foregroundRevision &+= 1
         isRefreshing = true
-        let previousUsage = usageFingerprint
         let client = self.client
         let task = Task { @MainActor [weak self, client] in
             do {
                 let result = try await client.refreshUsage()
                 guard !Task.isCancelled else { return }
-                self?.publishUsageResult(result, previousUsage: previousUsage)
+                self?.publish(result)
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.publishRefreshFailure()
@@ -540,43 +450,6 @@ final class DashboardStore {
         await task.value
         inFlightRefresh = nil
         isRefreshing = false
-    }
-
-    func refreshQuotaIfNeeded() async {
-        await refreshQuota(force: false)
-    }
-
-    private func refreshQuota(force: Bool) async {
-        if let inFlightQuotaRefresh {
-            await inFlightQuotaRefresh.value
-            return
-        }
-        guard force || quotaRefreshNeeded else { return }
-
-        let client = self.client
-        let requiresProxy = quotaRefreshRequiresProxy
-        let proxyStatusProvider = self.proxyStatusProvider
-        let task = Task { @MainActor [weak self, client, proxyStatusProvider] in
-            if requiresProxy, !(await proxyStatusProvider()) {
-                self?.quotaRefreshNeeded = true
-                self?.quotaRefreshBlocker = .proxyUnavailable
-                return
-            }
-            guard !Task.isCancelled, let self else { return }
-            self.quotaRefreshBlocker = nil
-            self.quotaRefreshNeeded = false
-            do {
-                let result = try await client.refreshQuota()
-                guard !Task.isCancelled else { return }
-                self.publish(result)
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.quotaRefreshNeeded = true
-            }
-        }
-        inFlightQuotaRefresh = task
-        await task.value
-        inFlightQuotaRefresh = nil
     }
 
     func rebuildFromLocalData() async {
@@ -596,7 +469,6 @@ final class DashboardStore {
         backfillTask = nil
         foregroundRevision &+= 1
         publicationRevision &+= 1
-        let previousUsage = usageFingerprint
         isRebuildingData = true
         rebuildProgress = .resetting
         sourceSummary = nil
@@ -610,7 +482,7 @@ final class DashboardStore {
             do {
                 let result = try await client.rebuildFromLocalData(progress: progressHandler)
                 guard !Task.isCancelled else { return }
-                self?.publishUsageResult(result, previousUsage: previousUsage)
+                self?.publish(result)
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.publicationRevision &+= 1
@@ -639,15 +511,6 @@ final class DashboardStore {
         } else {
             automaticUsageRefreshTask?.cancel()
             automaticUsageRefreshTask = nil
-            automaticQuotaCheckTask?.cancel()
-            automaticQuotaCheckTask = nil
-        }
-    }
-
-    func setQuotaRefreshRequiresProxy(_ isRequired: Bool) {
-        quotaRefreshRequiresProxy = isRequired
-        if !isRequired {
-            quotaRefreshBlocker = nil
         }
     }
 
@@ -664,7 +527,6 @@ final class DashboardStore {
         let client = self.client
         let capturedPublicationRevision = publicationRevision
         let capturedForegroundRevision = foregroundRevision
-        let previousUsage = usageFingerprint
         backfillTask = Task { @MainActor [weak self, client] in
             do {
                 let result = try await client.backfillHistory()
@@ -674,7 +536,7 @@ final class DashboardStore {
                       self.foregroundRevision == capturedForegroundRevision else {
                     return
                 }
-                self.publishUsageResult(result, previousUsage: previousUsage)
+                self.publish(result)
             } catch {
                 // Foreground state remains authoritative when optional history work fails.
             }
@@ -697,34 +559,6 @@ final class DashboardStore {
                     await self?.refreshUsage()
                 }
             }
-        }
-        if automaticQuotaCheckTask == nil {
-            let interval = quotaCheckInterval
-            automaticQuotaCheckTask = Task { @MainActor [weak self] in
-                while !Task.isCancelled {
-                    do {
-                        try await sleeper(interval)
-                    } catch {
-                        return
-                    }
-                    guard !Task.isCancelled else { return }
-                    await self?.refreshQuotaIfNeeded()
-                }
-            }
-        }
-    }
-
-    private var usageFingerprint: UsageFingerprint? {
-        snapshot.flatMap(UsageFingerprint.init)
-    }
-
-    private func publishUsageResult(
-        _ result: DashboardDataResult,
-        previousUsage: UsageFingerprint?
-    ) {
-        publish(result)
-        if previousUsage != usageFingerprint {
-            quotaRefreshNeeded = true
         }
     }
 
@@ -762,27 +596,8 @@ final class DashboardStore {
         startTask?.cancel()
         inFlightManualRefresh?.cancel()
         inFlightRefresh?.cancel()
-        inFlightQuotaRefresh?.cancel()
         inFlightRebuild?.cancel()
         backfillTask?.cancel()
         automaticUsageRefreshTask?.cancel()
-        automaticQuotaCheckTask?.cancel()
-    }
-}
-
-private struct UsageFingerprint: Equatable {
-    let uncachedInput: Int
-    let cachedInput: Int
-    let output: Int
-    let reasoning: Int
-
-    init?(_ snapshot: DashboardSnapshot) {
-        guard let allTime = snapshot.periods.first(where: { $0.id == "allTime" }) else {
-            return nil
-        }
-        uncachedInput = allTime.uncachedInput
-        cachedInput = allTime.cachedInput
-        output = allTime.output
-        reasoning = allTime.reasoning
     }
 }
