@@ -4,6 +4,40 @@ import XCTest
 
 @MainActor
 final class DashboardStoreTests: XCTestCase {
+    func testSubscriptionPreferenceChangeReloadsCachedDataWithoutRefreshingSources() async {
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(.fixture(todayTokens: 23), .fixture),
+            refreshResults: []
+        )
+        let store = DashboardStore(client: client, usageRefreshInterval: .seconds(60))
+
+        await store.subscriptionPreferenceDidChange()
+
+        guard case let .loaded(snapshot, _) = store.state else {
+            return XCTFail("Expected cached data to be republished")
+        }
+        XCTAssertEqual(snapshot.todayTokens, 23)
+        let loadCachedCount = await client.loadCachedCount
+        let refreshCount = await client.refreshCount
+        let quotaRefreshCount = await client.quotaRefreshCount
+        XCTAssertEqual(loadCachedCount, 1)
+        XCTAssertEqual(refreshCount, 0)
+        XCTAssertEqual(quotaRefreshCount, 0)
+    }
+
+    func testSubscriptionCyclePreferenceLoadsOnlyValidStoredTimestamp() throws {
+        let suiteName = "SubscriptionCyclePreferenceTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let date = Date(timeIntervalSince1970: 1_784_400_600)
+
+        XCTAssertNil(SubscriptionCyclePreference.load(from: defaults))
+        defaults.set(date.timeIntervalSince1970, forKey: AppPreferenceKeys.firstSubscriptionDate)
+        XCTAssertEqual(SubscriptionCyclePreference.load(from: defaults), date)
+        defaults.set(0, forKey: AppPreferenceKeys.firstSubscriptionDate)
+        XCTAssertNil(SubscriptionCyclePreference.load(from: defaults))
+    }
+
     func testCodexPlanCatalogIncludesCurrentOfficialPlansAndMarksProCurrent() {
         XCTAssertEqual(
             CodexPlanCatalog.plans.map(\.name),

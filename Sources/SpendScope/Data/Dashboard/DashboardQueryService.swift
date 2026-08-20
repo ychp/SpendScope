@@ -21,6 +21,7 @@ final class DashboardQueryService: @unchecked Sendable {
         now: Date,
         calendar: Calendar,
         usageCalendar: Calendar? = nil,
+        firstSubscriptionDate: Date? = nil,
         threadTitlesByThreadID: [String: String] = [:]
     ) throws -> DashboardSnapshot {
         let todayStart = calendar.startOfDay(for: now)
@@ -66,12 +67,33 @@ final class DashboardQueryService: @unchecked Sendable {
             }
         }
 
-        let periods = try [
+        let subscriptionCycle = firstSubscriptionDate.flatMap {
+            SubscriptionCycleCalculator.cycle(
+                containing: now,
+                firstSubscribedAt: $0,
+                calendar: calendar
+            )
+        }
+        var periods = try [
             period(id: "today", title: "今日", rows: todayRows),
             period(id: "sevenDays", title: "7 日", rows: sevenDayRows),
             period(id: "thirtyDays", title: "30 日", rows: thirtyDayRows),
             period(id: "allTime", title: "累计", rows: allRows)
         ]
+        if let subscriptionCycle {
+            let subscriptionRows = try store.usageEvents(
+                fromMilliseconds: milliseconds(for: subscriptionCycle.start),
+                toMilliseconds: end
+            )
+            periods.insert(
+                try period(
+                    id: "subscriptionCycle",
+                    title: "本订阅周期",
+                    rows: subscriptionRows
+                ),
+                at: periods.count - 1
+            )
+        }
         let quotaResult = try quotas(now: now, calendar: calendar)
         let activityRankings = ActivityRankingSnapshot(
             today: try activityRanking(
@@ -157,6 +179,7 @@ final class DashboardQueryService: @unchecked Sendable {
             planName: resolvedPlanName(from: allRows),
             updatedText: "刚刚刷新",
             periods: periods,
+            subscriptionCycle: subscriptionCycle,
             quotas: quotaResult.quotas,
             models: try models(from: sevenDayRows),
             dailyUsage: try dailyUsage(

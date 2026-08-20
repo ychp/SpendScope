@@ -79,6 +79,17 @@ private extension DashboardSnapshot {
 }
 
 final class TokenFormatterTests: XCTestCase {
+    func testSubscriptionOverviewPreservesAnalyticsHeightByGrowingDashboardMinimumSize() {
+        XCTAssertEqual(
+            DashboardWindowLayout.expandedContentSize(hasSubscriptionCycle: false),
+            CGSize(width: 920, height: 620)
+        )
+        XCTAssertEqual(
+            DashboardWindowLayout.expandedContentSize(hasSubscriptionCycle: true),
+            CGSize(width: 920, height: 682)
+        )
+    }
+
     func testDashboardCloseBehaviorResolvesStoredPreferenceAndUsesSafeFallback() {
         XCTAssertEqual(
             DashboardCloseBehavior.resolved(
@@ -502,6 +513,11 @@ final class DashboardSnapshotTests: XCTestCase {
     func testTrendRangesExposeExpectedLabelsAndDefault() {
         XCTAssertEqual(TrendRange.allCases.map(\.rawValue), ["7 天", "30 天"])
         XCTAssertEqual(TrendRange.defaultRange, .sevenDays)
+    }
+
+    func testTrendRangeHidesXAxisOnlyWhenThirtyDaysAreSelected() {
+        XCTAssertTrue(TrendRange.sevenDays.showsXAxis)
+        XCTAssertFalse(TrendRange.thirtyDays.showsXAxis)
     }
 
     func testActivityRangesExposeExpectedLabelsDefaultAndIndependentSnapshots() {

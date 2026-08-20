@@ -4,6 +4,7 @@ struct DashboardSnapshot: Sendable {
     let planName: String
     let updatedText: String
     let periods: [PeriodUsage]
+    let subscriptionCycle: SubscriptionCycle?
     let quotas: [QuotaSnapshot]
     let models: [ModelUsage]
     let dailyUsage: [DailyUsage]
@@ -16,6 +17,7 @@ struct DashboardSnapshot: Sendable {
         planName: String,
         updatedText: String,
         periods: [PeriodUsage],
+        subscriptionCycle: SubscriptionCycle? = nil,
         quotas: [QuotaSnapshot],
         models: [ModelUsage],
         dailyUsage: [DailyUsage],
@@ -27,6 +29,7 @@ struct DashboardSnapshot: Sendable {
         self.planName = planName
         self.updatedText = updatedText
         self.periods = periods
+        self.subscriptionCycle = subscriptionCycle
         self.quotas = quotas
         self.models = models
         self.dailyUsage = dailyUsage
@@ -371,6 +374,10 @@ enum TrendRange: String, CaseIterable, Identifiable, Sendable {
     static let defaultRange: TrendRange = .sevenDays
 
     var id: Self { self }
+
+    var showsXAxis: Bool {
+        self == .sevenDays
+    }
 
     func select(from usage: [DailyUsage]) -> [DailyUsage] {
         switch self {

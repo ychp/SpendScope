@@ -14,8 +14,83 @@ enum AppPreferenceKeys {
     static let showsLivePreview = "menuBar.showsLivePreview"
     static let showsResetCountdown = "menuBar.showsResetCountdown"
     static let quotaDisplay = "menuBar.quotaDisplay"
+    static let firstSubscriptionDate = "subscription.firstSubscribedAt"
     static let automaticallyChecksForUpdates = "updates.automaticallyChecks"
     static let automaticallyDownloadsUpdates = "updates.automaticallyDownloads"
+}
+
+enum SubscriptionCyclePreference {
+    static func load(from defaults: UserDefaults = .standard) -> Date? {
+        guard defaults.object(forKey: AppPreferenceKeys.firstSubscriptionDate) != nil else {
+            return nil
+        }
+        let timestamp = defaults.double(forKey: AppPreferenceKeys.firstSubscriptionDate)
+        guard timestamp.isFinite, timestamp > 0 else { return nil }
+        return Date(timeIntervalSince1970: timestamp)
+    }
+}
+
+struct SubscriptionCycle: Equatable, Sendable {
+    let start: Date
+    let end: Date
+}
+
+enum SubscriptionCycleCalculator {
+    static func cycle(
+        containing date: Date,
+        firstSubscribedAt: Date,
+        calendar: Calendar
+    ) -> SubscriptionCycle? {
+        guard firstSubscribedAt <= date else { return nil }
+
+        let firstComponents = calendar.dateComponents([.year, .month], from: firstSubscribedAt)
+        let dateComponents = calendar.dateComponents([.year, .month], from: date)
+        guard let firstYear = firstComponents.year,
+              let firstMonth = firstComponents.month,
+              let dateYear = dateComponents.year,
+              let dateMonth = dateComponents.month else {
+            return nil
+        }
+
+        var cycleIndex = max(0, (dateYear - firstYear) * 12 + dateMonth - firstMonth)
+        guard var start = boundary(
+            cycleIndex: cycleIndex,
+            firstSubscribedAt: firstSubscribedAt,
+            calendar: calendar
+        ) else {
+            return nil
+        }
+
+        if start > date {
+            cycleIndex -= 1
+            guard cycleIndex >= 0,
+                  let previousStart = boundary(
+                    cycleIndex: cycleIndex,
+                    firstSubscribedAt: firstSubscribedAt,
+                    calendar: calendar
+                  ) else {
+                return nil
+            }
+            start = previousStart
+        }
+
+        guard let end = boundary(
+            cycleIndex: cycleIndex + 1,
+            firstSubscribedAt: firstSubscribedAt,
+            calendar: calendar
+        ) else {
+            return nil
+        }
+        return SubscriptionCycle(start: start, end: end)
+    }
+
+    private static func boundary(
+        cycleIndex: Int,
+        firstSubscribedAt: Date,
+        calendar: Calendar
+    ) -> Date? {
+        calendar.date(byAdding: .month, value: cycleIndex, to: firstSubscribedAt)
+    }
 }
 
 enum QuotaRefreshProxyPolicy {

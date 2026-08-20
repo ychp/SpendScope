@@ -62,7 +62,12 @@ struct DashboardView: View {
             SpendScopeVisualEffect(style: .window)
                 .ignoresSafeArea()
         }
-        .background(DashboardWindowSizingBridge(isCollapsed: isCollapsed))
+        .background(DashboardWindowSizingBridge(
+            isCollapsed: isCollapsed,
+            expandedContentSize: DashboardWindowLayout.expandedContentSize(
+                hasSubscriptionCycle: store.snapshot?.subscriptionCycle != nil
+            )
+        ))
         .background(DashboardWindowChromeBridge())
         .toolbar {
             dashboardToolbar
@@ -155,8 +160,10 @@ struct DashboardView: View {
     }
 }
 
-private enum DashboardWindowLayout {
-    static let expandedMinimumContentSize = CGSize(width: 920, height: 620)
+enum DashboardWindowLayout {
+    static let standardOverviewHeight: CGFloat = 238
+    static let subscriptionOverviewHeight: CGFloat = 300
+    static let baseExpandedContentSize = CGSize(width: 920, height: 620)
     static let collapsedQuotaWidth: CGFloat = 280
     static let collapsedQuotaHeight: CGFloat = 210
     static let collapsedPadding: CGFloat = 20
@@ -164,19 +171,33 @@ private enum DashboardWindowLayout {
         width: collapsedQuotaWidth + collapsedPadding * 2 + 28,
         height: collapsedQuotaHeight + collapsedPadding * 2 + 28
     )
+
+    static func overviewHeight(hasSubscriptionCycle: Bool) -> CGFloat {
+        hasSubscriptionCycle ? subscriptionOverviewHeight : standardOverviewHeight
+    }
+
+    static func expandedContentSize(hasSubscriptionCycle: Bool) -> CGSize {
+        let additionalHeight = overviewHeight(hasSubscriptionCycle: hasSubscriptionCycle)
+            - standardOverviewHeight
+        return CGSize(
+            width: baseExpandedContentSize.width,
+            height: baseExpandedContentSize.height + additionalHeight
+        )
+    }
 }
 
 private struct DashboardWindowSizingBridge: NSViewRepresentable {
     let isCollapsed: Bool
+    let expandedContentSize: CGSize
 
     func makeNSView(context: Context) -> DashboardWindowSizingView {
         let view = DashboardWindowSizingView()
-        view.setCollapsed(isCollapsed)
+        view.setLayout(isCollapsed: isCollapsed, expandedContentSize: expandedContentSize)
         return view
     }
 
     func updateNSView(_ nsView: DashboardWindowSizingView, context: Context) {
-        nsView.setCollapsed(isCollapsed)
+        nsView.setLayout(isCollapsed: isCollapsed, expandedContentSize: expandedContentSize)
     }
 }
 
@@ -205,6 +226,7 @@ private final class DashboardWindowChromeView: NSView {
 @MainActor
 private final class DashboardWindowSizingView: NSView {
     private var requestedCollapsedState: Bool?
+    private var requestedExpandedContentSize = DashboardWindowLayout.baseExpandedContentSize
     private weak var managedWindow: NSWindow?
     private var expandedFrame: NSRect?
     private var expandedMinimumContentSize: CGSize?
@@ -220,9 +242,13 @@ private final class DashboardWindowSizingView: NSView {
         scheduleSizingUpdate()
     }
 
-    func setCollapsed(_ isCollapsed: Bool) {
-        guard requestedCollapsedState != isCollapsed else { return }
+    func setLayout(isCollapsed: Bool, expandedContentSize: CGSize) {
+        guard requestedCollapsedState != isCollapsed
+                || requestedExpandedContentSize != expandedContentSize else {
+            return
+        }
         requestedCollapsedState = isCollapsed
+        requestedExpandedContentSize = expandedContentSize
         scheduleSizingUpdate()
     }
 
@@ -236,6 +262,8 @@ private final class DashboardWindowSizingView: NSView {
         guard let window, let requestedCollapsedState else { return }
         if requestedCollapsedState {
             collapse(window)
+        } else if expandedFrame == nil {
+            enforceExpandedMinimumSize(window)
         } else {
             expand(window)
         }
@@ -263,21 +291,32 @@ private final class DashboardWindowSizingView: NSView {
             window.contentMinSize = CGSize(
                 width: max(
                     expandedMinimumContentSize.width,
-                    DashboardWindowLayout.expandedMinimumContentSize.width
+                    requestedExpandedContentSize.width
                 ),
                 height: max(
                     expandedMinimumContentSize.height,
-                    DashboardWindowLayout.expandedMinimumContentSize.height
+                    requestedExpandedContentSize.height
                 )
             )
         } else {
-            window.contentMinSize = DashboardWindowLayout.expandedMinimumContentSize
+            window.contentMinSize = requestedExpandedContentSize
         }
 
         window.setFrame(expandedFrame, display: true, animate: true)
         self.expandedFrame = nil
         expandedMinimumContentSize = nil
         expandedMaximumContentSize = nil
+    }
+
+    private func enforceExpandedMinimumSize(_ window: NSWindow) {
+        window.contentMinSize = requestedExpandedContentSize
+        let currentSize = window.contentRect(forFrameRect: window.frame).size
+        let targetSize = CGSize(
+            width: max(currentSize.width, requestedExpandedContentSize.width),
+            height: max(currentSize.height, requestedExpandedContentSize.height)
+        )
+        guard targetSize != currentSize else { return }
+        resize(window, toContentSize: targetSize)
     }
 
     private func resize(_ window: NSWindow, toContentSize contentSize: CGSize) {
@@ -302,6 +341,18 @@ private struct DashboardContentView: View {
     @State private var selectedModelRange = ActivityRange.defaultRange
     @State private var hoveredUsageID: DailyUsage.ID?
 
+    private var hasSubscriptionCycle: Bool {
+        snapshot.subscriptionCycle != nil
+    }
+
+    private var overviewHeight: CGFloat {
+        DashboardWindowLayout.overviewHeight(hasSubscriptionCycle: hasSubscriptionCycle)
+    }
+
+    private var expandedContentSize: CGSize {
+        DashboardWindowLayout.expandedContentSize(hasSubscriptionCycle: hasSubscriptionCycle)
+    }
+
     var body: some View {
         ZStack {
             dashboardBackground
@@ -318,7 +369,7 @@ private struct DashboardContentView: View {
             } else {
                 VStack(alignment: .leading, spacing: 14) {
                     dashboardHeader
-                    overviewPanel.frame(height: 238)
+                    overviewPanel.frame(height: overviewHeight)
                     analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .padding(.horizontal, 20)
@@ -330,10 +381,10 @@ private struct DashboardContentView: View {
         .frame(
             minWidth: isCollapsed
                 ? DashboardWindowLayout.collapsedContentSize.width
-                : DashboardWindowLayout.expandedMinimumContentSize.width,
+                : expandedContentSize.width,
             minHeight: isCollapsed
                 ? DashboardWindowLayout.collapsedContentSize.height
-                : DashboardWindowLayout.expandedMinimumContentSize.height
+                : expandedContentSize.height
         )
         .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
     }
@@ -586,12 +637,102 @@ private struct DashboardContentView: View {
     }
 
     private var periodMetricsSection: some View {
-        LazyVGrid(columns: periodGridColumns, spacing: 10) {
-            ForEach(snapshot.periods) { period in
-                periodTile(period)
+        VStack(spacing: 10) {
+            if let subscriptionPeriod, let subscriptionCycle = snapshot.subscriptionCycle {
+                subscriptionPeriodRow(subscriptionPeriod, cycle: subscriptionCycle)
+            }
+
+            LazyVGrid(columns: periodGridColumns, spacing: 10) {
+                ForEach(standardPeriods) { period in
+                    periodTile(period)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var subscriptionPeriod: PeriodUsage? {
+        snapshot.periods.first { $0.id == "subscriptionCycle" }
+    }
+
+    private var standardPeriods: [PeriodUsage] {
+        snapshot.periods.filter { $0.id != "subscriptionCycle" }
+    }
+
+    private func subscriptionPeriodRow(
+        _ period: PeriodUsage,
+        cycle: SubscriptionCycle
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar.badge.checkmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                .frame(width: 26, height: 26)
+                .background(
+                    SpendScopeTheme.dashboardAccent.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(period.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.88))
+                Text(subscriptionCycleRangeText(cycle))
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(TokenFormatter.compact(period.total))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+                .monospacedDigit()
+
+            Rectangle()
+                .fill(SpendScopeTheme.dashboardBorder.opacity(0.82))
+                .frame(width: 1, height: 28)
+
+            subscriptionMetric("输入", value: period.uncachedInput, color: SpendScopeTheme.dashboardInput)
+            subscriptionMetric("缓存", value: period.cachedInput, color: SpendScopeTheme.dashboardCachedInput)
+            subscriptionMetric("输出", value: period.visibleOutput, color: SpendScopeTheme.output)
+            subscriptionMetric("推理", value: period.reasoning, color: SpendScopeTheme.reasoning)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 52)
+        .background(
+            SpendScopeTheme.dashboardTile,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder)
+        }
+        .shadow(color: SpendScopeTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func subscriptionMetric(_ title: String, value: Int, color: Color) -> some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            HStack(spacing: 4) {
+                Circle().fill(color).frame(width: 5, height: 5)
+                Text(title)
+            }
+            .font(.system(size: 9.5, weight: .medium))
+            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+
+            Text(TokenFormatter.compact(value))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.88))
+                .monospacedDigit()
+        }
+        .frame(minWidth: 42, alignment: .trailing)
+    }
+
+    private func subscriptionCycleRangeText(_ cycle: SubscriptionCycle) -> String {
+        let start = cycle.start.formatted(.dateTime.month().day().hour().minute())
+        let end = cycle.end.formatted(.dateTime.month().day().hour().minute())
+        return "\(start) – \(end)"
     }
 
     private func periodTile(_ period: PeriodUsage) -> some View {
@@ -702,6 +843,7 @@ private struct DashboardContentView: View {
         case "today": "calendar"
         case "sevenDays": "calendar"
         case "thirtyDays": "calendar.badge.clock"
+        case "subscriptionCycle": "calendar.badge.checkmark"
         default: "chart.bar.fill"
         }
     }
@@ -1036,6 +1178,7 @@ private struct DashboardContentView: View {
                         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
                 }
             }
+            .chartXAxis(selectedRange.showsXAxis ? .visible : .hidden)
             .chartYScale(domain: 0...trendUpperBound)
             .chartOverlay { proxy in
                 GeometryReader { geometry in
@@ -1057,6 +1200,7 @@ private struct DashboardContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, 10)
         }
     }
 

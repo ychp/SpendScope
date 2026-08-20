@@ -3,6 +3,117 @@ import XCTest
 @testable import SpendScope
 
 final class DashboardQueryServiceTests: XCTestCase {
+    func testSubscriptionCycleClampsMonthEndAnchorsWithoutDrifting() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let cases: [(first: DateComponents, expectedNext: DateComponents)] = [
+            (
+                DateComponents(year: 2025, month: 1, day: 31, hour: 9, minute: 30),
+                DateComponents(year: 2025, month: 2, day: 28, hour: 9, minute: 30)
+            ),
+            (
+                DateComponents(year: 2024, month: 1, day: 31, hour: 9, minute: 30),
+                DateComponents(year: 2024, month: 2, day: 29, hour: 9, minute: 30)
+            ),
+            (
+                DateComponents(year: 2026, month: 3, day: 31, hour: 9, minute: 30),
+                DateComponents(year: 2026, month: 4, day: 30, hour: 9, minute: 30)
+            )
+        ]
+
+        for testCase in cases {
+            let firstSubscribedAt = try XCTUnwrap(calendar.date(from: testCase.first))
+            let nextBoundary = try XCTUnwrap(calendar.date(from: testCase.expectedNext))
+            let cycle = try XCTUnwrap(SubscriptionCycleCalculator.cycle(
+                containing: nextBoundary.addingTimeInterval(-0.001),
+                firstSubscribedAt: firstSubscribedAt,
+                calendar: calendar
+            ))
+
+            XCTAssertEqual(cycle.start, firstSubscribedAt)
+            XCTAssertEqual(cycle.end, nextBoundary)
+        }
+    }
+
+    func testSubscriptionCycleUsesFirstSubscriptionTimeAsMonthlyAnchor() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let firstSubscribedAt = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 1, day: 31, hour: 9, minute: 30
+        )))
+        let marchStart = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 3, day: 31, hour: 9, minute: 30
+        )))
+        let beforeMarchStart = marchStart.addingTimeInterval(-0.001)
+
+        let februaryCycle = try XCTUnwrap(SubscriptionCycleCalculator.cycle(
+            containing: beforeMarchStart,
+            firstSubscribedAt: firstSubscribedAt,
+            calendar: calendar
+        ))
+        XCTAssertEqual(
+            calendar.dateComponents([.year, .month, .day, .hour, .minute], from: februaryCycle.start),
+            DateComponents(year: 2026, month: 2, day: 28, hour: 9, minute: 30)
+        )
+        XCTAssertEqual(februaryCycle.end, marchStart)
+
+        let marchCycle = try XCTUnwrap(SubscriptionCycleCalculator.cycle(
+            containing: marchStart,
+            firstSubscribedAt: firstSubscribedAt,
+            calendar: calendar
+        ))
+        XCTAssertEqual(marchCycle.start, marchStart)
+        XCTAssertEqual(
+            calendar.dateComponents([.year, .month, .day, .hour, .minute], from: marchCycle.end),
+            DateComponents(year: 2026, month: 4, day: 30, hour: 9, minute: 30)
+        )
+        XCTAssertNil(SubscriptionCycleCalculator.cycle(
+            containing: firstSubscribedAt.addingTimeInterval(-1),
+            firstSubscribedAt: firstSubscribedAt,
+            calendar: calendar
+        ))
+    }
+
+    func testSnapshotAddsCurrentSubscriptionCycleUsageWithoutReplacingStandardPeriods() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let firstSubscribedAt = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 5, day: 10, hour: 8, minute: 30
+        )))
+        let cycleStart = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 10, hour: 8, minute: 30
+        )))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 19, hour: 12
+        )))
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage("before-cycle", at: cycleStart.addingTimeInterval(-0.001), total: 90),
+                usage("cycle-start", at: cycleStart, total: 100),
+                usage("cycle-latest", at: now, total: 20)
+            ],
+            quotas: []
+        ))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(
+            now: now,
+            calendar: calendar,
+            firstSubscriptionDate: firstSubscribedAt
+        )
+
+        XCTAssertEqual(
+            snapshot.periods.map(\.id),
+            ["today", "sevenDays", "thirtyDays", "subscriptionCycle", "allTime"]
+        )
+        XCTAssertEqual(snapshot.periods.first { $0.id == "subscriptionCycle" }?.total, 120)
+        XCTAssertEqual(snapshot.subscriptionCycle?.start, cycleStart)
+        XCTAssertEqual(
+            snapshot.subscriptionCycle?.end,
+            calendar.date(byAdding: .month, value: 4, to: firstSubscribedAt)
+        )
+    }
+
     func testDailyUsageUsesCodexUTCDateWithoutChangingLocalTodayWindow() throws {
         var localCalendar = Calendar(identifier: .gregorian)
         localCalendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))

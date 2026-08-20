@@ -86,6 +86,10 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKeys.showsLivePreview) private var showsLivePreview = true
     @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
+    @AppStorage(AppPreferenceKeys.firstSubscriptionDate)
+    private var firstSubscriptionTimestamp = 0.0
+    @FocusState private var subscriptionDateIsFocused: Bool
+    @State private var isEditingSubscriptionDate = false
     @State private var showsRebuildConfirmation = false
 
     var body: some View {
@@ -112,6 +116,12 @@ struct SettingsView: View {
         .task {
             await store.start()
             await reminderController.refreshAuthorizationStatus()
+        }
+        .onAppear {
+            finishEditingSubscriptionDate()
+        }
+        .onDisappear {
+            finishEditingSubscriptionDate()
         }
         .alert("清空并重新抓取所有数据？", isPresented: $showsRebuildConfirmation) {
             Button("取消", role: .cancel) {}
@@ -458,6 +468,19 @@ struct SettingsView: View {
 
     private var planAndBillingSettings: some View {
         VStack(alignment: .leading, spacing: 20) {
+            settingsSection("订阅周期") {
+                VStack(spacing: 0) {
+                    preferenceRow(
+                        "第一次订阅时间",
+                        detail: subscriptionCycleDetail
+                    ) {
+                        subscriptionDateControl
+                    }
+                }
+                .padding(.horizontal, Layout.cardHorizontalPadding)
+                .settingsCard()
+            }
+
             settingsSection("Codex 套餐") {
                 VStack(spacing: 0) {
                     ForEach(CodexPlanCatalog.plans) { plan in
@@ -505,6 +528,136 @@ struct SettingsView: View {
                 .settingsCard()
             }
         }
+    }
+
+    @ViewBuilder
+    private var subscriptionDateControl: some View {
+        if let firstSubscriptionDate {
+            if isEditingSubscriptionDate {
+                subscriptionDateEditor
+            } else {
+                subscriptionDateSummary(firstSubscriptionDate)
+            }
+        } else {
+            Button("设置时间") {
+                updateFirstSubscriptionDate(.now)
+                beginEditingSubscriptionDate()
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var subscriptionDateEditor: some View {
+        HStack(spacing: 8) {
+            DatePicker(
+                "第一次订阅时间",
+                selection: firstSubscriptionDateBinding,
+                in: Date.distantPast...Date.now,
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            .labelsHidden()
+            .frame(width: 200)
+            .focused($subscriptionDateIsFocused)
+            .onSubmit {
+                finishEditingSubscriptionDate()
+            }
+
+            Button {
+                finishEditingSubscriptionDate()
+            } label: {
+                Image(systemName: "checkmark")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.accentColor)
+            .accessibilityLabel("完成设置第一次订阅时间")
+            .help("完成编辑")
+        }
+    }
+
+    private func subscriptionDateSummary(_ date: Date) -> some View {
+        HStack(spacing: 8) {
+            Text(subscriptionDateText(date))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Button {
+                beginEditingSubscriptionDate()
+            } label: {
+                Image(systemName: "pencil")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("编辑第一次订阅时间")
+            .help("编辑第一次订阅时间")
+
+            Button {
+                finishEditingSubscriptionDate()
+                updateFirstSubscriptionDate(nil)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("清除第一次订阅时间")
+            .help("清除第一次订阅时间")
+        }
+    }
+
+    private func beginEditingSubscriptionDate() {
+        isEditingSubscriptionDate = true
+        Task { @MainActor in
+            await Task.yield()
+            subscriptionDateIsFocused = true
+        }
+    }
+
+    private func finishEditingSubscriptionDate() {
+        subscriptionDateIsFocused = false
+        isEditingSubscriptionDate = false
+    }
+
+    private var firstSubscriptionDate: Date? {
+        guard firstSubscriptionTimestamp.isFinite, firstSubscriptionTimestamp > 0 else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: firstSubscriptionTimestamp)
+    }
+
+    private var firstSubscriptionDateBinding: Binding<Date> {
+        Binding(
+            get: { firstSubscriptionDate ?? .now },
+            set: { updateFirstSubscriptionDate($0) }
+        )
+    }
+
+    private var subscriptionCycleDetail: String {
+        guard let firstSubscriptionDate else {
+            return "设置后按该时刻逐月汇总 Token 用量"
+        }
+        guard let cycle = SubscriptionCycleCalculator.cycle(
+            containing: .now,
+            firstSubscribedAt: firstSubscriptionDate,
+            calendar: .current
+        ) else {
+            return "第一次订阅时间不能晚于当前时间"
+        }
+        return "本周期：\(subscriptionDateText(cycle.start)) 至 \(subscriptionDateText(cycle.end))"
+    }
+
+    private func subscriptionDateText(_ date: Date) -> String {
+        date.formatted(date: .numeric, time: .shortened)
+    }
+
+    private func updateFirstSubscriptionDate(_ date: Date?) {
+        let calendar = Calendar.current
+        let normalizedDate = date.flatMap {
+            calendar.date(from: calendar.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: $0
+            ))
+        }
+        firstSubscriptionTimestamp = normalizedDate?.timeIntervalSince1970 ?? 0
+        Task { await store.subscriptionPreferenceDidChange() }
     }
 
     private var softwareUpdateSettings: some View {

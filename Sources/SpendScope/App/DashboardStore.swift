@@ -71,6 +71,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
     private let calendar: Calendar
     private let usageCalendar: Calendar
     private let accountRateLimitReader: (any CodexAccountRateLimitReading)?
+    private let firstSubscriptionDate: @Sendable () -> Date?
     private let beforeImport: @Sendable (ImportScope) async -> Void
     private let beforeQuery: @Sendable () async -> Void
     private var operationIsRunning = false
@@ -84,6 +85,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         usageCalendar: Calendar = CodexUsageCalendar.utc,
         fileManager: FileManager = .default,
         accountRateLimitReader: (any CodexAccountRateLimitReading)? = nil,
+        firstSubscriptionDate: @escaping @Sendable () -> Date? = { nil },
         beforeImport: @escaping @Sendable (ImportScope) async -> Void = { _ in },
         beforeQuery: @escaping @Sendable () async -> Void = {}
     ) throws {
@@ -105,6 +107,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
         self.calendar = calendar
         self.usageCalendar = usageCalendar
         self.accountRateLimitReader = accountRateLimitReader
+        self.firstSubscriptionDate = firstSubscriptionDate
         self.beforeImport = beforeImport
         self.beforeQuery = beforeQuery
     }
@@ -251,6 +254,7 @@ actor LiveDashboardDataClient: DashboardDataClient {
             now: currentDate,
             calendar: calendar,
             usageCalendar: usageCalendar,
+            firstSubscriptionDate: firstSubscriptionDate(),
             threadTitlesByThreadID: threadTitlesByThreadID
         )
         let cachedAccountRateLimits: CodexAccountRateLimits?
@@ -423,7 +427,8 @@ final class DashboardStore {
             client = try LiveDashboardDataClient(
                 codexRootURL: codexRoot,
                 databaseURL: databaseURL,
-                accountRateLimitReader: CodexAppServerRateLimitReader.discover()
+                accountRateLimitReader: CodexAppServerRateLimitReader.discover(),
+                firstSubscriptionDate: { SubscriptionCyclePreference.load() }
             )
         } catch {
             client = UnavailableDashboardDataClient()
@@ -643,6 +648,14 @@ final class DashboardStore {
         quotaRefreshRequiresProxy = isRequired
         if !isRequired {
             quotaRefreshBlocker = nil
+        }
+    }
+
+    func subscriptionPreferenceDidChange() async {
+        do {
+            publish(try await client.loadCached())
+        } catch {
+            publishRefreshFailure()
         }
     }
 

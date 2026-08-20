@@ -53,6 +53,7 @@ struct CodexAccountRateLimits: Equatable, Sendable {
             planName: planDisplayName ?? snapshot.planName,
             updatedText: snapshot.updatedText,
             periods: snapshot.periods,
+            subscriptionCycle: snapshot.subscriptionCycle,
             quotas: quotas,
             models: snapshot.models,
             dailyUsage: snapshot.dailyUsage,
