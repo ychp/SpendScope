@@ -62,7 +62,7 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ![SpendScope 回复明细与窗口外调用详情，展示完整 Skills、Tools 和 Token 构成](docs/images/spendscope-reply-activity-detail.png)
 
-工作区排行可以打开独立详情窗口，继续查看任务和回复级用量；将鼠标停在回复上，还能查看本次回复的 Skills / Tools 调用明细。
+工作区排行可以打开独立详情窗口，继续查看任务和回复级用量；子 agent 的用量会并入对应主任务，以及实际创建它的主回复。回复中的模型会同时展示去重后的调用次数；将鼠标停在回复上，还能查看包含子 agent 调用在内的 Skills / Tools 明细。
 
 ### 设置
 

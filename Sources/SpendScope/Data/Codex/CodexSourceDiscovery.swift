@@ -22,6 +22,7 @@ struct ThreadIndexRecord: Equatable, Sendable {
     let createdAtMilliseconds: Int64
     let updatedAtMilliseconds: Int64
     let archived: Bool
+    let parentThreadID: String?
     let childEdgeStatus: String?
 
     init(
@@ -33,6 +34,7 @@ struct ThreadIndexRecord: Equatable, Sendable {
         createdAtMilliseconds: Int64,
         updatedAtMilliseconds: Int64,
         archived: Bool,
+        parentThreadID: String? = nil,
         childEdgeStatus: String?
     ) {
         self.threadID = threadID
@@ -43,8 +45,20 @@ struct ThreadIndexRecord: Equatable, Sendable {
         self.createdAtMilliseconds = createdAtMilliseconds
         self.updatedAtMilliseconds = updatedAtMilliseconds
         self.archived = archived
+        self.parentThreadID = parentThreadID
         self.childEdgeStatus = childEdgeStatus
     }
+}
+
+struct CodexThreadDashboardMetadata: Equatable, Sendable {
+    let displayTitlesByThreadID: [String: String]
+    let parentThreadIDsByChildThreadID: [String: String]
+    let childThreadRelationsByChildThreadID: [String: CodexChildThreadRelation]
+}
+
+struct CodexChildThreadRelation: Equatable, Sendable {
+    let parentThreadID: String
+    let childCreatedAtMilliseconds: Int64
 }
 
 enum CodexIndexHealth: Equatable, Sendable {
@@ -111,11 +125,90 @@ struct CodexSourceDiscovery {
     }
 
     func threadDisplayTitles(rootURL: URL) -> [String: String] {
-        readIndex(at: rootURL).records.reduce(into: [:]) { result, record in
+        threadDashboardMetadata(rootURL: rootURL).displayTitlesByThreadID
+    }
+
+    func threadDashboardMetadata(rootURL: URL) -> CodexThreadDashboardMetadata {
+        let records = readIndex(at: rootURL).records
+        let displayTitles = records.reduce(into: [String: String]()) { result, record in
             if let displayTitle = record.displayTitle {
                 result[record.threadID] = displayTitle
             }
         }
+        let relations = records.reduce(into: [String: CodexChildThreadRelation]()) {
+            result, record in
+            if let parentThreadID = record.parentThreadID {
+                result[record.threadID] = CodexChildThreadRelation(
+                    parentThreadID: parentThreadID,
+                    childCreatedAtMilliseconds: record.createdAtMilliseconds
+                )
+            } else if record.sourceRaw.localizedCaseInsensitiveContains("subagent"),
+                      let relation = sessionThreadRelation(for: record) {
+                result[record.threadID] = relation
+            }
+        }
+        return CodexThreadDashboardMetadata(
+            displayTitlesByThreadID: displayTitles,
+            parentThreadIDsByChildThreadID: relations.mapValues(\.parentThreadID),
+            childThreadRelationsByChildThreadID: relations
+        )
+    }
+
+    private func sessionThreadRelation(
+        for record: ThreadIndexRecord
+    ) -> CodexChildThreadRelation? {
+        let url = URL(fileURLWithPath: record.rolloutPath)
+        guard fileManager.fileExists(atPath: url.path),
+              let handle = try? FileHandle(forReadingFrom: url) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        let maximumLineBytes = 2 * 1_024 * 1_024
+        var data = Data()
+        while data.count < maximumLineBytes {
+            guard let chunk = try? handle.read(
+                upToCount: min(64 * 1_024, maximumLineBytes - data.count)
+            ), !chunk.isEmpty else {
+                break
+            }
+            data.append(chunk)
+            if let newline = data.firstIndex(of: 0x0A) {
+                data = Data(data[..<newline])
+                break
+            }
+        }
+        guard !data.isEmpty,
+              let envelope = try? JSONDecoder().decode(
+                SafeSessionRelationshipEnvelope.self,
+                from: data
+              ),
+              envelope.type == "session_meta",
+              envelope.payload.id == record.threadID,
+              let parentThreadID = envelope.payload.parentThreadID
+                ?? envelope.payload.source?.subagent?.threadSpawn?.parentThreadID,
+              !parentThreadID.isEmpty else {
+            return nil
+        }
+        let timestamp = envelope.timestamp ?? envelope.payload.timestamp
+        return CodexChildThreadRelation(
+            parentThreadID: parentThreadID,
+            childCreatedAtMilliseconds: timestamp.flatMap(sessionTimestampMilliseconds)
+                ?? record.createdAtMilliseconds
+        )
+    }
+
+    private func sessionTimestampMilliseconds(_ rawValue: String) -> Int64? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = formatter.date(from: rawValue) else { return nil }
+        let milliseconds = date.timeIntervalSince1970 * 1_000
+        guard milliseconds.isFinite,
+              milliseconds >= Double(Int64.min),
+              milliseconds <= Double(Int64.max) else {
+            return nil
+        }
+        return Int64(milliseconds.rounded())
     }
 
     private func readIndex(at rootURL: URL) -> (records: [ThreadIndexRecord], health: CodexIndexHealth) {
@@ -409,9 +502,10 @@ struct CodexThreadIndexReader {
         )
 
         guard !edgeColumns.isEmpty, !records.isEmpty else { return records }
-        let statuses = try readEdgeStatuses(
+        let edges = try readEdges(
             database: database,
-            knownThreadIDs: Set(records.map(\.threadID))
+            knownThreadIDs: Set(records.map(\.threadID)),
+            includesParentThreadID: edgeColumns.contains("parent_thread_id")
         )
         records = records.map { record in
             ThreadIndexRecord(
@@ -423,7 +517,8 @@ struct CodexThreadIndexReader {
                 createdAtMilliseconds: record.createdAtMilliseconds,
                 updatedAtMilliseconds: record.updatedAtMilliseconds,
                 archived: record.archived,
-                childEdgeStatus: statuses[record.threadID]
+                parentThreadID: edges[record.threadID]?.parentThreadID,
+                childEdgeStatus: edges[record.threadID]?.status
             )
         }
         return records
@@ -558,11 +653,16 @@ struct CodexThreadIndexReader {
         title.lowercased().hasPrefix("the following is the codex")
     }
 
-    private func readEdgeStatuses(
+    private func readEdges(
         database: OpaquePointer,
-        knownThreadIDs: Set<String>
-    ) throws -> [String: String] {
-        let sql = "SELECT child_thread_id, status FROM thread_spawn_edges ORDER BY child_thread_id"
+        knownThreadIDs: Set<String>,
+        includesParentThreadID: Bool
+    ) throws -> [String: ThreadSpawnEdgeRecord] {
+        let parentExpression = includesParentThreadID ? "parent_thread_id" : "NULL"
+        let sql = """
+            SELECT child_thread_id, status, \(parentExpression)
+            FROM thread_spawn_edges ORDER BY child_thread_id
+            """
         var statement: OpaquePointer?
         let prepareResult = sqlite3_prepare_v2(database, sql, -1, &statement, nil)
         guard prepareResult == SQLITE_OK, let statement else {
@@ -570,7 +670,7 @@ struct CodexThreadIndexReader {
         }
         defer { sqlite3_finalize(statement) }
 
-        var statuses: [String: String] = [:]
+        var edges: [String: ThreadSpawnEdgeRecord] = [:]
         while true {
             switch sqlite3_step(statement) {
             case SQLITE_ROW:
@@ -585,12 +685,20 @@ struct CodexThreadIndexReader {
                     column: 1,
                     name: "thread_spawn_edges.status"
                 ) else { continue }
-                if let existing = statuses[threadID], existing != status {
+                let edge = ThreadSpawnEdgeRecord(
+                    parentThreadID: try optionalText(
+                        statement,
+                        column: 2,
+                        name: "thread_spawn_edges.parent_thread_id"
+                    ),
+                    status: status
+                )
+                if let existing = edges[threadID], existing != edge {
                     throw CodexThreadIndexError.conflictingChildStatuses
                 }
-                statuses[threadID] = status
+                edges[threadID] = edge
             case SQLITE_DONE:
-                return statuses
+                return edges
             case let code:
                 throw CodexThreadIndexError.queryFailed(code, context: "read thread edges")
             }
@@ -633,6 +741,11 @@ struct CodexThreadIndexReader {
     }
 }
 
+private struct ThreadSpawnEdgeRecord: Equatable {
+    let parentThreadID: String?
+    let status: String
+}
+
 private struct SafeThreadSourceMetadata: Decodable {
     let subagent: SafeSubagentMetadata?
 }
@@ -650,10 +763,40 @@ private struct SafeSubagentMetadata: Decodable {
 private struct SafeThreadSpawnMetadata: Decodable {
     let agentNickname: String?
     let agentRole: String?
+    let parentThreadID: String?
 
     enum CodingKeys: String, CodingKey {
         case agentNickname = "agent_nickname"
         case agentRole = "agent_role"
+        case parentThreadID = "parent_thread_id"
+    }
+}
+
+private struct SafeSessionRelationshipEnvelope: Decodable {
+    let timestamp: String?
+    let type: String
+    let payload: SafeSessionRelationshipPayload
+}
+
+private struct SafeSessionRelationshipPayload: Decodable {
+    let id: String?
+    let timestamp: String?
+    let parentThreadID: String?
+    let source: SafeThreadSourceMetadata?
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+        timestamp = try container.decodeIfPresent(String.self, forKey: .timestamp)
+        parentThreadID = try container.decodeIfPresent(String.self, forKey: .parentThreadID)
+        source = try? container.decode(SafeThreadSourceMetadata.self, forKey: .source)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case timestamp
+        case source
+        case parentThreadID = "parent_thread_id"
     }
 }
 

@@ -5,8 +5,8 @@ import SwiftUI
 final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate {
     private weak var parentWindow: NSWindow?
     private var hostingController: NSHostingController<AnyView>?
-    private var replyHoverPanel: NSPanel?
-    private var replyHoverHostingController: NSHostingController<AnyView>?
+    private var detailHoverPanel: NSPanel?
+    private var detailHoverHostingController: NSHostingController<AnyView>?
     private var parentCloseObserver: NSObjectProtocol?
     private var lastChildOrigin: NSPoint?
     private var isSynchronizingMove = false
@@ -54,7 +54,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
                         entry: entry,
                         rank: rank,
                         onClose: {},
-                        onReplyHover: { _ in }
+                        onDetailHover: { _ in }
                     )
                 }
             )
@@ -106,8 +106,8 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
                     onClose: { [weak self] in
                         self?.dismiss()
                     },
-                    onReplyHover: { [weak self] row in
-                        self?.updateReplyHover(row)
+                    onDetailHover: { [weak self] item in
+                        self?.updateDetailHover(item)
                     }
                 )
             }
@@ -127,7 +127,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
             self.parentCloseObserver = nil
         }
 
-        closeReplyHoverPanel()
+        closeDetailHoverPanel()
 
         if let panel = window {
             panel.delegate = nil
@@ -146,24 +146,30 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         onDismiss()
     }
 
-    private func updateReplyHover(_ row: ProjectReplyDetailRow?) {
-        guard let row else {
-            hideReplyHoverPanel()
+    private func updateDetailHover(_ item: ProjectDetailHoverItem?) {
+        guard let item else {
+            hideDetailHoverPanel()
             return
         }
         guard let detailPanel = window else { return }
 
+        let content: AnyView
+        switch item {
+        case .conversation(let conversation):
+            content = AnyView(ProjectConversationHoverCard(conversation: conversation))
+        case .reply(let row):
+            content = AnyView(ProjectReplyHoverCard(row: row))
+        }
         let rootView = AnyView(
             SpendScopeAppearanceContainer {
-                ProjectReplyHoverCard(row: row)
-                    .padding(12)
+                content.padding(12)
             }
         )
         let hostingController: NSHostingController<AnyView>
         let hoverPanel: NSPanel
 
-        if let existingHostingController = replyHoverHostingController,
-           let existingPanel = replyHoverPanel {
+        if let existingHostingController = detailHoverHostingController,
+           let existingPanel = detailHoverPanel {
             existingHostingController.rootView = rootView
             hostingController = existingHostingController
             hoverPanel = existingPanel
@@ -189,8 +195,8 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
                 .transient,
                 .ignoresCycle
             ]
-            replyHoverHostingController = hostingController
-            replyHoverPanel = hoverPanel
+            detailHoverHostingController = hostingController
+            detailHoverPanel = hoverPanel
         }
 
         hostingController.view.layoutSubtreeIfNeeded()
@@ -205,7 +211,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
                 height: min(max(230, fittingSize.height), maximumHeight)
             )
         )
-        positionReplyHoverPanel(hoverPanel, relativeTo: detailPanel)
+        positionDetailHoverPanel(hoverPanel, relativeTo: detailPanel)
 
         if hoverPanel.parent !== detailPanel {
             hoverPanel.parent?.removeChildWindow(hoverPanel)
@@ -214,7 +220,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         hoverPanel.orderFront(nil)
     }
 
-    private func positionReplyHoverPanel(
+    private func positionDetailHoverPanel(
         _ hoverPanel: NSPanel,
         relativeTo detailPanel: NSWindow
     ) {
@@ -264,19 +270,19 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         hoverPanel.setFrameOrigin(origin)
     }
 
-    private func hideReplyHoverPanel() {
-        guard let hoverPanel = replyHoverPanel else { return }
+    private func hideDetailHoverPanel() {
+        guard let hoverPanel = detailHoverPanel else { return }
         hoverPanel.parent?.removeChildWindow(hoverPanel)
         hoverPanel.orderOut(nil)
     }
 
-    private func closeReplyHoverPanel() {
-        guard let hoverPanel = replyHoverPanel else { return }
+    private func closeDetailHoverPanel() {
+        guard let hoverPanel = detailHoverPanel else { return }
         hoverPanel.parent?.removeChildWindow(hoverPanel)
         hoverPanel.orderOut(nil)
         hoverPanel.close()
-        replyHoverPanel = nil
-        replyHoverHostingController = nil
+        detailHoverPanel = nil
+        detailHoverHostingController = nil
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {

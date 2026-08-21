@@ -22,7 +22,9 @@ final class DashboardQueryService: @unchecked Sendable {
         calendar: Calendar,
         usageCalendar: Calendar? = nil,
         firstSubscriptionDate: Date? = nil,
-        threadTitlesByThreadID: [String: String] = [:]
+        threadTitlesByThreadID: [String: String] = [:],
+        parentThreadIDsByChildThreadID: [String: String] = [:],
+        childThreadRelationsByChildThreadID: [String: CodexChildThreadRelation] = [:]
     ) throws -> DashboardSnapshot {
         let todayStart = calendar.startOfDay(for: now)
         let resolvedUsageCalendar = usageCalendar ?? calendar
@@ -57,10 +59,33 @@ final class DashboardQueryService: @unchecked Sendable {
         )
         let trendRows = try store.usageEvents(toMilliseconds: end)
         let allActivityRows = try store.activityEvents(toMilliseconds: end)
-        let turnLifecycleFacts = makeTurnLifecycleFacts(
-            from: try store.turnLifecycleEvents().filter { $0.observedAtMilliseconds < end }
+        let lifecycleRows = try store.turnLifecycleEvents().filter {
+            $0.observedAtMilliseconds < end
+        }
+        let sessions = try store.sessions()
+        var resolvedParentThreadIDs = parentThreadIDsByChildThreadID
+        var childCreatedAtMilliseconds = sessions.reduce(into: [String: Int64]()) {
+            result, session in
+            if let createdAtMilliseconds = session.createdAtMilliseconds {
+                result[session.threadID] = createdAtMilliseconds
+            }
+        }
+        for (childThreadID, relation) in childThreadRelationsByChildThreadID {
+            resolvedParentThreadIDs[childThreadID] = relation.parentThreadID
+            childCreatedAtMilliseconds[childThreadID] = relation.childCreatedAtMilliseconds
+        }
+        let replyAttribution = ThreadReplyAttributionResolver(
+            parentThreadIDsByChildThreadID: resolvedParentThreadIDs,
+            childCreatedAtMillisecondsByThreadID: childCreatedAtMilliseconds,
+            lifecycleRows: lifecycleRows,
+            activityRows: allActivityRows
         )
-        let sessionLastMessageTimes = try store.sessions().reduce(into: [String: Int64]()) {
+        let turnLifecycleFacts = makeTurnLifecycleFacts(
+            from: lifecycleRows,
+            replyAttribution: replyAttribution,
+            threadTitlesByThreadID: threadTitlesByThreadID
+        )
+        let sessionLastMessageTimes = sessions.reduce(into: [String: Int64]()) {
             result, session in
             if let updatedAtMilliseconds = session.updatedAtMilliseconds {
                 result[session.threadID] = updatedAtMilliseconds
@@ -124,6 +149,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
                 threadTitlesByThreadID: threadTitlesByThreadID,
+                replyAttribution: replyAttribution,
                 turnLifecycleFacts: turnLifecycleFacts,
                 workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
@@ -137,6 +163,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
                 threadTitlesByThreadID: threadTitlesByThreadID,
+                replyAttribution: replyAttribution,
                 turnLifecycleFacts: turnLifecycleFacts,
                 workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
@@ -150,6 +177,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
                 threadTitlesByThreadID: threadTitlesByThreadID,
+                replyAttribution: replyAttribution,
                 turnLifecycleFacts: turnLifecycleFacts,
                 workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
@@ -163,6 +191,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 calendar: calendar,
                 sessionLastMessageTimes: sessionLastMessageTimes,
                 threadTitlesByThreadID: threadTitlesByThreadID,
+                replyAttribution: replyAttribution,
                 turnLifecycleFacts: turnLifecycleFacts,
                 workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows
@@ -258,11 +287,16 @@ final class DashboardQueryService: @unchecked Sendable {
         calendar: Calendar,
         sessionLastMessageTimes: [String: Int64],
         threadTitlesByThreadID: [String: String],
+        replyAttribution: ThreadReplyAttributionResolver,
         turnLifecycleFacts: [ThreadTurnKey: TurnLifecycleFact],
         workspaceAliases: [WorkspaceUsageKey: WorkspaceUsageKey],
         activityRows: [StoredActivityEvent]
     ) throws -> WorkspaceUsageRanking {
-        let turnActivityFacts = makeTurnActivityFacts(from: activityRows)
+        let turnActivityFacts = makeTurnActivityFacts(
+            from: activityRows,
+            replyAttribution: replyAttribution,
+            threadTitlesByThreadID: threadTitlesByThreadID
+        )
         var identityGraph = ProjectUsageIdentityGraph()
         for row in rows + trendRows {
             let pathNode = ProjectUsageIdentityNode(
@@ -313,13 +347,22 @@ final class DashboardQueryService: @unchecked Sendable {
             let isIncludedInTaskMetrics = ProjectConversationUsage.isIncludedInTaskMetrics(
                 displayTitle: threadTitlesByThreadID[row.threadID]
             )
+            let taskThreadID = isIncludedInTaskMetrics
+                ? replyAttribution.rootThreadID(for: row.threadID)
+                : row.threadID
             if isIncludedInTaskMetrics {
                 projectThreads[workspaceKey, default: [:]][projectKey, default: []].insert(
-                    row.threadID
+                    taskThreadID
                 )
                 if let turnID = row.turnID, !turnID.isEmpty {
+                    let turnKey = resolvedReplyKey(
+                        threadID: row.threadID,
+                        turnID: turnID,
+                        replyAttribution: replyAttribution,
+                        threadTitlesByThreadID: threadTitlesByThreadID
+                    )
                     projectTurns[workspaceKey, default: [:]][projectKey, default: []].insert(
-                        ThreadTurnKey(threadID: row.threadID, turnID: turnID)
+                        turnKey
                     )
                 }
                 let activityAt = sessionLastMessageTimes[row.threadID] ?? row.observedAtMilliseconds
@@ -328,10 +371,11 @@ final class DashboardQueryService: @unchecked Sendable {
                     activityAt
                 )
             }
-            let currentConversation = conversationTotals[workspaceKey]?[row.threadID]
+            let currentConversation = conversationTotals[workspaceKey]?[taskThreadID]
                 ?? ProjectConversationUsageAccumulator(
                     tokens: 0,
-                    lastUsageAtMilliseconds: row.observedAtMilliseconds,
+                    lastMessageAtMilliseconds: sessionLastMessageTimes[row.threadID]
+                        ?? row.observedAtMilliseconds,
                     unattributedTokens: 0,
                     replies: [:]
                 )
@@ -341,14 +385,20 @@ final class DashboardQueryService: @unchecked Sendable {
                 row.totalTokens,
                 context: "workspace.conversation.total"
             )
-            updatedConversation.lastUsageAtMilliseconds = max(
-                currentConversation.lastUsageAtMilliseconds,
-                row.observedAtMilliseconds
+            updatedConversation.lastMessageAtMilliseconds = max(
+                currentConversation.lastMessageAtMilliseconds,
+                sessionLastMessageTimes[row.threadID] ?? row.observedAtMilliseconds
             )
             if let turnID = row.turnID, !turnID.isEmpty {
-                var reply = updatedConversation.replies[turnID]
+                let replyKey = resolvedReplyKey(
+                    threadID: row.threadID,
+                    turnID: turnID,
+                    replyAttribution: replyAttribution,
+                    threadTitlesByThreadID: threadTitlesByThreadID
+                )
+                var reply = updatedConversation.replies[replyKey.turnID]
                     ?? ProjectReplyUsageAccumulator(
-                        model: row.model,
+                        modelCalls: [],
                         uncachedInputTokens: 0,
                         cachedInputTokens: 0,
                         visibleOutputTokens: 0,
@@ -356,7 +406,13 @@ final class DashboardQueryService: @unchecked Sendable {
                         totalTokens: 0,
                         lastUsageAtMilliseconds: row.observedAtMilliseconds
                     )
-                reply.model = row.model
+                if !row.model.isEmpty {
+                    reply.modelCalls.insert(ProjectReplyModelCallKey(
+                        threadID: row.threadID,
+                        turnID: turnID,
+                        model: row.model
+                    ))
+                }
                 reply.uncachedInputTokens = try checkedAdd(
                     reply.uncachedInputTokens,
                     row.uncachedInputTokens,
@@ -386,7 +442,7 @@ final class DashboardQueryService: @unchecked Sendable {
                     reply.lastUsageAtMilliseconds,
                     row.observedAtMilliseconds
                 )
-                updatedConversation.replies[turnID] = reply
+                updatedConversation.replies[replyKey.turnID] = reply
             } else {
                 updatedConversation.unattributedTokens = try checkedAdd(
                     updatedConversation.unattributedTokens,
@@ -394,7 +450,7 @@ final class DashboardQueryService: @unchecked Sendable {
                     context: "workspace.conversation.unattributed"
                 )
             }
-            conversationTotals[workspaceKey, default: [:]][row.threadID] = updatedConversation
+            conversationTotals[workspaceKey, default: [:]][taskThreadID] = updatedConversation
             overall = try checkedAdd(overall, row.totalTokens, context: "workspaces.total")
         }
 
@@ -446,7 +502,7 @@ final class DashboardQueryService: @unchecked Sendable {
                     return ProjectReplyUsage(
                         id: turnID,
                         status: lifecycle?.status ?? .unknown,
-                        model: usage.model,
+                        modelCalls: modelCalls(from: usage.modelCalls),
                         uncachedInputTokens: Int(clamping: usage.uncachedInputTokens),
                         cachedInputTokens: Int(clamping: usage.cachedInputTokens),
                         visibleOutputTokens: Int(clamping: usage.visibleOutputTokens),
@@ -468,8 +524,7 @@ final class DashboardQueryService: @unchecked Sendable {
                     shortThreadID: ThreadDisplayIdentifier.make(from: threadID),
                     displayTitle: threadTitlesByThreadID[threadID],
                     tokens: Int(clamping: aggregate.tokens),
-                    lastMessageAtMilliseconds: sessionLastMessageTimes[threadID]
-                        ?? aggregate.lastUsageAtMilliseconds,
+                    lastMessageAtMilliseconds: aggregate.lastMessageAtMilliseconds,
                     replies: replies,
                     unattributedTokens: Int(clamping: aggregate.unattributedTokens)
                 )
@@ -534,11 +589,18 @@ final class DashboardQueryService: @unchecked Sendable {
     }
 
     private func makeTurnLifecycleFacts(
-        from rows: [StoredTurnLifecycleQueryRow]
+        from rows: [StoredTurnLifecycleQueryRow],
+        replyAttribution: ThreadReplyAttributionResolver,
+        threadTitlesByThreadID: [String: String]
     ) -> [ThreadTurnKey: TurnLifecycleFact] {
         var facts: [ThreadTurnKey: TurnLifecycleFact] = [:]
         for row in rows {
-            let key = ThreadTurnKey(threadID: row.threadID, turnID: row.turnID)
+            let key = resolvedReplyKey(
+                threadID: row.threadID,
+                turnID: row.turnID,
+                replyAttribution: replyAttribution,
+                threadTitlesByThreadID: threadTitlesByThreadID
+            )
             var fact = facts[key] ?? TurnLifecycleFact()
             switch row.kind {
             case .started:
@@ -564,14 +626,21 @@ final class DashboardQueryService: @unchecked Sendable {
     }
 
     private func makeTurnActivityFacts(
-        from rows: [StoredActivityEvent]
+        from rows: [StoredActivityEvent],
+        replyAttribution: ThreadReplyAttributionResolver,
+        threadTitlesByThreadID: [String: String]
     ) -> [ThreadTurnKey: TurnActivityFact] {
         var counts: [ThreadTurnKey: TurnActivityCounts] = [:]
         for row in rows {
             guard let turnID = row.turnID, !turnID.isEmpty, !row.name.isEmpty else {
                 continue
             }
-            let key = ThreadTurnKey(threadID: row.threadID, turnID: turnID)
+            let key = resolvedReplyKey(
+                threadID: row.threadID,
+                turnID: turnID,
+                replyAttribution: replyAttribution,
+                threadTitlesByThreadID: threadTitlesByThreadID
+            )
             var turnCounts = counts[key] ?? TurnActivityCounts()
             switch row.kind {
             case .skill:
@@ -589,6 +658,21 @@ final class DashboardQueryService: @unchecked Sendable {
         }
     }
 
+    private func resolvedReplyKey(
+        threadID: String,
+        turnID: String,
+        replyAttribution: ThreadReplyAttributionResolver,
+        threadTitlesByThreadID: [String: String]
+    ) -> ThreadTurnKey {
+        let rawKey = ThreadTurnKey(threadID: threadID, turnID: turnID)
+        guard ProjectConversationUsage.isIncludedInTaskMetrics(
+            displayTitle: threadTitlesByThreadID[threadID]
+        ) else {
+            return rawKey
+        }
+        return replyAttribution.rootReplyKey(for: rawKey)
+    }
+
     private func activityCalls(from counts: [String: Int]) -> [ProjectReplyActivityCall] {
         counts.map { name, count in
             ProjectReplyActivityCall(name: name, count: count)
@@ -597,6 +681,18 @@ final class DashboardQueryService: @unchecked Sendable {
             if left.count != right.count { return left.count > right.count }
             return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
         }
+    }
+
+    private func modelCalls(
+        from calls: Set<ProjectReplyModelCallKey>
+    ) -> [ProjectReplyActivityCall] {
+        Dictionary(grouping: calls, by: \.model)
+            .map { model, calls in
+                ProjectReplyActivityCall(name: model, count: calls.count)
+            }
+            .sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
     }
 
     private func activityRanking(
@@ -1131,13 +1227,13 @@ private struct ProjectUsageAccumulator {
 
 private struct ProjectConversationUsageAccumulator {
     var tokens: Int64
-    var lastUsageAtMilliseconds: Int64
+    var lastMessageAtMilliseconds: Int64
     var unattributedTokens: Int64
     var replies: [String: ProjectReplyUsageAccumulator]
 }
 
 private struct ProjectReplyUsageAccumulator {
-    var model: String
+    var modelCalls: Set<ProjectReplyModelCallKey>
     var uncachedInputTokens: Int64
     var cachedInputTokens: Int64
     var visibleOutputTokens: Int64
@@ -1146,9 +1242,114 @@ private struct ProjectReplyUsageAccumulator {
     var lastUsageAtMilliseconds: Int64
 }
 
+private struct ProjectReplyModelCallKey: Hashable {
+    let threadID: String
+    let turnID: String
+    let model: String
+}
+
 private struct ThreadTurnKey: Hashable {
     let threadID: String
     let turnID: String
+}
+
+private struct ThreadReplyAttributionResolver {
+    private static let spawnMatchToleranceMilliseconds: Int64 = 5_000
+
+    private let parentThreadIDsByChildThreadID: [String: String]
+    private let parentReplyByChildThreadID: [String: ThreadTurnKey]
+
+    init(
+        parentThreadIDsByChildThreadID: [String: String],
+        childCreatedAtMillisecondsByThreadID: [String: Int64],
+        lifecycleRows: [StoredTurnLifecycleQueryRow],
+        activityRows: [StoredActivityEvent]
+    ) {
+        self.parentThreadIDsByChildThreadID = parentThreadIDsByChildThreadID
+        let spawnCallsByThreadID = Dictionary(grouping: activityRows.filter {
+            $0.kind == .tool
+                && $0.name == "spawn_agent"
+                && $0.turnID?.isEmpty == false
+        }, by: \.threadID)
+        let startsByThreadID = Dictionary(grouping: lifecycleRows.filter {
+            $0.kind == .started && !$0.turnID.isEmpty
+        }, by: \.threadID)
+
+        var replies: [String: ThreadTurnKey] = [:]
+        for (childThreadID, parentThreadID) in parentThreadIDsByChildThreadID {
+            guard !parentThreadID.isEmpty,
+                  let childCreatedAt = childCreatedAtMillisecondsByThreadID[childThreadID] else {
+                continue
+            }
+            let nearestSpawn = spawnCallsByThreadID[parentThreadID]?.min { left, right in
+                let leftDistance = Self.distance(
+                    between: left.observedAtMilliseconds,
+                    and: childCreatedAt
+                )
+                let rightDistance = Self.distance(
+                    between: right.observedAtMilliseconds,
+                    and: childCreatedAt
+                )
+                if leftDistance != rightDistance { return leftDistance < rightDistance }
+                return left.observedAtMilliseconds < right.observedAtMilliseconds
+            }
+            if let nearestSpawn,
+               Self.distance(
+                between: nearestSpawn.observedAtMilliseconds,
+                and: childCreatedAt
+               ) <= Self.spawnMatchToleranceMilliseconds,
+               let turnID = nearestSpawn.turnID {
+                replies[childThreadID] = ThreadTurnKey(
+                    threadID: parentThreadID,
+                    turnID: turnID
+                )
+                continue
+            }
+
+            let latestStartedTurn = startsByThreadID[parentThreadID]?
+                .filter { $0.observedAtMilliseconds <= childCreatedAt }
+                .max { left, right in
+                    left.observedAtMilliseconds < right.observedAtMilliseconds
+                }
+            if let latestStartedTurn {
+                replies[childThreadID] = ThreadTurnKey(
+                    threadID: parentThreadID,
+                    turnID: latestStartedTurn.turnID
+                )
+            }
+        }
+        parentReplyByChildThreadID = replies
+    }
+
+    func rootThreadID(for threadID: String) -> String {
+        var current = threadID
+        var visited: Set<String> = [threadID]
+        while let parentThreadID = parentThreadIDsByChildThreadID[current],
+              !parentThreadID.isEmpty {
+            guard visited.insert(parentThreadID).inserted else { return threadID }
+            current = parentThreadID
+        }
+        return current
+    }
+
+    func rootReplyKey(for key: ThreadTurnKey) -> ThreadTurnKey {
+        var current = key
+        var visited: Set<String> = [key.threadID]
+        while let parentReply = parentReplyByChildThreadID[current.threadID] {
+            guard visited.insert(parentReply.threadID).inserted else { return key }
+            current = parentReply
+        }
+        return current
+    }
+
+    private static func distance(between left: Int64, and right: Int64) -> Int64 {
+        if left >= right {
+            let (distance, overflow) = left.subtractingReportingOverflow(right)
+            return overflow ? .max : distance
+        }
+        let (distance, overflow) = right.subtractingReportingOverflow(left)
+        return overflow ? .max : distance
+    }
 }
 
 private struct TurnLifecycleFact {

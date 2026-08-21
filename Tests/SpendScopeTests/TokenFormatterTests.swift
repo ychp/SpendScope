@@ -79,6 +79,14 @@ private extension DashboardSnapshot {
 }
 
 final class TokenFormatterTests: XCTestCase {
+    func testReplyModelTextPreservesCallCountsAndFallsBackWhenUnknown() {
+        XCTAssertEqual(
+            ProjectReplyPresentation.modelText("child-model ×1 · parent-model ×2"),
+            "child-model ×1 · parent-model ×2"
+        )
+        XCTAssertEqual(ProjectReplyPresentation.modelText(""), "模型未知")
+    }
+
     func testSubscriptionOverviewPreservesAnalyticsHeightByGrowingDashboardMinimumSize() {
         XCTAssertEqual(
             DashboardWindowLayout.expandedContentSize(hasSubscriptionCycle: false),

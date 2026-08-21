@@ -543,6 +543,199 @@ final class DashboardQueryServiceTests: XCTestCase {
         )
     }
 
+    func testSubagentUsageMergesIntoReplyThatSpawnedIt() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let project = ProjectIdentity(id: "project-a", name: "SpendScope")
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "parent-shared", at: now.addingTimeInterval(-40), total: 30,
+                    model: "parent-model", project: project,
+                    threadID: "parent-thread", turnID: "shared-turn"
+                ),
+                usage(
+                    "child-shared", at: now.addingTimeInterval(-30), total: 20,
+                    model: "child-model", project: project,
+                    threadID: "child-thread", turnID: "child-turn"
+                ),
+                usage(
+                    "child-shared-later-snapshot", at: now.addingTimeInterval(-25), total: 5,
+                    model: "child-model", project: project,
+                    threadID: "child-thread", turnID: "child-turn"
+                ),
+                usage(
+                    "parent-other", at: now.addingTimeInterval(-10), total: 10,
+                    model: "parent-model", project: project,
+                    threadID: "parent-thread", turnID: "other-turn"
+                )
+            ],
+            quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "parent-start", threadID: "parent-thread", turnID: "shared-turn",
+                    kind: .started, at: now.addingTimeInterval(-50)
+                ),
+                lifecycle(
+                    "child-start", threadID: "child-thread", turnID: "child-turn",
+                    kind: .started, at: now.addingTimeInterval(-34)
+                ),
+                lifecycle(
+                    "child-complete", threadID: "child-thread", turnID: "child-turn",
+                    kind: .completed, at: now.addingTimeInterval(-20)
+                ),
+                lifecycle(
+                    "parent-complete", threadID: "parent-thread", turnID: "shared-turn",
+                    kind: .completed, at: now.addingTimeInterval(-5)
+                )
+            ],
+            activityEvents: [
+                activity(
+                    "parent-spawn", kind: .tool, name: "spawn_agent",
+                    at: now.addingTimeInterval(-35),
+                    threadID: "parent-thread", turnID: "shared-turn"
+                ),
+                activity(
+                    "child-tool", kind: .tool, name: "exec_command",
+                    at: now.addingTimeInterval(-25),
+                    threadID: "child-thread", turnID: "shared-turn"
+                ),
+                activity(
+                    "child-skill", kind: .skill, name: "ai-code-review",
+                    at: now.addingTimeInterval(-24),
+                    threadID: "child-thread", turnID: "shared-turn"
+                )
+            ],
+            sessions: [
+                session(threadID: "parent-thread", updatedAtMilliseconds: 19_900_000),
+                session(
+                    threadID: "child-thread",
+                    createdAtMilliseconds: 19_965_100,
+                    updatedAtMilliseconds: 19_980_000
+                )
+            ]
+        ))
+
+        let entry = try XCTUnwrap(
+            DashboardQueryService(store: store)
+                .snapshot(
+                    now: now,
+                    calendar: .current,
+                    threadTitlesByThreadID: [
+                        "parent-thread": "主任务",
+                        "child-thread": "Codex 子任务 · Ada"
+                    ],
+                    parentThreadIDsByChildThreadID: ["child-thread": "parent-thread"]
+                )
+                .workspaceUsage
+                .ranking(for: .allTime)
+                .entries
+                .first
+        )
+        let projectEntry = try XCTUnwrap(entry.projects.first)
+
+        XCTAssertEqual(entry.conversations.count, 1)
+        let conversation = try XCTUnwrap(entry.conversations.first)
+        XCTAssertEqual(conversation.displayTitle, "主任务")
+        XCTAssertEqual(conversation.tokens, 65)
+        XCTAssertEqual(conversation.lastMessageAtMilliseconds, 19_980_000)
+        XCTAssertEqual(conversation.replies.count, 2)
+        XCTAssertEqual(
+            conversation.modelCalls,
+            [
+                ProjectReplyActivityCall(name: "child-model", count: 1),
+                ProjectReplyActivityCall(name: "parent-model", count: 2)
+            ]
+        )
+        XCTAssertEqual(
+            conversation.skillCalls,
+            [ProjectReplyActivityCall(name: "ai-code-review", count: 1)]
+        )
+        XCTAssertEqual(
+            conversation.toolCalls,
+            [
+                ProjectReplyActivityCall(name: "exec_command", count: 1),
+                ProjectReplyActivityCall(name: "spawn_agent", count: 1)
+            ]
+        )
+        XCTAssertEqual(projectEntry.conversationCount, 1)
+        XCTAssertEqual(projectEntry.replyCount, 2)
+
+        let sharedReply = try XCTUnwrap(conversation.replies.first { $0.id == "shared-turn" })
+        XCTAssertEqual(sharedReply.totalTokens, 55)
+        XCTAssertEqual(sharedReply.model, "child-model ×1 · parent-model ×1")
+        XCTAssertEqual(sharedReply.status, .completed)
+        XCTAssertEqual(sharedReply.durationMilliseconds, 45_000)
+        XCTAssertEqual(
+            sharedReply.skillCalls,
+            [ProjectReplyActivityCall(name: "ai-code-review", count: 1)]
+        )
+        XCTAssertEqual(
+            sharedReply.toolCalls,
+            [
+                ProjectReplyActivityCall(name: "exec_command", count: 1),
+                ProjectReplyActivityCall(name: "spawn_agent", count: 1)
+            ]
+        )
+    }
+
+    func testSubagentUsageFallsBackToActiveParentReplyWithoutSpawnActivity() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let project = ProjectIdentity(id: "project-a", name: "SpendScope")
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "parent", at: now.addingTimeInterval(-40), total: 30,
+                    project: project, threadID: "parent-thread", turnID: "parent-turn"
+                ),
+                usage(
+                    "child", at: now.addingTimeInterval(-20), total: 20,
+                    project: project, threadID: "child-thread", turnID: "child-turn"
+                )
+            ],
+            quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "parent-start", threadID: "parent-thread", turnID: "parent-turn",
+                    kind: .started, at: now.addingTimeInterval(-50)
+                ),
+                lifecycle(
+                    "child-complete", threadID: "child-thread", turnID: "child-turn",
+                    kind: .completed, at: now.addingTimeInterval(-10)
+                )
+            ],
+            sessions: [
+                session(threadID: "parent-thread", updatedAtMilliseconds: 19_990_000),
+                session(
+                    threadID: "child-thread",
+                    createdAtMilliseconds: 19_965_000,
+                    updatedAtMilliseconds: 19_995_000
+                )
+            ]
+        ))
+
+        let conversation = try XCTUnwrap(
+            DashboardQueryService(store: store)
+                .snapshot(
+                    now: now,
+                    calendar: .current,
+                    threadTitlesByThreadID: [
+                        "parent-thread": "主任务",
+                        "child-thread": "Codex 子任务"
+                    ],
+                    parentThreadIDsByChildThreadID: ["child-thread": "parent-thread"]
+                )
+                .workspaceUsage
+                .ranking(for: .allTime)
+                .entries.first?
+                .conversations.first
+        )
+
+        XCTAssertEqual(conversation.replies.map(\.id), ["parent-turn"])
+        XCTAssertEqual(conversation.replies.first?.totalTokens, 50)
+    }
+
     func testGuardianUsageKeepsTokensButIsExcludedFromEveryTaskAndReplyMetric() throws {
         let now = Date(timeIntervalSince1970: 20_000)
         let project = ProjectIdentity(id: "project-a", name: "SpendScope")
@@ -573,6 +766,9 @@ final class DashboardQueryServiceTests: XCTestCase {
                     threadTitlesByThreadID: [
                         "visible-thread": "可见任务",
                         "guardian-thread": "命令权限检查"
+                    ],
+                    parentThreadIDsByChildThreadID: [
+                        "guardian-thread": "visible-thread"
                     ]
                 )
                 .workspaceUsage
@@ -1218,12 +1414,13 @@ final class DashboardQueryServiceTests: XCTestCase {
 
     private func session(
         threadID: String,
+        createdAtMilliseconds: Int64? = nil,
         updatedAtMilliseconds: Int64
     ) -> StoredSession {
         StoredSession(
             threadID: threadID,
             sourceKind: .cli,
-            createdAtMilliseconds: updatedAtMilliseconds - 1_000,
+            createdAtMilliseconds: createdAtMilliseconds ?? updatedAtMilliseconds - 1_000,
             updatedAtMilliseconds: updatedAtMilliseconds,
             state: SessionStateSnapshot(
                 threadID: threadID,

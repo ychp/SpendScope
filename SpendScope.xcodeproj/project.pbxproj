@@ -27,6 +27,7 @@
 		A00000000000000000000047 /* ModelUsagePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000047 /* ModelUsagePanel.swift */; };
 		A00000000000000000000048 /* ProjectDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000048 /* ProjectDetailView.swift */; };
 		A00000000000000000000049 /* ProjectDetailWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000049 /* ProjectDetailWindowController.swift */; };
+		A00000000000000000000050 /* ProjectConversationHoverCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000050 /* ProjectConversationHoverCard.swift */; };
 		A00000000000000000000009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* SettingsView.swift */; };
 		A00000000000000000000012 /* CodexEventDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* CodexEventDecoderTests.swift */; };
 		A00000000000000000000013 /* CodexEventModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* CodexEventModels.swift */; };
@@ -87,6 +88,7 @@
 		B00000000000000000000047 /* ModelUsagePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/ModelUsagePanel.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000048 /* ProjectDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/ProjectDetailView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000049 /* ProjectDetailWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/ProjectDetailWindowController.swift; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000050 /* ProjectConversationHoverCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Dashboard/ProjectConversationHoverCard.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000045 /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
 		B00000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/SpendScope/Features/Settings/SettingsView.swift; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000012 /* CodexEventDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/SpendScopeTests/CodexEventDecoderTests.swift; sourceTree = SOURCE_ROOT; };
@@ -166,6 +168,7 @@
 				B00000000000000000000038 /* ProjectUsagePanel.swift */,
 				B00000000000000000000048 /* ProjectDetailView.swift */,
 				B00000000000000000000049 /* ProjectDetailWindowController.swift */,
+				B00000000000000000000050 /* ProjectConversationHoverCard.swift */,
 				B00000000000000000000047 /* ModelUsagePanel.swift */,
 				B00000000000000000000046 /* ModelPricing.swift */,
 				B00000000000000000000039 /* UsageReminder.swift */,
@@ -331,6 +334,7 @@
 				A00000000000000000000038 /* ProjectUsagePanel.swift in Sources */,
 				A00000000000000000000048 /* ProjectDetailView.swift in Sources */,
 				A00000000000000000000049 /* ProjectDetailWindowController.swift in Sources */,
+				A00000000000000000000050 /* ProjectConversationHoverCard.swift in Sources */,
 				A00000000000000000000047 /* ModelUsagePanel.swift in Sources */,
 				A00000000000000000000046 /* ModelPricing.swift in Sources */,
 				A00000000000000000000039 /* UsageReminder.swift in Sources */,

@@ -371,6 +371,80 @@ final class IncrementalJSONLReaderTests: XCTestCase {
         XCTAssertEqual(records.first?.childEdgeStatus, "open")
     }
 
+    func testIndexReaderProvidesParentThreadIDFromSpawnEdge() throws {
+        let root = try temporaryDirectory()
+        let databaseURL = root.appending(path: "state_4.sqlite")
+        try makeThreadDatabase(
+            at: databaseURL,
+            threadID: "child",
+            rolloutPath: "/tmp/child.jsonl",
+            source: "cli",
+            model: nil,
+            createdAtMilliseconds: 1_000,
+            updatedAtMilliseconds: 2_000,
+            archived: false
+        )
+        let database = try SQLiteDatabase(url: databaseURL)
+        try database.execute(sql: """
+            CREATE TABLE thread_spawn_edges(
+              parent_thread_id TEXT, child_thread_id TEXT, status TEXT
+            )
+            """)
+        try database.execute(
+            sql: "INSERT INTO thread_spawn_edges VALUES (?, ?, ?)",
+            bindings: [.text("parent"), .text("child"), .text("completed")]
+        )
+
+        let record = try XCTUnwrap(CodexThreadIndexReader().read(databaseURL: databaseURL).first)
+        let metadata = CodexSourceDiscovery().threadDashboardMetadata(rootURL: root)
+
+        XCTAssertEqual(record.parentThreadID, "parent")
+        XCTAssertEqual(record.childEdgeStatus, "completed")
+        XCTAssertEqual(metadata.parentThreadIDsByChildThreadID, ["child": "parent"])
+        XCTAssertEqual(
+            metadata.childThreadRelationsByChildThreadID["child"],
+            CodexChildThreadRelation(
+                parentThreadID: "parent",
+                childCreatedAtMilliseconds: 1_000
+            )
+        )
+    }
+
+    func testDashboardMetadataReadsParentRelationFromSafeSessionFields() throws {
+        let root = try temporaryDirectory()
+        let rollout = root.appending(path: "sessions/child.jsonl")
+        try write(
+            """
+            {"timestamp":"2026-08-21T08:00:00.125Z","type":"session_meta","payload":{"id":"child","parent_thread_id":"parent","source":{"subagent":{"other":"review"}}}}
+            """ + "\n",
+            to: rollout
+        )
+        try makeThreadDatabase(
+            at: root.appending(path: "state_5.sqlite"),
+            threadID: "child",
+            rolloutPath: rollout.path,
+            source: #"{"subagent":{"other":"review"}}"#,
+            model: nil,
+            createdAtMilliseconds: 1_000,
+            updatedAtMilliseconds: 2_000,
+            archived: false
+        )
+
+        let metadata = CodexSourceDiscovery().threadDashboardMetadata(rootURL: root)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let expectedCreatedAt = Int64(
+            (try XCTUnwrap(formatter.date(from: "2026-08-21T08:00:00.125Z")))
+                .timeIntervalSince1970 * 1_000
+        )
+
+        XCTAssertEqual(metadata.parentThreadIDsByChildThreadID, ["child": "parent"])
+        XCTAssertEqual(
+            metadata.childThreadRelationsByChildThreadID["child"]?.childCreatedAtMilliseconds,
+            expectedCreatedAt
+        )
+    }
+
     func testConflictingChildStatusesDegradeDiscoveryWithoutBlockingRollouts() throws {
         let root = try temporaryDirectory()
         let rollout = root.appending(path: "sessions/rollout.jsonl")

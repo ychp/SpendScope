@@ -196,13 +196,15 @@ actor LiveDashboardDataClient: DashboardDataClient {
         await beforeQuery()
         try Task.checkCancellation()
         let currentDate = now()
-        let threadTitlesByThreadID = sourceDiscovery.threadDisplayTitles(rootURL: codexRootURL)
+        let threadMetadata = sourceDiscovery.threadDashboardMetadata(rootURL: codexRootURL)
         let storedSnapshot = try queryService.snapshot(
             now: currentDate,
             calendar: calendar,
             usageCalendar: usageCalendar,
             firstSubscriptionDate: firstSubscriptionDate(),
-            threadTitlesByThreadID: threadTitlesByThreadID
+            threadTitlesByThreadID: threadMetadata.displayTitlesByThreadID,
+            parentThreadIDsByChildThreadID: threadMetadata.parentThreadIDsByChildThreadID,
+            childThreadRelationsByChildThreadID: threadMetadata.childThreadRelationsByChildThreadID
         )
         let snapshot = storedSnapshot
         let facts = try store.sourceFacts()

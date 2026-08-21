@@ -5,7 +5,7 @@ struct ProjectDetailView: View {
     let entry: WorkspaceUsageEntry
     let rank: Int
     let onClose: () -> Void
-    let onReplyHover: (ProjectReplyDetailRow?) -> Void
+    let onDetailHover: (ProjectDetailHoverItem?) -> Void
 
     @State private var selectedTab: ProjectDetailTab = .overview
     @State private var conversationSortOrder = ProjectConversationSortOrder.defaultOrder
@@ -56,7 +56,7 @@ struct ProjectDetailView: View {
         }
         .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
         .onDisappear {
-            onReplyHover(nil)
+            onDetailHover(nil)
         }
         .onExitCommand(perform: onClose)
     }
@@ -227,9 +227,7 @@ struct ProjectDetailView: View {
         HStack(spacing: 28) {
             ForEach(ProjectDetailTab.allCases) { tab in
                 Button {
-                    if tab != .replies {
-                        onReplyHover(nil)
-                    }
+                    onDetailHover(nil)
                     withAnimation(.easeOut(duration: 0.16)) {
                         selectedTab = tab
                     }
@@ -574,14 +572,17 @@ struct ProjectDetailView: View {
     }
 
     private var conversationTable: some View {
-        conversationListCard(title: "任务用量")
+        conversationListCard(title: "任务用量", enablesHover: false)
     }
 
     private var conversationDetailList: some View {
-        conversationListCard(title: "任务明细")
+        conversationListCard(title: "任务明细", enablesHover: true)
     }
 
-    private func conversationListCard(title: String) -> some View {
+    private func conversationListCard(
+        title: String,
+        enablesHover: Bool
+    ) -> some View {
         detailCard(
             title: title,
             icon: "list.bullet.rectangle",
@@ -592,12 +593,12 @@ struct ProjectDetailView: View {
                 conversationSortMenu
             }
         ) {
-            conversationListContent
+            conversationListContent(enablesHover: enablesHover)
         }
     }
 
     @ViewBuilder
-    private var conversationListContent: some View {
+    private func conversationListContent(enablesHover: Bool) -> some View {
         if sortedConversations.isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "text.magnifyingglass")
@@ -615,7 +616,11 @@ struct ProjectDetailView: View {
                 ForEach(Array(sortedConversations.enumerated()), id: \.element.id) {
                     index,
                     conversation in
-                    conversationDetailRow(conversation, position: index + 1)
+                    conversationDetailRow(
+                        conversation,
+                        position: index + 1,
+                        enablesHover: enablesHover
+                    )
                 }
             }
         }
@@ -623,7 +628,8 @@ struct ProjectDetailView: View {
 
     private func conversationDetailRow(
         _ conversation: ProjectConversationUsage,
-        position: Int
+        position: Int,
+        enablesHover: Bool
     ) -> some View {
         let title = conversation.displayTitle ?? conversation.shortThreadID
         let share = entry.tokens > 0
@@ -718,6 +724,11 @@ struct ProjectDetailView: View {
                 "\($0) · 任务标识 \(conversation.shortThreadID)"
             } ?? conversation.shortThreadID
         )
+        .contentShape(Rectangle())
+        .onHover { isHovering in
+            guard enablesHover else { return }
+            onDetailHover(isHovering ? .conversation(conversation) : nil)
+        }
     }
 
     private var conversationSearchField: some View {
@@ -870,7 +881,7 @@ struct ProjectDetailView: View {
                         )
 
                     Label(
-                        row.reply.model.isEmpty ? "模型未知" : row.reply.model,
+                        ProjectReplyPresentation.modelText(row.reply.model),
                         systemImage: "cpu"
                     )
                     .lineLimit(1)
@@ -930,7 +941,7 @@ struct ProjectDetailView: View {
         }
         .contentShape(Rectangle())
         .onHover { isHovering in
-            onReplyHover(isHovering ? row : nil)
+            onDetailHover(isHovering ? .reply(row) : nil)
         }
     }
 
@@ -1201,6 +1212,25 @@ struct ProjectReplyHoverCard: View {
                     .background(status.color.opacity(0.09), in: Capsule())
             }
 
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label("模型调用", systemImage: "cpu")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                Spacer(minLength: 8)
+                Text(ProjectReplyPresentation.modelText(row.reply.model))
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.90))
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(
+                SpendScopeTheme.dashboardAccent.opacity(0.055),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+
             HStack(spacing: 9) {
                 hoverSummary(
                     title: "Skills",
@@ -1350,6 +1380,11 @@ struct ProjectReplyDetailRow: Identifiable {
     let reply: ProjectReplyUsage
 }
 
+enum ProjectDetailHoverItem {
+    case conversation(ProjectConversationUsage)
+    case reply(ProjectReplyDetailRow)
+}
+
 private struct ProjectTokenSegment: Identifiable {
     let id: String
     let title: String
@@ -1396,6 +1431,10 @@ enum ProjectUsageDateFormatter {
 }
 
 enum ProjectReplyPresentation {
+    static func modelText(_ model: String) -> String {
+        model.isEmpty ? "模型未知" : model
+    }
+
     static func status(
         _ status: ProjectReplyUsageStatus
     ) -> (title: String, color: Color) {

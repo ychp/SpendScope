@@ -243,6 +243,21 @@ struct ProjectConversationUsage: Identifiable, Equatable, Sendable {
 
     var id: String { shortThreadID }
 
+    var modelCalls: [ProjectReplyActivityCall] {
+        Self.mergedCalls(replies.flatMap(\.modelCalls))
+            .sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+    }
+
+    var skillCalls: [ProjectReplyActivityCall] {
+        Self.mergedCalls(replies.flatMap(\.skillCalls))
+    }
+
+    var toolCalls: [ProjectReplyActivityCall] {
+        Self.mergedCalls(replies.flatMap(\.toolCalls))
+    }
+
     var isIncludedInTaskMetrics: Bool {
         Self.isIncludedInTaskMetrics(displayTitle: displayTitle)
     }
@@ -250,6 +265,22 @@ struct ProjectConversationUsage: Identifiable, Equatable, Sendable {
     static func isIncludedInTaskMetrics(displayTitle: String?) -> Bool {
         let normalizedTitle = displayTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalizedTitle != "命令权限检查"
+    }
+
+    private static func mergedCalls(
+        _ calls: [ProjectReplyActivityCall]
+    ) -> [ProjectReplyActivityCall] {
+        Dictionary(grouping: calls, by: \.name)
+            .map { name, calls in
+                ProjectReplyActivityCall(
+                    name: name,
+                    count: calls.reduce(0) { $0 + $1.count }
+                )
+            }
+            .sorted { left, right in
+                if left.count != right.count { return left.count > right.count }
+                return left.name.localizedCaseInsensitiveCompare(right.name) == .orderedAscending
+            }
     }
 }
 
@@ -264,7 +295,7 @@ enum ProjectReplyUsageStatus: String, Equatable, Sendable {
 struct ProjectReplyUsage: Identifiable, Equatable, Sendable {
     let id: String
     let status: ProjectReplyUsageStatus
-    let model: String
+    let modelCalls: [ProjectReplyActivityCall]
     let uncachedInputTokens: Int
     let cachedInputTokens: Int
     let visibleOutputTokens: Int
@@ -275,6 +306,10 @@ struct ProjectReplyUsage: Identifiable, Equatable, Sendable {
     let lastUsageAtMilliseconds: Int64
     let skillCalls: [ProjectReplyActivityCall]
     let toolCalls: [ProjectReplyActivityCall]
+
+    var model: String {
+        modelCalls.map { "\($0.name) ×\($0.count)" }.joined(separator: " · ")
+    }
 
     var displayAtMilliseconds: Int64 {
         endedAtMilliseconds ?? lastUsageAtMilliseconds
