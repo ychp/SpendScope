@@ -2,8 +2,55 @@ import AppKit
 import Charts
 import SwiftUI
 
+enum DashboardHeaderStatus: Equatable {
+    case refreshed(String)
+    case warning(String)
+
+    static func resolve(from state: DashboardLoadState) -> DashboardHeaderStatus? {
+        switch state {
+        case .loaded(let snapshot, _):
+            return .refreshed(snapshot.updatedText)
+        case .stale(_, _, let message):
+            return .warning(message)
+        case .loading, .empty, .failed, .unsupported:
+            return nil
+        }
+    }
+}
+
+struct DashboardHeaderStatusBadge: View {
+    let status: DashboardHeaderStatus
+
+    @ViewBuilder
+    var body: some View {
+        switch status {
+        case .refreshed(let text):
+            Label(text, systemImage: "clock")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(
+                    SpendScopeTheme.dashboardControlBackground,
+                    in: Capsule()
+                )
+        case .warning(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Color.orange.opacity(0.10), in: Capsule())
+                .help(message)
+        }
+    }
+}
+
 struct DashboardView: View {
     let store: DashboardStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
     @State private var isCollapsed = false
 
@@ -19,7 +66,9 @@ struct DashboardView: View {
             case .loaded(let snapshot, _):
                 DashboardContentView(
                     snapshot: snapshot,
-                    isCollapsed: isCollapsed
+                    isCollapsed: isCollapsed,
+                    headerStatus: DashboardHeaderStatus.resolve(from: store.state)
+                        ?? .refreshed(snapshot.updatedText)
                 )
             case .empty:
                 unavailableView(
@@ -30,17 +79,10 @@ struct DashboardView: View {
             case .stale(let snapshot, _, let message):
                 DashboardContentView(
                     snapshot: snapshot,
-                    isCollapsed: isCollapsed
+                    isCollapsed: isCollapsed,
+                    headerStatus: DashboardHeaderStatus.resolve(from: store.state)
+                        ?? .warning(message)
                 )
-                    .overlay(alignment: .topTrailing) {
-                        if !isCollapsed {
-                            Label(message, systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                                .padding(.top, 22)
-                                .padding(.trailing, 16)
-                        }
-                    }
             case .failed(let message):
                 unavailableView(
                     "暂时无法载入数据",
@@ -87,7 +129,7 @@ struct DashboardView: View {
     private var dashboardToolbarItems: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                     isCollapsed.toggle()
                 }
             } label: {
@@ -331,6 +373,9 @@ private final class DashboardWindowSizingView: NSView {
 private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
     let isCollapsed: Bool
+    let headerStatus: DashboardHeaderStatus
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedRange = TrendRange.defaultRange
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
     @State private var selectedActivityRange = ActivityRange.defaultRange
@@ -364,14 +409,16 @@ private struct DashboardContentView: View {
                     .padding(DashboardWindowLayout.collapsedPadding)
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
-                VStack(alignment: .leading, spacing: 14) {
-                    dashboardHeader
-                    overviewPanel.frame(height: overviewHeight)
-                    analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
+                SpendScopeGlassGroup(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        dashboardHeader
+                        overviewPanel.frame(height: overviewHeight)
+                        analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
-                .padding(.top, 8)
+                .padding(.top, 10)
                 .transition(.opacity)
             }
         }
@@ -388,11 +435,27 @@ private struct DashboardContentView: View {
 
     private var dashboardBackground: some View {
         SpendScopeTheme.dashboardBackground
+            .overlay {
+                LinearGradient(
+                    colors: [
+                        SpendScopeTheme.dashboardAccent.opacity(colorScheme == .dark ? 0.15 : 0.055),
+                        Color.clear,
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(
+                            colorScheme == .dark ? 0.11 : 0.035
+                        )
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .allowsHitTesting(false)
+            }
             .overlay(alignment: .topLeading) {
                 RadialGradient(
                     colors: [
-                        SpendScopeTheme.dashboardAccent.opacity(0.075),
-                        SpendScopeTheme.dashboardAccentSecondary.opacity(0.025),
+                        SpendScopeTheme.dashboardAccent.opacity(colorScheme == .dark ? 0.18 : 0.09),
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(
+                            colorScheme == .dark ? 0.09 : 0.035
+                        ),
                         .clear
                     ],
                     center: .topLeading,
@@ -404,7 +467,9 @@ private struct DashboardContentView: View {
             .overlay(alignment: .bottomTrailing) {
                 RadialGradient(
                     colors: [
-                        SpendScopeTheme.dashboardAccentSecondary.opacity(0.055),
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(
+                            colorScheme == .dark ? 0.14 : 0.055
+                        ),
                         .clear
                     ],
                     center: .bottomTrailing,
@@ -417,10 +482,39 @@ private struct DashboardContentView: View {
     }
 
     private var dashboardHeader: some View {
-        Text("Codex · \(snapshot.planName)  ·  \(snapshot.updatedText)")
-            .font(.system(size: 12, weight: .medium))
+        HStack(spacing: 10) {
+            Image("CodexIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
+
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 6, height: 6)
+                Text("Codex · \(snapshot.planName)")
+            }
+            .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-            .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+
+            Spacer()
+
+            dashboardHeaderStatus
+        }
+        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var dashboardHeaderStatus: some View {
+        switch headerStatus {
+        case .refreshed:
+            DashboardHeaderStatusBadge(status: headerStatus)
+        case .warning:
+            DashboardHeaderStatusBadge(status: headerStatus)
+                .frame(maxWidth: 360, alignment: .trailing)
+        }
     }
 
     private var overviewPanel: some View {
@@ -916,7 +1010,7 @@ private struct DashboardContentView: View {
                     isSelected: selectedAnalyticsTab == tab,
                     width: tab == .activity ? 102 : 82
                 ) {
-                    withAnimation(.easeOut(duration: 0.16)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
                         hoveredUsageID = nil
                         selectedAnalyticsTab = tab
                     }
@@ -969,7 +1063,7 @@ private struct DashboardContentView: View {
                     isSelected: selectedRange == range,
                     width: 48
                 ) {
-                    withAnimation(.easeOut(duration: 0.16)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
                         onSelect(range)
                     }
                 }
@@ -1002,7 +1096,7 @@ private struct DashboardContentView: View {
                 .background {
                     if isSelected {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(SpendScopeTheme.dashboardAccent)
+                            .fill(SpendScopeTheme.brandGradient)
                             .shadow(
                                 color: SpendScopeTheme.dashboardAccent.opacity(0.24),
                                 radius: 5,
@@ -1181,7 +1275,7 @@ private struct DashboardContentView: View {
         HStack(spacing: 2) {
             ForEach(availableTrendRanges) { range in
                 Button {
-                    withAnimation(.easeOut(duration: 0.16)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
                         hoveredUsageID = nil
                         selectedRange = range
                     }
@@ -1195,7 +1289,7 @@ private struct DashboardContentView: View {
                         .background {
                             if selectedRange == range {
                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(SpendScopeTheme.dashboardAccent)
+                                    .fill(SpendScopeTheme.brandGradient)
                                     .shadow(color: SpendScopeTheme.dashboardAccent.opacity(0.24), radius: 5, y: 2)
                             }
                         }

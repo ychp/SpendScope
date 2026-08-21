@@ -119,6 +119,7 @@ enum MenuBarSummaryLayout: Equatable {
 struct MenuBarPopoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.colorScheme) private var colorScheme
 
     let store: DashboardStore
     let updateService: AppUpdateService
@@ -138,17 +139,31 @@ struct MenuBarPopoverView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            header
-            popoverContent
-            updateStatus
-            footerActions
+        SpendScopeGlassGroup(spacing: 10) {
+            VStack(spacing: 10) {
+                header
+                popoverContent
+                updateStatus
+                footerActions
+            }
         }
-        .padding(14)
+        .padding(16)
         .frame(width: 390)
         .background {
-            SpendScopeVisualEffect(style: .popover)
-                .ignoresSafeArea()
+            ZStack {
+                SpendScopeVisualEffect(style: .popover)
+                SpendScopeTheme.dashboardBackground
+                LinearGradient(
+                    colors: [
+                        SpendScopeTheme.accent.opacity(colorScheme == .dark ? 0.18 : 0.08),
+                        Color.clear,
+                        SpendScopeTheme.accentBlue.opacity(colorScheme == .dark ? 0.12 : 0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .ignoresSafeArea()
         }
         .task { await store.start() }
     }
@@ -172,7 +187,14 @@ struct MenuBarPopoverView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+        .background(
+            SpendScopeTheme.dashboardControlBackground.opacity(0.58),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder)
+        }
     }
 
     @ViewBuilder
@@ -290,14 +312,7 @@ struct MenuBarPopoverView: View {
                 .frame(width: 21.5, height: 21.5)
                 .foregroundStyle(.white)
                 .padding(6.5)
-                .background(
-                    LinearGradient(
-                        colors: [SpendScopeTheme.popoverSecondary, SpendScopeTheme.popoverPrimary],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    in: RoundedRectangle(cornerRadius: 8)
-                )
+                .background(SpendScopeTheme.brandGradient, in: RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("SpendScope")
@@ -314,8 +329,8 @@ struct MenuBarPopoverView: View {
                 Task { await store.refresh() }
             } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(Color.primary.opacity(0.055))
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(SpendScopeTheme.dashboardControlBackground)
 
                     if store.isRefreshing {
                         ProgressView()
@@ -347,7 +362,8 @@ struct MenuBarPopoverView: View {
                 }
                 .font(.headline)
                 Spacer()
-                Text(availabilityText)
+                Label(availabilityText, systemImage: availabilitySymbol)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(availabilityColor)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
@@ -393,7 +409,7 @@ struct MenuBarPopoverView: View {
                 }
                 NSApp.activate(ignoringOtherApps: true)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
 
             Button("设置", systemImage: "gearshape") {
                 if let onOpenSettings {
@@ -646,6 +662,16 @@ struct MenuBarPopoverView: View {
         case .stale: .orange
         case .loading, .empty: .secondary
         case .failed, .unsupported: .red
+        }
+    }
+
+    private var availabilitySymbol: String {
+        switch store.state {
+        case .loaded: "checkmark.circle.fill"
+        case .stale: "clock.badge.exclamationmark"
+        case .loading: "arrow.triangle.2.circlepath"
+        case .empty: "minus.circle"
+        case .failed, .unsupported: "exclamationmark.triangle.fill"
         }
     }
 

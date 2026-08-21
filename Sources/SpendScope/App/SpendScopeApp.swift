@@ -7,36 +7,38 @@ struct SpendScopeApp: App {
 
     var body: some Scene {
         Window("SpendScope", id: "dashboard") {
-            DashboardView(store: appDelegate.store)
-                .preferredColorScheme(.light)
-                .background(
-                    AppWindowLevelBridge(
-                        level: AppWindowLevelPolicy.level(
-                            for: .dashboard,
-                            keepsDashboardOnTop: keepsDashboardOnTop
+            SpendScopeAppearanceContainer {
+                DashboardView(store: appDelegate.store)
+                    .background(
+                        AppWindowLevelBridge(
+                            level: AppWindowLevelPolicy.level(
+                                for: .dashboard,
+                                keepsDashboardOnTop: keepsDashboardOnTop
+                            )
                         )
                     )
-                )
-                .background(DashboardWindowCloseBehaviorBridge())
-                .background(StatusItemSceneBridge(appDelegate: appDelegate))
+                    .background(DashboardWindowCloseBehaviorBridge())
+                    .background(StatusItemSceneBridge(appDelegate: appDelegate))
+            }
         }
         .defaultSize(width: 920, height: 620)
 
         Settings {
-            SettingsView(
-                store: appDelegate.store,
-                reminderController: appDelegate.usageReminderController,
-                updateService: appDelegate.updateService
-            )
-                .preferredColorScheme(.light)
-                .background(
-                    AppWindowLevelBridge(
-                        level: AppWindowLevelPolicy.level(
-                            for: .settings,
-                            keepsDashboardOnTop: keepsDashboardOnTop
+            SpendScopeAppearanceContainer {
+                SettingsView(
+                    store: appDelegate.store,
+                    reminderController: appDelegate.usageReminderController,
+                    updateService: appDelegate.updateService
+                )
+                    .background(
+                        AppWindowLevelBridge(
+                            level: AppWindowLevelPolicy.level(
+                                for: .settings,
+                                keepsDashboardOnTop: keepsDashboardOnTop
+                            )
                         )
                     )
-                )
+            }
         }
     }
 }

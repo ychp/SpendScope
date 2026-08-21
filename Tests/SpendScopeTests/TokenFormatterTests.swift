@@ -121,6 +121,24 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(DashboardCloseBehavior.load(from: defaults), .closeDashboard)
     }
 
+    func testColorSchemePreferenceResolvesStoredValueAndUsesSystemFallback() {
+        XCTAssertEqual(AppColorSchemePreference.resolved(from: "unsupported-value"), .system)
+        XCTAssertNil(AppColorSchemePreference.system.colorScheme)
+        XCTAssertEqual(AppColorSchemePreference.light.colorScheme, .light)
+        XCTAssertEqual(AppColorSchemePreference.dark.colorScheme, .dark)
+
+        let suiteName = "ColorSchemePreferenceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(AppColorSchemePreference.load(from: defaults), .system)
+        defaults.set(
+            AppColorSchemePreference.dark.rawValue,
+            forKey: AppPreferenceKeys.colorScheme
+        )
+        XCTAssertEqual(AppColorSchemePreference.load(from: defaults), .dark)
+    }
+
     func testUsageCalendarBuildsMondayFirstSixWeekGrid() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))

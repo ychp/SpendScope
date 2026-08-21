@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum AppPreferenceKeys {
+    static let colorScheme = "appearance.colorScheme"
     static let keepsDashboardOnTop = "dashboard.keepsOnTop"
     static let dashboardCloseBehavior = "dashboard.closeBehavior"
     static let automaticRefreshEnabled = "data.automaticRefreshEnabled"
@@ -15,6 +16,33 @@ enum AppPreferenceKeys {
     static let firstSubscriptionDate = "subscription.firstSubscribedAt"
     static let automaticallyChecksForUpdates = "updates.automaticallyChecks"
     static let automaticallyDownloadsUpdates = "updates.automaticallyDownloads"
+}
+
+enum AppColorSchemePreference: String, CaseIterable, Identifiable, Sendable {
+    case system
+    case light
+    case dark
+
+    var id: Self { self }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    static func resolved(from rawValue: String) -> Self {
+        Self(rawValue: rawValue) ?? .system
+    }
+
+    static func load(from defaults: UserDefaults = .standard) -> Self {
+        guard let rawValue = defaults.string(forKey: AppPreferenceKeys.colorScheme) else {
+            return .system
+        }
+        return resolved(from: rawValue)
+    }
 }
 
 enum SubscriptionCyclePreference {

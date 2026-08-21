@@ -35,12 +35,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.titlebarSeparatorStyle = .none
-        panel.backgroundColor = NSColor(
-            srgbRed: 0.972,
-            green: 0.982,
-            blue: 0.998,
-            alpha: 1
-        )
+        panel.backgroundColor = .windowBackgroundColor
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.animationBehavior = .documentWindow
@@ -54,13 +49,14 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
 
         let hostingController = NSHostingController(
             rootView: AnyView(
-                ProjectDetailView(
-                    entry: entry,
-                    rank: rank,
-                    onClose: {},
-                    onReplyHover: { _ in }
-                )
-                    .preferredColorScheme(.light)
+                SpendScopeAppearanceContainer {
+                    ProjectDetailView(
+                        entry: entry,
+                        rank: rank,
+                        onClose: {},
+                        onReplyHover: { _ in }
+                    )
+                }
             )
         )
         self.hostingController = hostingController
@@ -103,17 +99,18 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
 
     func update(entry: WorkspaceUsageEntry, rank: Int) {
         hostingController?.rootView = AnyView(
-            ProjectDetailView(
-                entry: entry,
-                rank: rank,
-                onClose: { [weak self] in
-                    self?.dismiss()
-                },
-                onReplyHover: { [weak self] row in
-                    self?.updateReplyHover(row)
-                }
-            )
-            .preferredColorScheme(.light)
+            SpendScopeAppearanceContainer {
+                ProjectDetailView(
+                    entry: entry,
+                    rank: rank,
+                    onClose: { [weak self] in
+                        self?.dismiss()
+                    },
+                    onReplyHover: { [weak self] row in
+                        self?.updateReplyHover(row)
+                    }
+                )
+            }
         )
     }
 
@@ -157,9 +154,10 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         guard let detailPanel = window else { return }
 
         let rootView = AnyView(
-            ProjectReplyHoverCard(row: row)
-                .padding(12)
-                .preferredColorScheme(.light)
+            SpendScopeAppearanceContainer {
+                ProjectReplyHoverCard(row: row)
+                    .padding(12)
+            }
         )
         let hostingController: NSHostingController<AnyView>
         let hoverPanel: NSPanel

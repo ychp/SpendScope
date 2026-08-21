@@ -510,19 +510,20 @@ final class StatusItemController: NSObject {
         popover.animates = true
         popover.delegate = self
 
-        let content = MenuBarPopoverView(
-            store: store,
-            updateService: updateService,
-            onOpenDashboard: { [weak self] in
-                self?.closePopover()
-                self?.onOpenDashboard()
-            },
-            onOpenSettings: { [weak self] in
-                self?.closePopover()
-                self?.onOpenSettings()
-            }
-        )
-        .preferredColorScheme(.light)
+        let content = SpendScopeAppearanceContainer {
+            MenuBarPopoverView(
+                store: store,
+                updateService: updateService,
+                onOpenDashboard: { [weak self] in
+                    self?.closePopover()
+                    self?.onOpenDashboard()
+                },
+                onOpenSettings: { [weak self] in
+                    self?.closePopover()
+                    self?.onOpenSettings()
+                }
+            )
+        }
         let hostingController = NSHostingController(rootView: content)
         popover.contentViewController = hostingController
         hostingController.view.layoutSubtreeIfNeeded()

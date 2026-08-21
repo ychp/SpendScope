@@ -73,6 +73,9 @@ struct SettingsView: View {
     let store: DashboardStore
     let reminderController: UsageReminderController
     let updateService: AppUpdateService
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(AppPreferenceKeys.colorScheme)
+    private var colorSchemeRaw = AppColorSchemePreference.system.rawValue
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
     @AppStorage(AppPreferenceKeys.dashboardCloseBehavior)
     private var dashboardCloseBehaviorRaw = DashboardCloseBehavior.closeDashboard.rawValue
@@ -92,24 +95,40 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                dashboardSettings
-                statusBarSettings
-                usageReminderSettings
-                dataAndRefreshSettings
-                softwareUpdateSettings
-                planAndBillingSettings
-                privacyNotice
+            SpendScopeGlassGroup(spacing: 24) {
+                VStack(alignment: .leading, spacing: 24) {
+                    settingsHeader
+                    appearanceSettings
+                    dashboardSettings
+                    statusBarSettings
+                    usageReminderSettings
+                    dataAndRefreshSettings
+                    softwareUpdateSettings
+                    planAndBillingSettings
+                    privacyNotice
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 22)
+            .padding(.horizontal, 24)
+            .padding(.top, 22)
+            .padding(.bottom, 28)
         }
         .scrollIndicators(.automatic)
-        .frame(width: 600, height: 660)
+        .frame(width: 640, height: 700)
         .background {
-            SpendScopeVisualEffect(style: .window)
-                .ignoresSafeArea()
+            ZStack {
+                SpendScopeVisualEffect(style: .window)
+                SpendScopeTheme.dashboardBackground
+                LinearGradient(
+                    colors: [
+                        SpendScopeTheme.accent.opacity(colorScheme == .dark ? 0.14 : 0.055),
+                        Color.clear,
+                        SpendScopeTheme.accentBlue.opacity(colorScheme == .dark ? 0.10 : 0.035)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .ignoresSafeArea()
         }
         .task {
             await store.start()
@@ -129,6 +148,72 @@ struct SettingsView: View {
         } message: {
             Text("这会清空 SpendScope 已抓取的用量、额度、会话和 Skills / Tools 统计，然后从本机 Codex 数据全量重新抓取。不会删除 Codex 原始数据。")
         }
+    }
+
+    private var appearanceSettings: some View {
+        settingsSection("外观") {
+            VStack(spacing: 0) {
+                preferenceRow("色系", detail: appearanceDetail) {
+                    segmentedGroup {
+                        selectionSegment(
+                            "跟随系统",
+                            isSelected: colorSchemePreference == .system
+                        ) {
+                            colorSchemeRaw = AppColorSchemePreference.system.rawValue
+                        }
+                        selectionSegment(
+                            "浅色",
+                            isSelected: colorSchemePreference == .light
+                        ) {
+                            colorSchemeRaw = AppColorSchemePreference.light.rawValue
+                        }
+                        selectionSegment(
+                            "深色",
+                            isSelected: colorSchemePreference == .dark
+                        ) {
+                            colorSchemeRaw = AppColorSchemePreference.dark.rawValue
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, Layout.cardHorizontalPadding)
+            .settingsCard()
+        }
+    }
+
+    private var colorSchemePreference: AppColorSchemePreference {
+        AppColorSchemePreference.resolved(from: colorSchemeRaw)
+    }
+
+    private var appearanceDetail: String {
+        switch colorSchemePreference {
+        case .system: "自动跟随 macOS 外观设置"
+        case .light: "使用清爽的冷白科技配色"
+        case .dark: "使用深海军蓝与光谱高亮"
+        }
+    }
+
+    private var settingsHeader: some View {
+        HStack(spacing: 12) {
+            Image("MenuBarIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .foregroundStyle(.white)
+                .padding(8)
+                .background(SpendScopeTheme.brandGradient, in: RoundedRectangle(cornerRadius: 9))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SpendScope 设置")
+                    .font(.title3.weight(.semibold))
+                Text("管理看板、状态栏、本地数据和提醒方式")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var dashboardSettings: some View {
@@ -863,7 +948,7 @@ struct SettingsView: View {
     }
 
     private var previewAppearance: NSAppearance {
-        return NSAppearance(named: .aqua)!
+        NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)!
     }
 
     private var usageRemindersEnabledBinding: Binding<Bool> {
@@ -939,11 +1024,27 @@ struct SettingsView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
+            Label(title, systemImage: settingsSectionIcon(for: title))
                 .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
                 .padding(.leading, 4)
 
             content()
+        }
+    }
+
+    private func settingsSectionIcon(for title: String) -> String {
+        switch title {
+        case "外观": "circle.lefthalf.filled"
+        case "看板": "rectangle.3.group"
+        case "状态栏": "menubar.rectangle"
+        case "用量提醒": "bell.badge"
+        case "数据与刷新": "externaldrive.badge.timemachine"
+        case "软件更新": "arrow.triangle.2.circlepath"
+        case "订阅周期": "calendar.badge.clock"
+        case "Codex 套餐": "creditcard"
+        case "其他计费方式": "dollarsign.circle"
+        default: "gearshape"
         }
     }
 
@@ -1050,23 +1151,9 @@ struct SettingsView: View {
 
 private extension View {
     func settingsCard() -> some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-
-        return background {
-            shape
-                .fill(.thinMaterial)
-                .overlay { shape.fill(Color.white.opacity(0.28)) }
-        }
-        .overlay {
-            shape.stroke(
-                LinearGradient(
-                    colors: [Color.white.opacity(0.62), Color(nsColor: .separatorColor).opacity(0.34)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1
-            )
-        }
-        .shadow(color: Color.black.opacity(0.035), radius: 9, y: 3)
+        spendScopeGlassSurface(
+            cornerRadius: 12,
+            shadowOpacity: 0.54
+        )
     }
 }

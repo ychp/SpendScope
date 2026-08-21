@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import XCTest
 @testable import SpendScope
 
@@ -70,6 +71,30 @@ final class DashboardStoreTests: XCTestCase {
 
         XCTAssertEqual(text, "数据待更新")
         XCTAssertFalse(text.contains("过期"))
+    }
+
+    func testDashboardHeaderStatusPrioritizesStaleWarningOverRefreshTimestamp() {
+        let message = "部分数据暂不可用，正在显示已成功读取的数据。"
+        let state = DashboardLoadState.stale(
+            .fixture(todayTokens: 17, updatedText: "刚刚刷新"),
+            .fixture,
+            message
+        )
+
+        XCTAssertEqual(
+            DashboardHeaderStatus.resolve(from: state),
+            .warning(message)
+        )
+    }
+
+    func testDashboardWarningBadgeHugsShortContent() {
+        let hostingView = NSHostingView(
+            rootView: DashboardHeaderStatusBadge(status: .warning("部分刷新"))
+        )
+
+        hostingView.layoutSubtreeIfNeeded()
+
+        XCTAssertLessThan(hostingView.fittingSize.width, 180)
     }
 
     func testMenuUpdateTextCombinesStaleStateWithLastRefresh() {
