@@ -24,6 +24,8 @@
 - 暂无有效额度时自动隐藏对应指标，避免将过期数据展示为满额。
 - 跟随 macOS 外观绘制状态栏内容。
 
+![SpendScope 状态栏实时预览](images/spendscope-status-bar.png)
+
 ### 状态栏弹窗
 
 - 展示当前识别到的 Codex 套餐、数据更新时间和来源可用状态。
@@ -57,6 +59,12 @@
 - 悬浮日历日期可查看当日 Token 明细；悬浮热力图例可查看各颜色对应的用量区间。
 - 每日统计按 UTC 日期归属，以尽量接近 Codex 服务端的每日统计口径。
 
+![趋势节点悬浮明细](images/spendscope-trend-hover.png)
+
+![日历日期悬浮明细](images/spendscope-calendar-day-hover.png)
+
+![日历热力图例悬浮说明](images/spendscope-calendar-legend-hover.png)
+
 ### Skills / Tools 排行
 
 - 分别统计 Skills 与 Tools 的调用次数。
@@ -66,6 +74,8 @@
 - Tools 按完整名称独立排行。
 
 ![SpendScope Skills 与 Tools 排行](images/spendscope-activity-usage.png)
+
+![汇总 Skill 的细分调用悬浮窗](images/spendscope-skill-breakdown-hover.png)
 
 ### 工作区用量排行
 
@@ -96,9 +106,13 @@
 
 ![SpendScope 工作区详情概览](images/spendscope-project-overview.png)
 
+![工作区近 7 日趋势悬浮明细](images/spendscope-project-trend-hover.png)
+
 ![SpendScope 任务明细](images/spendscope-task-details.png)
 
-![SpendScope 回复与调用详情](images/spendscope-reply-activity-detail.png)
+![SpendScope 回复明细](images/spendscope-reply-details.png)
+
+![SpendScope 回复明细与窗口外调用悬浮窗](images/spendscope-reply-activity-detail.png)
 
 ### 模型用量与费用
 
@@ -113,6 +127,8 @@
 API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费的大致规模，不代表 Codex 订阅的实际账单。
 
 ![SpendScope 模型用量排行](images/spendscope-model-usage.png)
+
+![模型 Token 明细、费用分项和 API 定价规则悬浮窗](images/spendscope-model-hover-details.png)
 
 ## 刷新、额度与数据修复
 
@@ -136,9 +152,15 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 - **清空并重抓**：清空 SpendScope 自己保存的统计和导入检查点，从本机 Codex 数据重新计算；不会删除 Codex 原始数据。
 - 全量重建会显示清理、扫描、逐文件导入和生成统计结果等阶段；发现记录后展示已处理文件数、总文件数和进度。
 
+“清空并重抓”会先展示确认弹窗，明确说明只清空 SpendScope 自己保存的聚合统计与检查点，不删除 Codex 原始数据。
+
+![清空并重新抓取所有数据的确认弹窗](images/spendscope-rebuild-confirmation.png)
+
 ### 数据源健康状态
 
 设置页会分别显示 Codex CLI、Codex macOS 和线程索引的检测结果，包括已连接、未检测到、部分不可用和格式不兼容。线程索引不可用时，应用会尽量降级到文件系统发现，不阻断全部导入。
+
+![数据源、刷新与软件更新设置](images/spendscope-settings-data.png)
 
 ## 提醒与个性化设置
 
@@ -150,6 +172,8 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 - 同一额度周期的同一档位只通知一次；进入新的重置周期后重新计算。
 - 开启时请求 macOS 通知权限；设置页会显示授权状态，并提供进入系统设置的入口。
 
+![额度提醒、预警等级和通知权限设置](images/spendscope-settings-reminders.png)
+
 ### 界面设置
 
 - 可在跟随 macOS 系统、清爽浅色和科技深色之间切换；看板、状态栏弹窗、设置与工作区详情同步生效。
@@ -160,12 +184,16 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 - 设置是否显示重置倒计时。
 - 状态栏设置区提供实时预览。
 
+![外观、看板、状态栏和提醒设置](images/spendscope-settings-appearance.png)
+
 ### 套餐与计费说明
 
 - 根据本机记录展示当前识别到的 Codex 套餐。
 - 可设置或清除第一次订阅时间；设置后按同一订阅日和时刻逐月计算当前订阅周期，不按固定 30 天估算。
 - 设置页说明 Free、Go、Plus、Pro 5x、Pro 20x、Business、Enterprise / Edu 等套餐类别与 API Key 独立按量计费的差异。
 - 套餐说明不参与账单计算；模型费用估算统一在看板的“模型用量”页展示。
+
+![订阅周期、Codex 套餐与其他计费方式](images/spendscope-settings-plans.png)
 
 ### 软件更新
 

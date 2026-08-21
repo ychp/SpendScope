@@ -34,15 +34,21 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ### 菜单栏与弹窗
 
-![SpendScope 状态栏，显示 Codex 额度和重置倒计时](docs/images/spendscope-status-bar.png)
+![SpendScope 状态栏实时预览，显示 Codex 额度和重置倒计时](docs/images/spendscope-status-bar.png)
 
 ![SpendScope 状态栏弹窗，展示今日 Token、额度和 Token 构成](docs/images/spendscope-popover.png)
 
-无需打开主窗口即可查看额度和今日用量；弹窗还提供刷新、打开看板、进入设置、检查更新和退出入口。
+状态栏设置中的实时预览与实际菜单栏使用同一套绘制样式。无需打开主窗口即可查看额度和今日用量；弹窗还提供刷新、打开看板、进入设置、检查更新和退出入口。
 
 ### 详细看板
 
 ![SpendScope 详细看板，展示 7 天额度、本订阅周期、Token 汇总、用量日历和趋势图](docs/images/spendscope-dashboard.png)
+
+![SpendScope Skills 与 Tools 排行](docs/images/spendscope-activity-usage.png)
+
+![SpendScope 工作区用量排行](docs/images/spendscope-project-usage.png)
+
+![SpendScope 模型用量与费用排行](docs/images/spendscope-model-usage.png)
 
 详细看板在概览区同时展示 7 天额度、今日、7 日、30 日、累计和可选的本订阅周期用量；下方包含用量趋势、Skills / Tools、工作区用量和模型用量四个分析页，并可在今日、7 日、30 日和累计范围间切换排行。
 
@@ -50,9 +56,25 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ![SpendScope 工作区详情概览，展示目录用量、Token 构成、近 7 日趋势和任务用量](docs/images/spendscope-project-overview.png)
 
+![SpendScope 工作区任务明细](docs/images/spendscope-task-details.png)
+
+![SpendScope 工作区回复明细](docs/images/spendscope-reply-details.png)
+
 ![SpendScope 回复明细与窗口外调用详情，展示完整 Skills、Tools 和 Token 构成](docs/images/spendscope-reply-activity-detail.png)
 
 工作区排行可以打开独立详情窗口，继续查看任务和回复级用量；将鼠标停在回复上，还能查看本次回复的 Skills / Tools 调用明细。
+
+### 设置
+
+![SpendScope 设置顶部，包含外观、看板、状态栏和额度提醒](docs/images/spendscope-settings-appearance.png)
+
+![SpendScope 额度提醒、预警等级和通知权限设置](docs/images/spendscope-settings-reminders.png)
+
+![SpendScope 数据刷新与软件更新设置](docs/images/spendscope-settings-data.png)
+
+![SpendScope 订阅周期、套餐和计费说明](docs/images/spendscope-settings-plans.png)
+
+设置页覆盖外观、看板行为、状态栏、提醒、数据源、刷新与重建、软件更新、订阅周期、套餐说明和隐私提示。所有悬浮明细与确认弹窗截图见[完整功能说明](docs/FEATURES.md)。
 
 ## 系统要求
 
