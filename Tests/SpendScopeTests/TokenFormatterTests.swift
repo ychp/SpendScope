@@ -82,11 +82,11 @@ final class TokenFormatterTests: XCTestCase {
     func testSubscriptionOverviewPreservesAnalyticsHeightByGrowingDashboardMinimumSize() {
         XCTAssertEqual(
             DashboardWindowLayout.expandedContentSize(hasSubscriptionCycle: false),
-            CGSize(width: 920, height: 620)
+            CGSize(width: 920, height: 666)
         )
         XCTAssertEqual(
             DashboardWindowLayout.expandedContentSize(hasSubscriptionCycle: true),
-            CGSize(width: 920, height: 682)
+            CGSize(width: 920, height: 728)
         )
     }
 

@@ -21,7 +21,10 @@ struct SpendScopeApp: App {
                     .background(StatusItemSceneBridge(appDelegate: appDelegate))
             }
         }
-        .defaultSize(width: 920, height: 620)
+        .defaultSize(
+            width: DashboardWindowLayout.baseExpandedContentSize.width,
+            height: DashboardWindowLayout.baseExpandedContentSize.height
+        )
 
         Settings {
             SpendScopeAppearanceContainer {

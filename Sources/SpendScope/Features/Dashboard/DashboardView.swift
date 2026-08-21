@@ -191,7 +191,10 @@ struct DashboardView: View {
             systemImage: systemImage,
             description: Text(description)
         )
-        .frame(minWidth: 920, minHeight: 620)
+        .frame(
+            minWidth: DashboardWindowLayout.baseExpandedContentSize.width,
+            minHeight: DashboardWindowLayout.baseExpandedContentSize.height
+        )
         .background(SpendScopeTheme.dashboardBackground)
     }
 }
@@ -542,7 +545,7 @@ private struct DashboardBackdrop: View {
 enum DashboardWindowLayout {
     static let standardOverviewHeight: CGFloat = 238
     static let subscriptionOverviewHeight: CGFloat = 300
-    static let baseExpandedContentSize = CGSize(width: 920, height: 620)
+    static let baseExpandedContentSize = CGSize(width: 920, height: 666)
     static let collapsedQuotaWidth: CGFloat = 280
     static let collapsedQuotaHeight: CGFloat = 210
     static let collapsedPadding: CGFloat = 20
