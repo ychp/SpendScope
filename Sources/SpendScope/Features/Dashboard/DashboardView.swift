@@ -58,11 +58,7 @@ struct DashboardView: View {
         Group {
             switch store.state {
             case .loading:
-                unavailableView(
-                    "正在载入 Codex 数据",
-                    systemImage: "chart.bar.doc.horizontal",
-                    description: "SpendScope 正在读取已保存的本地统计。"
-                )
+                DashboardLoadingView()
             case .loaded(let snapshot, _):
                 DashboardContentView(
                     snapshot: snapshot,
@@ -197,6 +193,349 @@ struct DashboardView: View {
         )
         .frame(minWidth: 920, minHeight: 620)
         .background(SpendScopeTheme.dashboardBackground)
+    }
+}
+
+private struct DashboardLoadingView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHighlighted = false
+
+    var body: some View {
+        ZStack {
+            DashboardBackdrop()
+
+            SpendScopeGlassGroup(spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
+                    loadingHeader
+                    loadingOverview
+                        .frame(height: DashboardWindowLayout.standardOverviewHeight)
+                    loadingAnalytics
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+            .padding(.top, 10)
+        }
+        .frame(
+            minWidth: DashboardWindowLayout.baseExpandedContentSize.width,
+            minHeight: DashboardWindowLayout.baseExpandedContentSize.height
+        )
+        .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("正在载入 Codex 本地统计")
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true)) {
+                isHighlighted = true
+            }
+        }
+    }
+
+    private var loadingHeader: some View {
+        HStack(spacing: 10) {
+            Image("CodexIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 28)
+
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(SpendScopeTheme.dashboardAccent)
+                    .frame(width: 6, height: 6)
+                    .opacity(isHighlighted ? 1 : 0.48)
+                Text("正在读取本地数据")
+            }
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+
+            Spacer()
+
+            HStack(spacing: 7) {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(SpendScopeTheme.dashboardAccent)
+                Text("准备看板")
+            }
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(SpendScopeTheme.dashboardControlBackground, in: Capsule())
+        }
+        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+    }
+
+    private var loadingOverview: some View {
+        HStack(spacing: 16) {
+            loadingQuota
+                .frame(width: 280)
+
+            Rectangle()
+                .fill(SpendScopeTheme.dashboardBorder)
+                .frame(width: 1)
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12)
+                ],
+                spacing: 10
+            ) {
+                ForEach(0..<4, id: \.self) { index in
+                    DashboardLoadingMetricTile(
+                        index: index,
+                        isHighlighted: isHighlighted
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .dashboardPanel(padding: 14, strong: true)
+    }
+
+    private var loadingQuota: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
+                .font(.system(size: 14, weight: .semibold))
+
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .stroke(SpendScopeTheme.dashboardAccent.opacity(0.18), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0.05, to: 0.32)
+                        .stroke(
+                            SpendScopeTheme.brandGradient,
+                            style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(isHighlighted ? 230 : -40))
+
+                    Text("…")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                }
+                .frame(width: 112, height: 112)
+
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(SpendScopeTheme.dashboardAccent.opacity(0.74))
+                        .frame(width: 6, height: 6)
+                    DashboardLoadingBlock(width: 58, height: 8, isHighlighted: isHighlighted)
+                    Spacer(minLength: 8)
+                    DashboardLoadingBlock(width: 42, height: 8, isHighlighted: isHighlighted)
+                }
+                .frame(maxWidth: 200)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var loadingAnalytics: some View {
+        VStack(spacing: 9) {
+            HStack(spacing: 2) {
+                ForEach(
+                    Array(["用量趋势", "Skills / Tools", "工作区用量", "模型用量"].enumerated()),
+                    id: \.offset
+                ) { index, title in
+                    Text(title)
+                        .font(.system(size: 11, weight: index == 0 ? .semibold : .medium))
+                        .foregroundStyle(
+                            index == 0
+                                ? SpendScopeTheme.dashboardPrimaryText.opacity(0.76)
+                                : SpendScopeTheme.dashboardMutedText.opacity(0.7)
+                        )
+                        .frame(width: index == 1 ? 102 : 82, height: 24)
+                        .background {
+                            if index == 0 {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(SpendScopeTheme.dashboardSurfaceStrong.opacity(0.72))
+                            }
+                        }
+                }
+            }
+            .padding(3)
+            .background(
+                SpendScopeTheme.dashboardControlBackground,
+                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72))
+            }
+            .frame(height: 30)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.xyaxis.line")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                    DashboardLoadingBlock(width: 76, height: 10, isHighlighted: isHighlighted)
+                    Spacer()
+                    DashboardLoadingBlock(width: 108, height: 9, isHighlighted: isHighlighted)
+                }
+
+                GeometryReader { geometry in
+                    VStack(spacing: 12) {
+                        ForEach(0..<5, id: \.self) { index in
+                            HStack(spacing: 10) {
+                                DashboardLoadingBlock(
+                                    width: 24,
+                                    height: 8,
+                                    isHighlighted: isHighlighted
+                                )
+                                DashboardLoadingBlock(
+                                    width: max(120, geometry.size.width * loadingBarFraction(index)),
+                                    height: 8,
+                                    isHighlighted: isHighlighted
+                                )
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(
+                SpendScopeTheme.dashboardTile.opacity(0.72),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(SpendScopeTheme.dashboardBorder.opacity(0.78))
+            }
+        }
+        .dashboardPanel(padding: 10)
+    }
+
+    private func loadingBarFraction(_ index: Int) -> CGFloat {
+        [0.74, 0.52, 0.82, 0.43, 0.64][index]
+    }
+}
+
+private struct DashboardLoadingMetricTile: View {
+    let index: Int
+    let isHighlighted: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(SpendScopeTheme.dashboardAccent.opacity(0.10))
+                    .frame(width: 26, height: 26)
+                    .overlay {
+                        Image(systemName: index < 2 ? "calendar" : "chart.bar.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(SpendScopeTheme.dashboardAccent.opacity(0.72))
+                    }
+                DashboardLoadingBlock(width: 46, height: 10, isHighlighted: isHighlighted)
+                Spacer()
+                DashboardLoadingBlock(width: 72, height: 16, isHighlighted: isHighlighted)
+            }
+
+            Rectangle()
+                .fill(SpendScopeTheme.dashboardBorder.opacity(0.72))
+                .frame(height: 1)
+
+            HStack {
+                DashboardLoadingBlock(width: 64, height: 8, isHighlighted: isHighlighted)
+                Spacer()
+                DashboardLoadingBlock(width: 48, height: 8, isHighlighted: isHighlighted)
+            }
+            HStack {
+                DashboardLoadingBlock(width: 54, height: 8, isHighlighted: isHighlighted)
+                Spacer()
+                DashboardLoadingBlock(width: 58, height: 8, isHighlighted: isHighlighted)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            SpendScopeTheme.dashboardTile.opacity(0.74),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder.opacity(0.78))
+        }
+    }
+}
+
+private struct DashboardLoadingBlock: View {
+    let width: CGFloat
+    let height: CGFloat
+    let isHighlighted: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        SpendScopeTheme.dashboardControlBackground.opacity(0.74),
+                        SpendScopeTheme.dashboardAccent.opacity(isHighlighted ? 0.16 : 0.07),
+                        SpendScopeTheme.dashboardControlBackground.opacity(0.74)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(width: width, height: height)
+            .opacity(isHighlighted ? 1 : 0.72)
+    }
+}
+
+private struct DashboardBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        SpendScopeTheme.dashboardBackground
+            .overlay {
+                LinearGradient(
+                    colors: [
+                        SpendScopeTheme.dashboardAccent.opacity(colorScheme == .dark ? 0.15 : 0.055),
+                        Color.clear,
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(
+                            colorScheme == .dark ? 0.11 : 0.035
+                        )
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .topLeading) {
+                RadialGradient(
+                    colors: [
+                        SpendScopeTheme.dashboardAccent.opacity(colorScheme == .dark ? 0.18 : 0.09),
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(
+                            colorScheme == .dark ? 0.09 : 0.035
+                        ),
+                        .clear
+                    ],
+                    center: .topLeading,
+                    startRadius: 12,
+                    endRadius: 560
+                )
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                RadialGradient(
+                    colors: [
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(
+                            colorScheme == .dark ? 0.14 : 0.055
+                        ),
+                        .clear
+                    ],
+                    center: .bottomTrailing,
+                    startRadius: 10,
+                    endRadius: 480
+                )
+                .allowsHitTesting(false)
+            }
+            .ignoresSafeArea()
     }
 }
 
@@ -375,7 +714,6 @@ private struct DashboardContentView: View {
     let isCollapsed: Bool
     let headerStatus: DashboardHeaderStatus
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedRange = TrendRange.defaultRange
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
     @State private var selectedActivityRange = ActivityRange.defaultRange
@@ -397,7 +735,7 @@ private struct DashboardContentView: View {
 
     var body: some View {
         ZStack {
-            dashboardBackground
+            DashboardBackdrop()
 
             if isCollapsed {
                 currentQuotaSection
@@ -431,54 +769,6 @@ private struct DashboardContentView: View {
                 : expandedContentSize.height
         )
         .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
-    }
-
-    private var dashboardBackground: some View {
-        SpendScopeTheme.dashboardBackground
-            .overlay {
-                LinearGradient(
-                    colors: [
-                        SpendScopeTheme.dashboardAccent.opacity(colorScheme == .dark ? 0.15 : 0.055),
-                        Color.clear,
-                        SpendScopeTheme.dashboardAccentSecondary.opacity(
-                            colorScheme == .dark ? 0.11 : 0.035
-                        )
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .allowsHitTesting(false)
-            }
-            .overlay(alignment: .topLeading) {
-                RadialGradient(
-                    colors: [
-                        SpendScopeTheme.dashboardAccent.opacity(colorScheme == .dark ? 0.18 : 0.09),
-                        SpendScopeTheme.dashboardAccentSecondary.opacity(
-                            colorScheme == .dark ? 0.09 : 0.035
-                        ),
-                        .clear
-                    ],
-                    center: .topLeading,
-                    startRadius: 12,
-                    endRadius: 560
-                )
-                .allowsHitTesting(false)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                RadialGradient(
-                    colors: [
-                        SpendScopeTheme.dashboardAccentSecondary.opacity(
-                            colorScheme == .dark ? 0.14 : 0.055
-                        ),
-                        .clear
-                    ],
-                    center: .bottomTrailing,
-                    startRadius: 10,
-                    endRadius: 480
-                )
-                .allowsHitTesting(false)
-            }
-            .ignoresSafeArea()
     }
 
     private var dashboardHeader: some View {
