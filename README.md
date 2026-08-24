@@ -72,13 +72,7 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ### 设置
 
-![SpendScope 设置顶部，包含外观、看板、状态栏和额度提醒](docs/images/spendscope-settings-appearance.png)
-
-![SpendScope 额度提醒、预警等级和通知权限设置](docs/images/spendscope-settings-reminders.png)
-
-![SpendScope 数据刷新与软件更新设置](docs/images/spendscope-settings-data.png)
-
-![SpendScope 订阅周期、套餐和计费说明](docs/images/spendscope-settings-plans.png)
+![SpendScope 完整设置页，包含外观、看板、状态栏、提醒、数据刷新、软件更新、订阅周期和套餐说明](docs/images/spendscope-settings.png)
 
 设置页覆盖外观、看板行为、状态栏、提醒、数据源、刷新与重建、软件更新、订阅周期、套餐说明和隐私提示。所有悬浮明细与确认弹窗截图见[完整功能说明](docs/FEATURES.md)。
 

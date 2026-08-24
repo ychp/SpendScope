@@ -189,6 +189,10 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 
 ## 提醒与个性化设置
 
+下图为完整设置页长截图，覆盖外观、看板行为、状态栏、额度提醒、数据源、刷新与重建、软件更新、订阅周期、Codex 套餐和其他计费方式。
+
+![SpendScope 完整设置页](images/spendscope-settings.png)
+
 ### 额度提醒
 
 - 额度提醒固定监控 7 天窗口。
@@ -209,7 +213,7 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 - 设置是否显示重置倒计时。
 - 状态栏设置区提供实时预览。
 
-![外观、看板、状态栏和提醒设置](images/spendscope-settings-appearance.png)
+![外观、看板和状态栏设置](images/spendscope-settings-appearance.png)
 
 ### 套餐与计费说明
 
