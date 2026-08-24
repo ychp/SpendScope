@@ -595,12 +595,16 @@ final class DashboardQueryService: @unchecked Sendable {
     ) -> [ThreadTurnKey: TurnLifecycleFact] {
         var facts: [ThreadTurnKey: TurnLifecycleFact] = [:]
         for row in rows {
+            let sourceKey = ThreadTurnKey(threadID: row.threadID, turnID: row.turnID)
             let key = resolvedReplyKey(
                 threadID: row.threadID,
                 turnID: row.turnID,
                 replyAttribution: replyAttribution,
                 threadTitlesByThreadID: threadTitlesByThreadID
             )
+            guard key == sourceKey else {
+                continue
+            }
             var fact = facts[key] ?? TurnLifecycleFact()
             switch row.kind {
             case .started:

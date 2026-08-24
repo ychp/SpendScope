@@ -832,6 +832,71 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(conversation.replies.first?.totalTokens, 50)
     }
 
+    func testCompletedChildDoesNotCompleteRunningParentTask() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 24, hour: 16
+        )))
+        let project = ProjectIdentity(id: "project-a", name: "SpendScope")
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "parent", at: now.addingTimeInterval(-40), total: 30,
+                    project: project, threadID: "parent-thread", turnID: "parent-turn"
+                ),
+                usage(
+                    "child", at: now.addingTimeInterval(-20), total: 20,
+                    project: project, threadID: "child-thread", turnID: "child-turn"
+                )
+            ],
+            quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "parent-start", threadID: "parent-thread", turnID: "parent-turn",
+                    kind: .started, at: now.addingTimeInterval(-50)
+                ),
+                lifecycle(
+                    "child-complete", threadID: "child-thread", turnID: "child-turn",
+                    kind: .completed, at: now.addingTimeInterval(-10)
+                )
+            ],
+            sessions: [
+                session(
+                    threadID: "parent-thread",
+                    updatedAtMilliseconds: Int64((now.timeIntervalSince1970 * 1_000).rounded())
+                ),
+                session(
+                    threadID: "child-thread",
+                    createdAtMilliseconds: Int64(
+                        (now.addingTimeInterval(-30).timeIntervalSince1970 * 1_000).rounded()
+                    ),
+                    updatedAtMilliseconds: Int64(
+                        (now.addingTimeInterval(-10).timeIntervalSince1970 * 1_000).rounded()
+                    )
+                )
+            ]
+        ))
+
+        let task = try XCTUnwrap(
+            DashboardQueryService(store: store)
+                .snapshot(
+                    now: now,
+                    calendar: calendar,
+                    threadTitlesByThreadID: [
+                        "parent-thread": "仍在运行的主任务",
+                        "child-thread": "已完成的子任务"
+                    ],
+                    parentThreadIDsByChildThreadID: ["child-thread": "parent-thread"]
+                )
+                .workspaceUsage.today.todayTasks.first
+        )
+
+        XCTAssertEqual(task.title, "仍在运行的主任务")
+        XCTAssertEqual(task.status, .inProgress)
+    }
+
     func testGuardianUsageKeepsTokensButIsExcludedFromEveryTaskAndReplyMetric() throws {
         let now = Date(timeIntervalSince1970: 20_000)
         let project = ProjectIdentity(id: "project-a", name: "SpendScope")
