@@ -440,7 +440,15 @@ final class DashboardStore {
         let client = self.client
         let task = Task { @MainActor [weak self, client] in
             do {
-                let result = try await client.refreshUsage()
+                let firstResult = try await client.refreshUsage()
+                let result: DashboardDataResult
+                if case .stale = firstResult {
+                    // A local index or active rollout can be briefly unavailable while Codex
+                    // writes it. Confirm once before exposing a partial result to the UI.
+                    result = try await client.refreshUsage()
+                } else {
+                    result = firstResult
+                }
                 guard !Task.isCancelled else { return }
                 self?.publish(result)
             } catch {

@@ -113,7 +113,7 @@ final class DashboardQueryService: @unchecked Sendable {
             periods.insert(
                 try period(
                     id: "subscriptionCycle",
-                    title: "本订阅周期",
+                    title: "当前订阅周期",
                     rows: subscriptionRows
                 ),
                 at: periods.count - 1

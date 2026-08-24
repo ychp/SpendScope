@@ -2,11 +2,25 @@ import AppKit
 import Charts
 import SwiftUI
 
-enum DashboardHeaderStatus: Equatable {
+enum DashboardRefreshBadge: Equatable {
+    case success
+    case warning
+    case failure
+
+    var symbolName: String {
+        switch self {
+        case .success: "checkmark.circle.fill"
+        case .warning: "exclamationmark.triangle.fill"
+        case .failure: "xmark.circle.fill"
+        }
+    }
+}
+
+enum DashboardRefreshStatus: Equatable {
     case refreshed(String)
     case warning(String)
 
-    static func resolve(from state: DashboardLoadState) -> DashboardHeaderStatus? {
+    static func resolve(from state: DashboardLoadState) -> DashboardRefreshStatus? {
         switch state {
         case .loaded(let snapshot, _):
             return .refreshed(snapshot.updatedText)
@@ -16,34 +30,18 @@ enum DashboardHeaderStatus: Equatable {
             return nil
         }
     }
-}
 
-struct DashboardHeaderStatusBadge: View {
-    let status: DashboardHeaderStatus
+    var badge: DashboardRefreshBadge {
+        switch self {
+        case .refreshed: .success
+        case .warning: .warning
+        }
+    }
 
-    @ViewBuilder
-    var body: some View {
-        switch status {
-        case .refreshed(let text):
-            Label(text, systemImage: "clock")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(
-                    SpendScopeTheme.dashboardControlBackground,
-                    in: Capsule()
-                )
-        case .warning(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.orange)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(Color.orange.opacity(0.10), in: Capsule())
-                .help(message)
+    var buttonHelp: String {
+        switch self {
+        case .refreshed(let text): "\(text)，点击再次刷新"
+        case .warning(let message): "\(message) 点击重试刷新"
         }
     }
 }
@@ -53,6 +51,7 @@ struct DashboardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
     @State private var isCollapsed = false
+    @State private var isRefreshTooltipPresented = false
 
     var body: some View {
         Group {
@@ -62,9 +61,7 @@ struct DashboardView: View {
             case .loaded(let snapshot, _):
                 DashboardContentView(
                     snapshot: snapshot,
-                    isCollapsed: isCollapsed,
-                    headerStatus: DashboardHeaderStatus.resolve(from: store.state)
-                        ?? .refreshed(snapshot.updatedText)
+                    isCollapsed: isCollapsed
                 )
             case .empty:
                 unavailableView(
@@ -72,12 +69,10 @@ struct DashboardView: View {
                     systemImage: "tray",
                     description: "使用 Codex 后刷新即可在这里查看 Token 用量。"
                 )
-            case .stale(let snapshot, _, let message):
+            case .stale(let snapshot, _, _):
                 DashboardContentView(
                     snapshot: snapshot,
-                    isCollapsed: isCollapsed,
-                    headerStatus: DashboardHeaderStatus.resolve(from: store.state)
-                        ?? .warning(message)
+                    isCollapsed: isCollapsed
                 )
             case .failed(let message):
                 unavailableView(
@@ -144,21 +139,23 @@ struct DashboardView: View {
             Button {
                 Task { await store.refresh() }
             } label: {
-                ZStack {
-                    Image(systemName: "arrow.clockwise")
-                        .opacity(store.isRefreshing ? 0 : 1)
-
-                    if store.isRefreshing {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-                .frame(width: 16, height: 16)
+                DashboardRefreshButtonLabel(
+                    isRefreshing: store.isRefreshing,
+                    badge: refreshButtonBadge
+                )
+                .accessibilityHidden(true)
             }
             .disabled(store.isRefreshing)
             .keyboardShortcut("r", modifiers: .command)
-            .accessibilityLabel(store.isRefreshing ? "正在刷新" : "刷新")
-            .help(store.isRefreshing ? "正在刷新" : "刷新")
+            .accessibilityLabel(refreshButtonAccessibilityLabel)
+            .accessibilityHint(refreshButtonHelp)
+            .onHover { isRefreshTooltipPresented = $0 }
+            .popover(isPresented: $isRefreshTooltipPresented, arrowEdge: .bottom) {
+                DashboardRefreshTooltip(
+                    title: refreshButtonTooltipTitle,
+                    message: refreshButtonHelp
+                )
+            }
 
             SettingsLink {
                 Label("设置", systemImage: "gearshape")
@@ -181,6 +178,63 @@ struct DashboardView: View {
         }
     }
 
+    private var refreshButtonStatus: DashboardRefreshStatus? {
+        DashboardRefreshStatus.resolve(from: store.state)
+    }
+
+    private var refreshButtonBadge: DashboardRefreshBadge? {
+        guard !store.isRefreshing else { return nil }
+        if let refreshButtonStatus {
+            return refreshButtonStatus.badge
+        }
+        return switch store.state {
+        case .failed: .failure
+        case .unsupported: .warning
+        case .loading, .loaded, .empty, .stale: nil
+        }
+    }
+
+    private var refreshButtonHelp: String {
+        if store.isRefreshing {
+            return "正在重新读取本机 Codex 数据"
+        }
+        if let refreshButtonStatus {
+            return refreshButtonStatus.buttonHelp
+        }
+        return switch store.state {
+        case .failed(let message), .unsupported(let message):
+            "\(message) 点击重试刷新"
+        case .loading, .loaded, .empty, .stale:
+            "刷新本机 Codex 数据"
+        }
+    }
+
+    private var refreshButtonTooltipTitle: String {
+        if store.isRefreshing {
+            return "正在刷新"
+        }
+        return switch store.state {
+        case .loaded: "数据已刷新"
+        case .stale: "部分数据未刷新"
+        case .failed: "刷新失败"
+        case .unsupported: "数据格式不兼容"
+        case .loading, .empty: "刷新看板数据"
+        }
+    }
+
+    private var refreshButtonAccessibilityLabel: String {
+        if store.isRefreshing {
+            return "正在刷新本机 Codex 数据"
+        }
+        return switch store.state {
+        case .loaded(let snapshot, _): "\(snapshot.updatedText)，再次刷新"
+        case .stale: "部分数据未刷新，重试"
+        case .failed: "刷新失败，重试"
+        case .unsupported: "数据格式不兼容，重试刷新"
+        case .loading, .empty: "刷新本机 Codex 数据"
+        }
+    }
+
     private func unavailableView(
         _ title: String,
         systemImage: String,
@@ -196,6 +250,71 @@ struct DashboardView: View {
             minHeight: DashboardWindowLayout.baseExpandedContentSize.height
         )
         .background(SpendScopeTheme.dashboardBackground)
+    }
+}
+
+private struct DashboardRefreshTooltip: View {
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("快捷键 ⌘R")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(width: 240, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct DashboardRefreshButtonLabel: View {
+    let isRefreshing: Bool
+    let badge: DashboardRefreshBadge?
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+            .frame(width: 16, height: 16)
+
+            if let badge, !isRefreshing {
+                Image(systemName: badge.symbolName)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(badgeColor(for: badge))
+                    .background {
+                        Circle()
+                            .fill(Color(nsColor: .windowBackgroundColor))
+                            .frame(width: 7, height: 7)
+                    }
+                    .offset(x: 3, y: 3)
+            }
+        }
+        .frame(width: 18, height: 18)
+    }
+
+    private func badgeColor(for badge: DashboardRefreshBadge) -> Color {
+        switch badge {
+        case .success: .green
+        case .warning: .orange
+        case .failure: .red
+        }
     }
 }
 
@@ -715,7 +834,6 @@ private final class DashboardWindowSizingView: NSView {
 private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
     let isCollapsed: Bool
-    let headerStatus: DashboardHeaderStatus
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedRange = TrendRange.defaultRange
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
@@ -790,24 +908,9 @@ private struct DashboardContentView: View {
             }
             .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-
-            Spacer()
-
-            dashboardHeaderStatus
         }
         .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
         .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder
-    private var dashboardHeaderStatus: some View {
-        switch headerStatus {
-        case .refreshed:
-            DashboardHeaderStatusBadge(status: headerStatus)
-        case .warning:
-            DashboardHeaderStatusBadge(status: headerStatus)
-                .frame(maxWidth: 360, alignment: .trailing)
-        }
     }
 
     private var overviewPanel: some View {
@@ -1218,7 +1321,7 @@ private struct DashboardContentView: View {
         .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(title) \(TokenFormatter.compact(value))，占当前周期 \(TokenFormatter.percentage(share))"
+            "\(title) \(TokenFormatter.compact(value))，占当前订阅周期 \(TokenFormatter.percentage(share))"
         )
     }
 

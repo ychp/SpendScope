@@ -106,6 +106,7 @@ final class DashboardQueryServiceTests: XCTestCase {
             snapshot.periods.map(\.id),
             ["today", "sevenDays", "thirtyDays", "subscriptionCycle", "allTime"]
         )
+        XCTAssertEqual(snapshot.periods.first { $0.id == "subscriptionCycle" }?.title, "当前订阅周期")
         XCTAssertEqual(snapshot.periods.first { $0.id == "subscriptionCycle" }?.total, 120)
         XCTAssertEqual(snapshot.subscriptionCycle?.start, cycleStart)
         XCTAssertEqual(

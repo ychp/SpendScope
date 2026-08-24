@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 import XCTest
 @testable import SpendScope
 
@@ -73,7 +72,7 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertFalse(text.contains("过期"))
     }
 
-    func testDashboardHeaderStatusPrioritizesStaleWarningOverRefreshTimestamp() {
+    func testDashboardRefreshStatusPrioritizesStaleWarningOverRefreshTimestamp() {
         let message = "部分数据暂不可用，正在显示已成功读取的数据。"
         let state = DashboardLoadState.stale(
             .fixture(todayTokens: 17, updatedText: "刚刚刷新"),
@@ -82,19 +81,33 @@ final class DashboardStoreTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            DashboardHeaderStatus.resolve(from: state),
+            DashboardRefreshStatus.resolve(from: state),
             .warning(message)
+        )
+        XCTAssertEqual(DashboardRefreshStatus.resolve(from: state)?.badge, .warning)
+        XCTAssertEqual(
+            DashboardRefreshStatus.resolve(from: state)?.buttonHelp,
+            "\(message) 点击重试刷新"
         )
     }
 
-    func testDashboardWarningBadgeHugsShortContent() {
-        let hostingView = NSHostingView(
-            rootView: DashboardHeaderStatusBadge(status: .warning("部分刷新"))
+    func testDashboardRefreshStatusUsesSuccessBadgeWithoutVisibleResultText() {
+        let state = DashboardLoadState.loaded(
+            .fixture(todayTokens: 17, updatedText: "刚刚刷新"),
+            .fixture
         )
 
-        hostingView.layoutSubtreeIfNeeded()
+        let status = DashboardRefreshStatus.resolve(from: state)
 
-        XCTAssertLessThan(hostingView.fittingSize.width, 180)
+        XCTAssertEqual(status?.badge, .success)
+        XCTAssertEqual(status?.badge.symbolName, "checkmark.circle.fill")
+        XCTAssertEqual(status?.buttonHelp, "刚刚刷新，点击再次刷新")
+    }
+
+    func testDashboardRefreshBadgesUseDistinctShapesInsteadOfColorAlone() {
+        XCTAssertEqual(DashboardRefreshBadge.success.symbolName, "checkmark.circle.fill")
+        XCTAssertEqual(DashboardRefreshBadge.warning.symbolName, "exclamationmark.triangle.fill")
+        XCTAssertEqual(DashboardRefreshBadge.failure.symbolName, "xmark.circle.fill")
     }
 
     func testMenuUpdateTextCombinesStaleStateWithLastRefresh() {
@@ -165,6 +178,45 @@ final class DashboardStoreTests: XCTestCase {
         XCTAssertEqual(snapshot.todayTokens, 42)
         let refreshCount = await client.refreshCount
         XCTAssertEqual(refreshCount, 1)
+        XCTAssertFalse(store.isRefreshing)
+    }
+
+    func testManualRefreshConfirmsTransientPartialResultBeforePublishing() async {
+        let client = FakeDashboardDataClient(
+            loadResult: .loaded(.fixture(todayTokens: 1), .fixture),
+            refreshResults: [
+                .stale(
+                    .fixture(todayTokens: 2),
+                    .fixture,
+                    "部分数据暂不可用，正在显示已成功读取的数据。"
+                ),
+                .loaded(.fixture(todayTokens: 3), .fixture)
+            ],
+            pauseRefresh: true
+        )
+        let store = DashboardStore(client: client, usageRefreshInterval: .seconds(60))
+        await store.loadCached()
+
+        async let refresh: Void = store.refresh()
+        await eventually { await client.refreshCount == 1 }
+        await client.resumeRefresh()
+        await eventually { await client.refreshCount == 2 }
+
+        guard case let .loaded(snapshotDuringConfirmation, _) = store.state else {
+            await client.resumeRefresh()
+            _ = await refresh
+            return XCTFail("A transient partial result must not be published before confirmation")
+        }
+        XCTAssertEqual(snapshotDuringConfirmation.todayTokens, 1)
+        XCTAssertTrue(store.isRefreshing)
+
+        await client.resumeRefresh()
+        _ = await refresh
+
+        guard case let .loaded(snapshot, _) = store.state else {
+            return XCTFail("Expected the confirmed refresh result")
+        }
+        XCTAssertEqual(snapshot.todayTokens, 3)
         XCTAssertFalse(store.isRefreshing)
     }
 
