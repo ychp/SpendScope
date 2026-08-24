@@ -8,7 +8,7 @@
 | --- | --- |
 | macOS 状态栏 | 展示 7 天额度、已用或剩余比例、重置倒计时 |
 | 状态栏弹窗 | 查看今日 Token、额度、Token 构成、刷新状态和更新状态 |
-| 详细看板 | 查看额度、四周期汇总、趋势、日历、活动、工作区和模型分析 |
+| 详细看板 | 查看额度、周期汇总、今日任务、趋势、日历、活动、工作区和模型分析 |
 | 工作区详情 | 下钻目录、任务、回复、状态、耗时、模型与 Skills / Tools 调用 |
 | 设置 | 管理色系、看板、状态栏、提醒、刷新、数据重建、套餐说明和软件更新 |
 | 本地数据层 | 增量读取、事件去重、SQLite 聚合、来源健康检查和安全降级 |
@@ -51,12 +51,22 @@
 
 ![SpendScope 详细看板，展示 7 天额度、当前订阅周期、周期汇总和用量趋势](images/spendscope-dashboard.png)
 
+![SpendScope 首次载入时与真实布局一致的启动骨架](images/spendscope-loading.png)
+
+![SpendScope 仅显示额度的紧凑看板](images/spendscope-collapsed-quota.png)
+
 ### 今日任务
 
 - 汇总今天产生 Token 用量的任务，展示任务名、所属工作区、状态、最后更新时间、回复数和今日 Token。
 - 进行中的任务优先；相同状态按最后更新时间倒序排列。
 - 点击任务后打开独立详情窗口，展示四类 Token 构成、回复数、工作区相关目录和回复明细。
 - 回复明细与工作区详情共用同一套行内容和窗口外调用悬浮面板，可查看每次回复的状态、耗时、模型、Token 以及完整 Skills / Tools 调用。
+
+![SpendScope 今日任务页](images/spendscope-today-tasks.png)
+
+![SpendScope 今日任务详情](images/spendscope-today-task-detail.png)
+
+![今日任务回复与窗口外调用悬浮面板](images/spendscope-today-task-reply-hover.png)
 
 ### 用量趋势与日历
 
@@ -118,6 +128,8 @@
 
 ![SpendScope 任务明细](images/spendscope-task-details.png)
 
+![工作区任务与窗口外汇总调用悬浮面板](images/spendscope-task-activity-detail.png)
+
 ![SpendScope 回复明细](images/spendscope-reply-details.png)
 
 ![SpendScope 回复明细与窗口外调用悬浮窗](images/spendscope-reply-activity-detail.png)
@@ -136,7 +148,11 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 
 ![SpendScope 模型用量排行](images/spendscope-model-usage.png)
 
-![模型 Token 明细、费用分项和 API 定价规则悬浮窗](images/spendscope-model-hover-details.png)
+![模型 Token 构成悬浮明细](images/spendscope-model-hover-details.png)
+
+![模型 API 等值费用分项悬浮明细](images/spendscope-model-cost-hover-details.png)
+
+![模型公开 API 定价规则弹窗](images/spendscope-model-pricing-popover.png)
 
 ## 刷新、额度与数据修复
 

@@ -42,6 +42,8 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ### 详细看板
 
+![SpendScope 今日任务页，展示任务状态、工作区、回复数和今日 Token](docs/images/spendscope-today-tasks.png)
+
 ![SpendScope 详细看板，展示 7 天额度、当前订阅周期、Token 汇总、用量日历和趋势图](docs/images/spendscope-dashboard.png)
 
 ![SpendScope Skills 与 Tools 排行](docs/images/spendscope-activity-usage.png)
@@ -52,7 +54,11 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 详细看板在概览区同时展示 7 天额度、今日、7 日、30 日、累计和可选的当前订阅周期用量；下方包含今日任务、用量趋势、Skills / Tools、工作区用量和模型用量五个分析页，并可在今日、7 日、30 日和累计范围间切换排行。今日任务按状态和最后更新时间排序，可继续查看任务的 Token 构成、工作区目录与回复明细。
 
+首次载入时使用与真实内容同构的轻量骨架，减少布局跳动；看板也可收起为仅保留额度的紧凑窗口。对应截图和全部悬浮明细见[完整功能说明](docs/FEATURES.md)。
+
 ### 工作区与回复详情
+
+![SpendScope 今日任务详情，展示 Token 构成、相关目录和回复明细](docs/images/spendscope-today-task-detail.png)
 
 ![SpendScope 工作区详情概览，展示目录用量、Token 构成、近 7 日趋势和任务用量](docs/images/spendscope-project-overview.png)
 
@@ -62,7 +68,7 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ![SpendScope 回复明细与窗口外调用详情，展示完整 Skills、Tools 和 Token 构成](docs/images/spendscope-reply-activity-detail.png)
 
-工作区排行可以打开独立详情窗口，继续查看任务和回复级用量；子 agent 的用量会并入对应主任务，以及实际创建它的主回复，但子 agent 自己的完成事件不会提前结束仍在运行的主任务。回复中的模型会同时展示去重后的调用次数；将鼠标停在回复上，还能查看包含子 agent 调用在内的 Skills / Tools 明细。
+今日任务和工作区排行都可以打开独立详情窗口，继续查看任务和回复级用量；子 agent 的用量会并入对应主任务，以及实际创建它的主回复，但子 agent 自己的完成事件不会提前结束仍在运行的主任务。回复中的模型会同时展示去重后的调用次数；将鼠标停在任务或回复上，还能在详情窗口外查看包含子 agent 调用在内的完整模型、Token、Skills / Tools 明细。
 
 ### 设置
 
