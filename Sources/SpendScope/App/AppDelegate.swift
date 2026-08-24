@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        AppTooltipConfiguration.apply()
         UNUserNotificationCenter.current().delegate = self
     }
 

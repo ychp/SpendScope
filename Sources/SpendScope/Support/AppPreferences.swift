@@ -18,6 +18,12 @@ enum AppPreferenceKeys {
     static let automaticallyDownloadsUpdates = "updates.automaticallyDownloads"
 }
 
+enum AppTooltipConfiguration {
+    static func apply(to defaults: UserDefaults = .standard) {
+        defaults.set(500, forKey: "NSInitialToolTipDelay")
+    }
+}
+
 enum AppColorSchemePreference: String, CaseIterable, Identifiable, Sendable {
     case system
     case light

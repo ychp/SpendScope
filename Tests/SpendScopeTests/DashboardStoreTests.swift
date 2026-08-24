@@ -4,6 +4,19 @@ import XCTest
 
 @MainActor
 final class DashboardStoreTests: XCTestCase {
+    func testNativeTooltipConfigurationAppliesDelayWithinOneSecond() throws {
+        let key = "NSInitialToolTipDelay"
+        let suiteName = "AppTooltipConfigurationTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        AppTooltipConfiguration.apply(to: defaults)
+
+        let delay = try XCTUnwrap(defaults.object(forKey: key) as? Int)
+        XCTAssertGreaterThan(delay, 0)
+        XCTAssertLessThanOrEqual(delay, 1_000)
+    }
+
     func testSubscriptionPreferenceChangeReloadsCachedDataWithoutRefreshingSources() async {
         let client = FakeDashboardDataClient(
             loadResult: .loaded(.fixture(todayTokens: 23), .fixture),

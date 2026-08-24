@@ -90,11 +90,42 @@ final class TokenFormatterTests: XCTestCase {
     func testSubscriptionOverviewPreservesAnalyticsHeightByGrowingDashboardMinimumSize() {
         XCTAssertEqual(
             DashboardWindowLayout.expandedContentSize(hasSubscriptionCycle: false),
-            CGSize(width: 920, height: 666)
+            CGSize(width: 920, height: 618)
         )
         XCTAssertEqual(
             DashboardWindowLayout.expandedContentSize(hasSubscriptionCycle: true),
-            CGSize(width: 920, height: 728)
+            CGSize(width: 920, height: 680)
+        )
+    }
+
+    func testDashboardWindowLayoutCompactsPreviousManagedHeight() {
+        XCTAssertEqual(
+            DashboardWindowLayout.targetExpandedContentSize(
+                current: CGSize(width: 920, height: 728),
+                requested: CGSize(width: 920, height: 680)
+            ),
+            CGSize(width: 920, height: 680)
+        )
+    }
+
+    func testDashboardWindowLayoutPreservesUserExpandedHeight() {
+        XCTAssertEqual(
+            DashboardWindowLayout.targetExpandedContentSize(
+                current: CGSize(width: 1_040, height: 760),
+                requested: CGSize(width: 920, height: 680)
+            ),
+            CGSize(width: 1_040, height: 760)
+        )
+    }
+
+    func testDashboardWindowLayoutAdoptsCompactHeightOnInitialMount() {
+        XCTAssertEqual(
+            DashboardWindowLayout.targetExpandedContentSize(
+                current: CGSize(width: 1_040, height: 780),
+                requested: CGSize(width: 920, height: 680),
+                adoptsRequestedHeight: true
+            ),
+            CGSize(width: 1_040, height: 680)
         )
     }
 

@@ -51,7 +51,6 @@ struct DashboardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
     @State private var isCollapsed = false
-    @State private var isRefreshTooltipPresented = false
 
     var body: some View {
         Group {
@@ -149,13 +148,7 @@ struct DashboardView: View {
             .keyboardShortcut("r", modifiers: .command)
             .accessibilityLabel(refreshButtonAccessibilityLabel)
             .accessibilityHint(refreshButtonHelp)
-            .onHover { isRefreshTooltipPresented = $0 }
-            .popover(isPresented: $isRefreshTooltipPresented, arrowEdge: .bottom) {
-                DashboardRefreshTooltip(
-                    title: refreshButtonTooltipTitle,
-                    message: refreshButtonHelp
-                )
-            }
+            .help(refreshButtonTooltipText)
 
             SettingsLink {
                 Label("设置", systemImage: "gearshape")
@@ -222,6 +215,10 @@ struct DashboardView: View {
         }
     }
 
+    private var refreshButtonTooltipText: String {
+        "\(refreshButtonTooltipTitle)\n\(refreshButtonHelp)\n快捷键 ⌘R"
+    }
+
     private var refreshButtonAccessibilityLabel: String {
         if store.isRefreshing {
             return "正在刷新本机 Codex 数据"
@@ -250,31 +247,6 @@ struct DashboardView: View {
             minHeight: DashboardWindowLayout.baseExpandedContentSize.height
         )
         .background(SpendScopeTheme.dashboardBackground)
-    }
-}
-
-private struct DashboardRefreshTooltip: View {
-    let title: String
-    let message: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-
-            Text(message)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("快捷键 ⌘R")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(width: 240, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -328,7 +300,6 @@ private struct DashboardLoadingView: View {
 
             SpendScopeGlassGroup(spacing: 16) {
                 VStack(alignment: .leading, spacing: 16) {
-                    loadingHeader
                     loadingOverview
                         .frame(height: DashboardWindowLayout.standardOverviewHeight)
                     loadingAnalytics
@@ -352,40 +323,6 @@ private struct DashboardLoadingView: View {
                 isHighlighted = true
             }
         }
-    }
-
-    private var loadingHeader: some View {
-        HStack(spacing: 10) {
-            Image("CodexIcon")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 28, height: 28)
-
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(SpendScopeTheme.dashboardAccent)
-                    .frame(width: 6, height: 6)
-                    .opacity(isHighlighted ? 1 : 0.48)
-                Text("正在读取本地数据")
-            }
-            .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-
-            Spacer()
-
-            HStack(spacing: 7) {
-                ProgressView()
-                    .controlSize(.mini)
-                    .tint(SpendScopeTheme.dashboardAccent)
-                Text("准备看板")
-            }
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(SpendScopeTheme.dashboardControlBackground, in: Capsule())
-        }
-        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
     }
 
     private var loadingOverview: some View {
@@ -418,8 +355,23 @@ private struct DashboardLoadingView: View {
 
     private var loadingQuota: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
-                .font(.system(size: 14, weight: .semibold))
+            HStack(spacing: 10) {
+                Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
+                    .font(.system(size: 14, weight: .semibold))
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(SpendScopeTheme.dashboardAccent)
+                    Text("正在读取")
+                }
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("额度使用，正在读取 Codex 本地数据")
 
             VStack(spacing: 8) {
                 ZStack {
@@ -662,9 +614,10 @@ private struct DashboardBackdrop: View {
 }
 
 enum DashboardWindowLayout {
+    private static let removedHeaderHeight: CGFloat = 48
     static let standardOverviewHeight: CGFloat = 238
     static let subscriptionOverviewHeight: CGFloat = 300
-    static let baseExpandedContentSize = CGSize(width: 920, height: 666)
+    static let baseExpandedContentSize = CGSize(width: 920, height: 618)
     static let collapsedQuotaWidth: CGFloat = 280
     static let collapsedQuotaHeight: CGFloat = 210
     static let collapsedPadding: CGFloat = 20
@@ -683,6 +636,22 @@ enum DashboardWindowLayout {
         return CGSize(
             width: baseExpandedContentSize.width,
             height: baseExpandedContentSize.height + additionalHeight
+        )
+    }
+
+    static func targetExpandedContentSize(
+        current: CGSize,
+        requested: CGSize,
+        adoptsRequestedHeight: Bool = false
+    ) -> CGSize {
+        let usesPreviousManagedHeight = abs(
+            current.height - requested.height - removedHeaderHeight
+        ) < 0.5
+        return CGSize(
+            width: max(current.width, requested.width),
+            height: adoptsRequestedHeight || usesPreviousManagedHeight
+                ? requested.height
+                : max(current.height, requested.height)
         )
     }
 }
@@ -732,6 +701,7 @@ private final class DashboardWindowSizingView: NSView {
     private var expandedFrame: NSRect?
     private var expandedMinimumContentSize: CGSize?
     private var expandedMaximumContentSize: CGSize?
+    private var hasAppliedInitialExpandedSize = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -740,6 +710,7 @@ private final class DashboardWindowSizingView: NSView {
         expandedFrame = nil
         expandedMinimumContentSize = nil
         expandedMaximumContentSize = nil
+        hasAppliedInitialExpandedSize = false
         scheduleSizingUpdate()
     }
 
@@ -812,10 +783,12 @@ private final class DashboardWindowSizingView: NSView {
     private func enforceExpandedMinimumSize(_ window: NSWindow) {
         window.contentMinSize = requestedExpandedContentSize
         let currentSize = window.contentRect(forFrameRect: window.frame).size
-        let targetSize = CGSize(
-            width: max(currentSize.width, requestedExpandedContentSize.width),
-            height: max(currentSize.height, requestedExpandedContentSize.height)
+        let targetSize = DashboardWindowLayout.targetExpandedContentSize(
+            current: currentSize,
+            requested: requestedExpandedContentSize,
+            adoptsRequestedHeight: !hasAppliedInitialExpandedSize
         )
+        hasAppliedInitialExpandedSize = true
         guard targetSize != currentSize else { return }
         resize(window, toContentSize: targetSize)
     }
@@ -870,7 +843,6 @@ private struct DashboardContentView: View {
             } else {
                 SpendScopeGlassGroup(spacing: 16) {
                     VStack(alignment: .leading, spacing: 16) {
-                        dashboardHeader
                         overviewPanel.frame(height: overviewHeight)
                         analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -892,27 +864,6 @@ private struct DashboardContentView: View {
         .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
     }
 
-    private var dashboardHeader: some View {
-        HStack(spacing: 10) {
-            Image("CodexIcon")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 28, height: 28)
-                .accessibilityHidden(true)
-
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 6, height: 6)
-                Text("Codex · \(snapshot.planName)")
-            }
-            .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-        }
-        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-
     private var overviewPanel: some View {
         HStack(spacing: 16) {
             currentQuotaSection.frame(width: 280)
@@ -926,9 +877,33 @@ private struct DashboardContentView: View {
 
     private var currentQuotaSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+            HStack(spacing: 10) {
+                Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    Image("CodexIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                        .accessibilityHidden(true)
+
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+
+                    Text("Codex · \(snapshot.planName)")
+                        .lineLimit(1)
+                }
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("额度使用，Codex，\(snapshot.planName) 套餐")
 
             if snapshot.visibleQuotas.isEmpty {
                 ContentUnavailableView(
