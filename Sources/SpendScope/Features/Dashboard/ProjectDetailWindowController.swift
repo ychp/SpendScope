@@ -14,9 +14,35 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
     private var parentIgnoredMouseEvents = false
     private let onDismiss: () -> Void
 
-    init(
+    convenience init(
         entry: WorkspaceUsageEntry,
         rank: Int,
+        parentWindow: NSWindow,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.init(
+            title: "工作区详情",
+            parentWindow: parentWindow,
+            onDismiss: onDismiss
+        )
+        update(entry: entry, rank: rank)
+    }
+
+    convenience init(
+        task: TodayTaskUsageEntry,
+        parentWindow: NSWindow,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.init(
+            title: "今日任务详情",
+            parentWindow: parentWindow,
+            onDismiss: onDismiss
+        )
+        update(task: task)
+    }
+
+    private init(
+        title: String,
         parentWindow: NSWindow,
         onDismiss: @escaping () -> Void
     ) {
@@ -31,7 +57,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         )
         super.init(window: panel)
 
-        panel.title = "工作区详情"
+        panel.title = title
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.titlebarSeparatorStyle = .none
@@ -50,18 +76,12 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         let hostingController = NSHostingController(
             rootView: AnyView(
                 SpendScopeAppearanceContainer {
-                    ProjectDetailView(
-                        entry: entry,
-                        rank: rank,
-                        onClose: {},
-                        onDetailHover: { _ in }
-                    )
+                    EmptyView()
                 }
             )
         )
         self.hostingController = hostingController
         panel.contentViewController = hostingController
-        update(entry: entry, rank: rank)
 
         parentCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -108,6 +128,22 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
                     },
                     onDetailHover: { [weak self] item in
                         self?.updateDetailHover(item)
+                    }
+                )
+            }
+        )
+    }
+
+    func update(task: TodayTaskUsageEntry) {
+        hostingController?.rootView = AnyView(
+            SpendScopeAppearanceContainer {
+                TodayTaskDetailView(
+                    task: task,
+                    onClose: { [weak self] in
+                        self?.dismiss()
+                    },
+                    onReplyHover: { [weak self] row in
+                        self?.updateDetailHover(row.map(ProjectDetailHoverItem.reply))
                     }
                 )
             }

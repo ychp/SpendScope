@@ -375,6 +375,85 @@ struct WorkspaceUsageRanking: Equatable, Sendable {
         workspaceCount: 0,
         projectCount: 0
     )
+
+    var todayTasks: [TodayTaskUsageEntry] {
+        entries.flatMap { workspace in
+            workspace.visibleConversations.map { conversation in
+                TodayTaskUsageEntry(workspace: workspace, conversation: conversation)
+            }
+        }
+        .sorted { left, right in
+            if left.status.sortPriority != right.status.sortPriority {
+                return left.status.sortPriority < right.status.sortPriority
+            }
+            if left.lastUpdatedAtMilliseconds != right.lastUpdatedAtMilliseconds {
+                return left.lastUpdatedAtMilliseconds > right.lastUpdatedAtMilliseconds
+            }
+            if left.title != right.title {
+                return left.title.localizedCaseInsensitiveCompare(right.title) == .orderedAscending
+            }
+            return left.id < right.id
+        }
+    }
+}
+
+struct TodayTaskUsageEntry: Identifiable, Equatable, Sendable {
+    let workspace: WorkspaceUsageEntry
+    let conversation: ProjectConversationUsage
+
+    var id: String { "\(workspace.id)::\(conversation.id)" }
+
+    var title: String {
+        conversation.displayTitle ?? conversation.shortThreadID
+    }
+
+    var status: ProjectReplyUsageStatus {
+        if conversation.replies.contains(where: { $0.status == .inProgress }) {
+            return .inProgress
+        }
+        return conversation.replies.max {
+            if $0.displayAtMilliseconds != $1.displayAtMilliseconds {
+                return $0.displayAtMilliseconds < $1.displayAtMilliseconds
+            }
+            return $0.id > $1.id
+        }?.status ?? .unknown
+    }
+
+    var lastUpdatedAtMilliseconds: Int64 {
+        max(
+            conversation.lastMessageAtMilliseconds ?? Int64.min,
+            conversation.replies.map(\.displayAtMilliseconds).max() ?? Int64.min
+        )
+    }
+
+    var tokenBreakdown: TokenBreakdown {
+        conversation.replies.reduce(
+            into: TokenBreakdown(input: 0, cachedInput: 0, output: 0, reasoning: 0)
+        ) { result, reply in
+            result = TokenBreakdown(
+                input: result.input + reply.uncachedInputTokens,
+                cachedInput: result.cachedInput + reply.cachedInputTokens,
+                output: result.output + reply.visibleOutputTokens,
+                reasoning: result.reasoning + reply.reasoningTokens
+            )
+        }
+    }
+
+    var unattributedTokens: Int {
+        max(0, conversation.tokens - tokenBreakdown.total)
+    }
+}
+
+private extension ProjectReplyUsageStatus {
+    var sortPriority: Int {
+        switch self {
+        case .inProgress: 0
+        case .completed: 1
+        case .interrupted: 2
+        case .rolledBack: 3
+        case .unknown: 4
+        }
+    }
 }
 
 struct WorkspaceUsageSnapshot: Equatable, Sendable {

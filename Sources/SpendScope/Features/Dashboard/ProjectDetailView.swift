@@ -820,151 +820,13 @@ struct ProjectDetailView: View {
 
     private var replyTable: some View {
         detailCard(title: "回复明细", icon: "bubble.left.and.text.bubble.right") {
-            if replyRows.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "bubble.left.and.text.bubble.right")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(SpendScopeTheme.dashboardMutedText.opacity(0.68))
-                    Text("暂无回复记录")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("该工作区还没有可展示的回复")
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                }
-                .frame(maxWidth: .infinity, minHeight: 130)
-            } else {
-                LazyVStack(spacing: 7) {
-                    ForEach(replyRows) { row in
-                        replyRow(row)
-                    }
-                }
+            ProjectReplyDetailList(
+                rows: replyRows,
+                emptyDescription: "该工作区还没有可展示的回复"
+            ) { row in
+                onDetailHover(row.map(ProjectDetailHoverItem.reply))
             }
         }
-    }
-
-    private func replyRow(_ row: ProjectReplyDetailRow) -> some View {
-        let status = ProjectReplyPresentation.status(row.reply.status)
-        return HStack(alignment: .center, spacing: 12) {
-            Image(systemName: ProjectReplyPresentation.icon(row.reply.status))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(status.color)
-                .frame(width: 30, height: 30)
-                .background(
-                    status.color.opacity(0.10),
-                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                )
-
-            VStack(alignment: .leading, spacing: 7) {
-                Text(row.conversationTitle)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.91))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(spacing: 10) {
-                    Label(
-                        ProjectUsageDateFormatter.replyTime(
-                            row.reply.displayAtMilliseconds
-                        ),
-                        systemImage: "clock"
-                    )
-
-                    Text(status.title)
-                        .font(.system(size: 8.5, weight: .semibold))
-                        .foregroundStyle(status.color)
-                        .padding(.horizontal, 7)
-                        .frame(height: 18)
-                        .background(
-                            status.color.opacity(0.09),
-                            in: Capsule()
-                        )
-
-                    Label(
-                        ProjectReplyPresentation.modelText(row.reply.model),
-                        systemImage: "cpu"
-                    )
-                    .lineLimit(1)
-                }
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-            }
-
-            VStack(alignment: .trailing, spacing: 7) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(TokenFormatter.compact(row.reply.totalTokens))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.92))
-                        .monospacedDigit()
-                    Text("Token")
-                        .font(.system(size: 8.5, weight: .medium))
-                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                }
-
-                HStack(spacing: 7) {
-                    Label(
-                        ProjectUsageDateFormatter.duration(
-                            row.reply.durationMilliseconds
-                        ),
-                        systemImage: "stopwatch"
-                    )
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
-                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                    .monospacedDigit()
-
-                    replyActivityMetric(
-                        title: "Skill",
-                        count: row.reply.skillCallCount,
-                        icon: "sparkles",
-                        tint: SpendScopeTheme.dashboardInput
-                    )
-                    replyActivityMetric(
-                        title: "工具",
-                        count: row.reply.toolCallCount,
-                        icon: "wrench.and.screwdriver.fill",
-                        tint: SpendScopeTheme.dashboardAccentSecondary
-                    )
-                }
-            }
-            .frame(width: 210, alignment: .trailing)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-        .background(
-            SpendScopeTheme.dashboardControlBackground.opacity(0.34),
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72), lineWidth: 1)
-        }
-        .contentShape(Rectangle())
-        .onHover { isHovering in
-            onDetailHover(isHovering ? .reply(row) : nil)
-        }
-    }
-
-    private func replyActivityMetric(
-        title: String,
-        count: Int,
-        icon: String,
-        tint: Color
-    ) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.system(size: 7.5, weight: .semibold))
-            Text("\(title) \(count)")
-                .monospacedDigit()
-        }
-        .font(.system(size: 8.5, weight: .semibold))
-        .foregroundStyle(count > 0 ? tint : SpendScopeTheme.dashboardMutedText.opacity(0.72))
-        .padding(.horizontal, 6)
-        .frame(height: 20)
-        .background(
-            (count > 0 ? tint : SpendScopeTheme.dashboardMutedText).opacity(0.08),
-            in: Capsule()
-        )
     }
 
     private func detailCard<Content: View>(
@@ -1175,6 +1037,154 @@ struct ProjectDetailView: View {
         let total = entry.dailyUsage.reduce(0) { $0 + $1.tokens }
         guard total > 0 else { return 0 }
         return Double(point.tokens) / Double(total)
+    }
+}
+
+struct ProjectReplyDetailList: View {
+    let rows: [ProjectReplyDetailRow]
+    let emptyDescription: String
+    let onHover: (ProjectReplyDetailRow?) -> Void
+
+    var body: some View {
+        if rows.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "bubble.left.and.text.bubble.right")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText.opacity(0.68))
+                Text("暂无回复记录")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(emptyDescription)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            }
+            .frame(maxWidth: .infinity, minHeight: 130)
+        } else {
+            LazyVStack(spacing: 7) {
+                ForEach(rows) { row in
+                    replyRow(row)
+                }
+            }
+        }
+    }
+
+    private func replyRow(_ row: ProjectReplyDetailRow) -> some View {
+        let status = ProjectReplyPresentation.status(row.reply.status)
+        return HStack(alignment: .center, spacing: 12) {
+            Image(systemName: ProjectReplyPresentation.icon(row.reply.status))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(status.color)
+                .frame(width: 30, height: 30)
+                .background(
+                    status.color.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                )
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(row.conversationTitle)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.91))
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 10) {
+                    Label(
+                        ProjectUsageDateFormatter.replyTime(
+                            row.reply.displayAtMilliseconds
+                        ),
+                        systemImage: "clock"
+                    )
+
+                    Text(status.title)
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(status.color)
+                        .padding(.horizontal, 7)
+                        .frame(height: 18)
+                        .background(status.color.opacity(0.09), in: Capsule())
+
+                    Label(
+                        ProjectReplyPresentation.modelText(row.reply.model),
+                        systemImage: "cpu"
+                    )
+                    .lineLimit(1)
+                }
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            }
+
+            VStack(alignment: .trailing, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(TokenFormatter.compact(row.reply.totalTokens))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.92))
+                        .monospacedDigit()
+                    Text("Token")
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                }
+
+                HStack(spacing: 7) {
+                    Label(
+                        ProjectUsageDateFormatter.duration(row.reply.durationMilliseconds),
+                        systemImage: "stopwatch"
+                    )
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                    .monospacedDigit()
+
+                    replyActivityMetric(
+                        title: "Skill",
+                        count: row.reply.skillCallCount,
+                        icon: "sparkles",
+                        tint: SpendScopeTheme.dashboardInput
+                    )
+                    replyActivityMetric(
+                        title: "工具",
+                        count: row.reply.toolCallCount,
+                        icon: "wrench.and.screwdriver.fill",
+                        tint: SpendScopeTheme.dashboardAccentSecondary
+                    )
+                }
+            }
+            .frame(width: 210, alignment: .trailing)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .background(
+            SpendScopeTheme.dashboardControlBackground.opacity(0.34),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72), lineWidth: 1)
+        }
+        .contentShape(Rectangle())
+        .onHover { isHovering in
+            onHover(isHovering ? row : nil)
+        }
+    }
+
+    private func replyActivityMetric(
+        title: String,
+        count: Int,
+        icon: String,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 7.5, weight: .semibold))
+            Text("\(title) \(count)")
+                .monospacedDigit()
+        }
+        .font(.system(size: 8.5, weight: .semibold))
+        .foregroundStyle(count > 0 ? tint : SpendScopeTheme.dashboardMutedText.opacity(0.72))
+        .padding(.horizontal, 6)
+        .frame(height: 20)
+        .background(
+            (count > 0 ? tint : SpendScopeTheme.dashboardMutedText).opacity(0.08),
+            in: Capsule()
+        )
     }
 }
 

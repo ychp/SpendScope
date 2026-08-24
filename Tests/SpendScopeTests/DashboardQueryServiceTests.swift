@@ -544,6 +544,101 @@ final class DashboardQueryServiceTests: XCTestCase {
         )
     }
 
+    func testTodayTasksPrioritizeRunningThenSortSameStatusByLatestUpdate() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 24, hour: 16
+        )))
+        let project = ProjectIdentity(id: "project-a", name: "SpendScope")
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "running", at: now.addingTimeInterval(-40), total: 40,
+                    usage: .init(
+                        uncachedInput: 10,
+                        cachedInput: 15,
+                        visibleOutput: 9,
+                        reasoning: 6
+                    ),
+                    project: project, threadID: "running-thread", turnID: "running-turn"
+                ),
+                usage(
+                    "completed-new", at: now.addingTimeInterval(-30), total: 30,
+                    project: project, threadID: "completed-new-thread", turnID: "completed-new-turn"
+                ),
+                usage(
+                    "completed-old", at: now.addingTimeInterval(-20), total: 20,
+                    project: project, threadID: "completed-old-thread", turnID: "completed-old-turn"
+                )
+            ],
+            quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "running-start", threadID: "running-thread", turnID: "running-turn",
+                    kind: .started, at: now.addingTimeInterval(-45)
+                ),
+                lifecycle(
+                    "completed-new-start", threadID: "completed-new-thread",
+                    turnID: "completed-new-turn", kind: .started,
+                    at: now.addingTimeInterval(-40)
+                ),
+                lifecycle(
+                    "completed-new-end", threadID: "completed-new-thread",
+                    turnID: "completed-new-turn", kind: .completed,
+                    at: now.addingTimeInterval(-25)
+                ),
+                lifecycle(
+                    "completed-old-start", threadID: "completed-old-thread",
+                    turnID: "completed-old-turn", kind: .started,
+                    at: now.addingTimeInterval(-35)
+                ),
+                lifecycle(
+                    "completed-old-end", threadID: "completed-old-thread",
+                    turnID: "completed-old-turn", kind: .completed,
+                    at: now.addingTimeInterval(-15)
+                )
+            ],
+            sessions: [
+                session(
+                    threadID: "running-thread",
+                    updatedAtMilliseconds: Int64((now.addingTimeInterval(-10).timeIntervalSince1970 * 1_000).rounded())
+                ),
+                session(
+                    threadID: "completed-new-thread",
+                    updatedAtMilliseconds: Int64((now.addingTimeInterval(-5).timeIntervalSince1970 * 1_000).rounded())
+                ),
+                session(
+                    threadID: "completed-old-thread",
+                    updatedAtMilliseconds: Int64((now.addingTimeInterval(-15).timeIntervalSince1970 * 1_000).rounded())
+                )
+            ]
+        ))
+
+        let tasks = try DashboardQueryService(store: store)
+            .snapshot(
+                now: now,
+                calendar: calendar,
+                threadTitlesByThreadID: [
+                    "running-thread": "进行中的任务",
+                    "completed-new-thread": "最近完成的任务",
+                    "completed-old-thread": "较早完成的任务"
+                ]
+            )
+            .workspaceUsage.today.todayTasks
+
+        XCTAssertEqual(tasks.map(\.title), ["进行中的任务", "最近完成的任务", "较早完成的任务"])
+        XCTAssertEqual(tasks.map(\.status), [.inProgress, .completed, .completed])
+        XCTAssertEqual(tasks.first?.workspace.name, "SpendScope")
+        XCTAssertEqual(tasks.first?.conversation.tokens, 40)
+        XCTAssertEqual(tasks.first?.tokenBreakdown.input, 10)
+        XCTAssertEqual(tasks.first?.tokenBreakdown.cachedInput, 15)
+        XCTAssertEqual(tasks.first?.tokenBreakdown.output, 9)
+        XCTAssertEqual(tasks.first?.tokenBreakdown.reasoning, 6)
+        XCTAssertEqual(tasks.first?.unattributedTokens, 0)
+    }
+
     func testSubagentUsageMergesIntoReplyThatSpawnedIt() throws {
         let now = Date(timeIntervalSince1970: 20_000)
         let project = ProjectIdentity(id: "project-a", name: "SpendScope")

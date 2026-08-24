@@ -75,6 +75,7 @@ Features：菜单栏、看板和设置
 | 模型用量界面 | `Sources/SpendScope/Features/Dashboard/ModelUsagePanel.swift` |
 | 工作区详情界面 | `Sources/SpendScope/Features/Dashboard/ProjectDetailView.swift` |
 | 工作区详情与外置悬浮窗口 | `Sources/SpendScope/Features/Dashboard/ProjectDetailWindowController.swift` |
+| 今日任务列表与详情 | `Sources/SpendScope/Features/Dashboard/TodayTaskPanel.swift` |
 | 全局状态 | `Sources/SpendScope/App/DashboardStore.swift` |
 
 ## 3. 测试 `Tests/SpendScopeTests/`

@@ -410,7 +410,7 @@ private struct DashboardLoadingView: View {
         VStack(spacing: 9) {
             HStack(spacing: 2) {
                 ForEach(
-                    Array(["用量趋势", "Skills / Tools", "工作区用量", "模型用量"].enumerated()),
+                    Array(["今日任务", "用量趋势", "Skills / Tools", "工作区用量", "模型用量"].enumerated()),
                     id: \.offset
                 ) { index, title in
                     Text(title)
@@ -420,7 +420,7 @@ private struct DashboardLoadingView: View {
                                 ? SpendScopeTheme.dashboardPrimaryText.opacity(0.76)
                                 : SpendScopeTheme.dashboardMutedText.opacity(0.7)
                         )
-                        .frame(width: index == 1 ? 102 : 82, height: 24)
+                        .frame(width: index == 2 ? 102 : 82, height: 24)
                         .background {
                             if index == 0 {
                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -884,23 +884,7 @@ private struct DashboardContentView: View {
 
                 Spacer(minLength: 8)
 
-                HStack(spacing: 6) {
-                    Image("CodexIcon")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 20, height: 20)
-                        .accessibilityHidden(true)
-
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 6, height: 6)
-                        .accessibilityHidden(true)
-
-                    Text("Codex · \(snapshot.planName)")
-                        .lineLimit(1)
-                }
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                quotaIdentityBadge
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("额度使用，Codex，\(snapshot.planName) 套餐")
@@ -920,6 +904,33 @@ private struct DashboardContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var quotaIdentityBadge: some View {
+        HStack(spacing: 6) {
+            Image("CodexIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .accessibilityHidden(true)
+
+            Circle()
+                .fill(Color.green)
+                .frame(width: 5, height: 5)
+                .accessibilityHidden(true)
+
+            Text("Codex · \(snapshot.planName)")
+                .lineLimit(1)
+        }
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(SpendScopeTheme.dashboardControlBackground, in: Capsule())
+        .overlay {
+            Capsule()
+                .stroke(SpendScopeTheme.dashboardBorder.opacity(0.7), lineWidth: 0.7)
+        }
     }
 
     private func quotaColor(for quota: QuotaSnapshot) -> Color {
@@ -1352,6 +1363,8 @@ private struct DashboardContentView: View {
         GeometryReader { geometry in
             Group {
                 switch selectedAnalyticsTab {
+                case .todayTasks:
+                    TodayTaskPanel(ranking: snapshot.workspaceUsage.today)
                 case .trend:
                     trendRow
                 case .activity:
@@ -1720,13 +1733,14 @@ private struct DashboardContentView: View {
     }
 }
 
-private enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
+enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
+    case todayTasks = "今日任务"
     case trend = "用量趋势"
     case activity = "Skills / Tools"
     case project = "工作区用量"
     case model = "模型用量"
 
-    static let defaultTab: DashboardAnalyticsTab = .trend
+    static let defaultTab: DashboardAnalyticsTab = .todayTasks
 
     var id: Self { self }
 }
