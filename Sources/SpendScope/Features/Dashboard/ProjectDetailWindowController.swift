@@ -17,6 +17,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
     convenience init(
         entry: WorkspaceUsageEntry,
         rank: Int,
+        range: ActivityRange,
         parentWindow: NSWindow,
         onDismiss: @escaping () -> Void
     ) {
@@ -25,7 +26,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
             parentWindow: parentWindow,
             onDismiss: onDismiss
         )
-        update(entry: entry, rank: rank)
+        update(entry: entry, rank: rank, range: range)
     }
 
     convenience init(
@@ -117,12 +118,13 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         panel.makeKeyAndOrderFront(nil)
     }
 
-    func update(entry: WorkspaceUsageEntry, rank: Int) {
+    func update(entry: WorkspaceUsageEntry, rank: Int, range: ActivityRange) {
         hostingController?.rootView = AnyView(
             SpendScopeAppearanceContainer {
                 ProjectDetailView(
                     entry: entry,
                     rank: rank,
+                    range: range,
                     onClose: { [weak self] in
                         self?.dismiss()
                     },

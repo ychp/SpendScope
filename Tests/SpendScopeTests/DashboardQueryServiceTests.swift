@@ -135,6 +135,193 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.modelUsage.subscriptionCycle.totalTokens, 120)
     }
 
+    func testWorkspaceUsageAggregatesAIWorktimeByRangeAndClampsLifecycle() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 8, day: 19, hour: 12
+        )))
+        let store = try makeStore()
+
+        try store.commit(batch(
+            events: [
+                usage(
+                    "recent-1", at: now.addingTimeInterval(-5_400),
+                    total: 10, threadID: "work", turnID: "turn-1"
+                ),
+                usage(
+                    "recent-2", at: now.addingTimeInterval(-900),
+                    total: 10, threadID: "work", turnID: "turn-2"
+                ),
+                usage(
+                    "recent-3", at: now.addingTimeInterval(-300),
+                    total: 10, threadID: "work", turnID: "turn-3"
+                ),
+                usage(
+                    "old", at: now.addingTimeInterval(-40 * 86_400),
+                    total: 10, threadID: "work", turnID: "old-turn"
+                )
+            ],
+            quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "recent-1-start", threadID: "work", turnID: "turn-1",
+                    kind: .started, at: now.addingTimeInterval(-7_200)
+                ),
+                lifecycle(
+                    "recent-1-end", threadID: "work", turnID: "turn-1",
+                    kind: .completed, at: now.addingTimeInterval(-5_400)
+                ),
+                lifecycle(
+                    "recent-2-start", threadID: "work", turnID: "turn-2",
+                    kind: .started, at: now.addingTimeInterval(-2_700)
+                ),
+                lifecycle(
+                    "recent-2-end", threadID: "work", turnID: "turn-2",
+                    kind: .completed, at: now.addingTimeInterval(-900)
+                ),
+                lifecycle(
+                    "recent-3-start", threadID: "work", turnID: "turn-3",
+                    kind: .started, at: now.addingTimeInterval(-300)
+                ),
+                lifecycle(
+                    "old-start", threadID: "work", turnID: "old-turn",
+                    kind: .started, at: now.addingTimeInterval(-(40 * 86_400 + 1_200))
+                ),
+                lifecycle(
+                    "old-end", threadID: "work", turnID: "old-turn",
+                    kind: .completed, at: now.addingTimeInterval(-40 * 86_400)
+                )
+            ],
+            sessions: [
+                session(
+                    threadID: "work",
+                    updatedAtMilliseconds: Int64((now.timeIntervalSince1970 * 1_000).rounded()),
+                    activity: .running,
+                    activeTurnID: "turn-3"
+                )
+            ]
+        ))
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(
+            now: now,
+            calendar: calendar
+        )
+
+        let rankings = [
+            snapshot.workspaceUsage.today,
+            snapshot.workspaceUsage.sevenDays,
+            snapshot.workspaceUsage.thirtyDays,
+            snapshot.workspaceUsage.allTime
+        ]
+        XCTAssertEqual(
+            rankings.map(\.totalAIWorktimeMilliseconds),
+            [3_900_000, 3_900_000, 3_900_000, 5_100_000]
+        )
+        XCTAssertEqual(
+            rankings.map { $0.entries.first?.aiWorktimeMilliseconds },
+            [3_900_000, 3_900_000, 3_900_000, 5_100_000]
+        )
+        XCTAssertEqual(
+            snapshot.workspaceUsage.today.todayTasks.map(\.aiWorktimeMilliseconds),
+            [3_900_000]
+        )
+        XCTAssertEqual(
+            snapshot.workspaceUsage.today.todayTasks.first?.conversation.replies
+                .map(\.aiWorktimeMilliseconds)
+                .reduce(0, +),
+            3_900_000
+        )
+    }
+
+    func testAllTimeWorktimeSumsSeparateLifecycleSegmentsWithoutCountingTheGap() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "reply", at: now.addingTimeInterval(-10), total: 10,
+                    threadID: "reused-thread", turnID: "reused-turn"
+                )
+            ],
+            quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "first-start", threadID: "reused-thread", turnID: "reused-turn",
+                    kind: .started, at: now.addingTimeInterval(-120)
+                ),
+                lifecycle(
+                    "first-end", threadID: "reused-thread", turnID: "reused-turn",
+                    kind: .completed, at: now.addingTimeInterval(-110)
+                ),
+                lifecycle(
+                    "second-start", threadID: "reused-thread", turnID: "reused-turn",
+                    kind: .started, at: now.addingTimeInterval(-30)
+                ),
+                lifecycle(
+                    "second-end", threadID: "reused-thread", turnID: "reused-turn",
+                    kind: .completed, at: now.addingTimeInterval(-10)
+                )
+            ]
+        ))
+
+        let ranking = try DashboardQueryService(store: store)
+            .snapshot(now: now, calendar: .current)
+            .workspaceUsage.allTime
+
+        XCTAssertEqual(ranking.totalAIWorktimeMilliseconds, 30_000)
+        XCTAssertEqual(ranking.entries.first?.aiWorktimeMilliseconds, 30_000)
+    }
+
+    func testAllTimeWorktimeOnlyExtendsUnfinishedLifecycleForTheActiveTurn() throws {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "stale", at: now.addingTimeInterval(-290), total: 10,
+                    threadID: "stale-thread", turnID: "stale-turn"
+                ),
+                usage(
+                    "active", at: now.addingTimeInterval(-20), total: 10,
+                    threadID: "active-thread", turnID: "active-turn"
+                )
+            ],
+            quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "stale-start", threadID: "stale-thread", turnID: "stale-turn",
+                    kind: .started, at: now.addingTimeInterval(-300)
+                ),
+                lifecycle(
+                    "active-start", threadID: "active-thread", turnID: "active-turn",
+                    kind: .started, at: now.addingTimeInterval(-30)
+                )
+            ],
+            sessions: [
+                session(
+                    threadID: "stale-thread",
+                    updatedAtMilliseconds: Int64((now.addingTimeInterval(-290).timeIntervalSince1970 * 1_000).rounded())
+                ),
+                session(
+                    threadID: "active-thread",
+                    updatedAtMilliseconds: Int64((now.addingTimeInterval(-20).timeIntervalSince1970 * 1_000).rounded()),
+                    activity: .running,
+                    activeTurnID: "active-turn"
+                )
+            ]
+        ))
+
+        let ranking = try DashboardQueryService(store: store)
+            .snapshot(now: now, calendar: .current)
+            .workspaceUsage.allTime
+
+        XCTAssertEqual(ranking.totalAIWorktimeMilliseconds, 30_000)
+        let replies = ranking.entries.flatMap(\.conversations).flatMap(\.replies)
+        XCTAssertEqual(replies.first { $0.id == "stale-turn" }?.aiWorktimeMilliseconds, 0)
+        XCTAssertEqual(replies.first { $0.id == "active-turn" }?.aiWorktimeMilliseconds, 30_000)
+    }
+
     func testSnapshotGroupsUsageIntoAnchoredSubscriptionCycleTrend() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
@@ -509,7 +696,12 @@ final class DashboardQueryServiceTests: XCTestCase {
                 )
             ],
             sessions: [
-                session(threadID: "recent-thread", updatedAtMilliseconds: recentMessageAt),
+                session(
+                    threadID: "recent-thread",
+                    updatedAtMilliseconds: recentMessageAt,
+                    activity: .running,
+                    activeTurnID: "recent-turn-2"
+                ),
                 session(threadID: "older-thread", updatedAtMilliseconds: olderMessageAt)
             ]
         ))
@@ -540,6 +732,8 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(recentReplies[1].visibleOutputTokens, 10)
         XCTAssertEqual(recentReplies[1].reasoningTokens, 5)
         XCTAssertEqual(recentReplies[1].durationMilliseconds, 15_000)
+        XCTAssertEqual(recentReplies.map(\.aiWorktimeMilliseconds), [22_000, 15_000])
+        XCTAssertEqual(entry.aiWorktimeMilliseconds, 37_000)
         XCTAssertEqual(
             recentReplies[1].skillCalls,
             [ProjectReplyActivityCall(
@@ -624,7 +818,9 @@ final class DashboardQueryServiceTests: XCTestCase {
             sessions: [
                 session(
                     threadID: "running-thread",
-                    updatedAtMilliseconds: Int64((now.addingTimeInterval(-10).timeIntervalSince1970 * 1_000).rounded())
+                    updatedAtMilliseconds: Int64((now.addingTimeInterval(-10).timeIntervalSince1970 * 1_000).rounded()),
+                    activity: .running,
+                    activeTurnID: "running-turn"
                 ),
                 session(
                     threadID: "completed-new-thread",
@@ -658,6 +854,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(tasks.first?.tokenBreakdown.output, 9)
         XCTAssertEqual(tasks.first?.tokenBreakdown.reasoning, 6)
         XCTAssertEqual(tasks.first?.unattributedTokens, 0)
+        XCTAssertEqual(tasks.map(\.aiWorktimeMilliseconds), [45_000, 15_000, 20_000])
     }
 
     func testSubagentUsageMergesIntoReplyThatSpawnedIt() throws {
@@ -755,6 +952,8 @@ final class DashboardQueryServiceTests: XCTestCase {
         let conversation = try XCTUnwrap(entry.conversations.first)
         XCTAssertEqual(conversation.displayTitle, "主任务")
         XCTAssertEqual(conversation.tokens, 65)
+        XCTAssertEqual(conversation.aiWorktimeMilliseconds, 45_000)
+        XCTAssertEqual(entry.aiWorktimeMilliseconds, 45_000)
         XCTAssertEqual(conversation.lastMessageAtMilliseconds, 19_980_000)
         XCTAssertEqual(conversation.replies.count, 2)
         XCTAssertEqual(
@@ -783,6 +982,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(sharedReply.model, "child-model ×1 · parent-model ×1")
         XCTAssertEqual(sharedReply.status, .completed)
         XCTAssertEqual(sharedReply.durationMilliseconds, 45_000)
+        XCTAssertEqual(sharedReply.aiWorktimeMilliseconds, 45_000)
         XCTAssertEqual(
             sharedReply.skillCalls,
             [ProjectReplyActivityCall(name: "ai-code-review", count: 1)]
@@ -853,6 +1053,66 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(conversation.replies.first?.totalTokens, 50)
     }
 
+    func testSubagentReplyWorktimeBelongsToRootWorkspaceWithoutDoubleCounting() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let parentProject = ProjectIdentity(id: "parent-project", name: "Parent")
+        let childProject = ProjectIdentity(id: "child-project", name: "Child")
+        let store = try makeStore()
+        try store.commit(batch(
+            events: [
+                usage(
+                    "parent", at: now.addingTimeInterval(-40), total: 30,
+                    project: parentProject, threadID: "parent-thread", turnID: "parent-turn"
+                ),
+                usage(
+                    "child", at: now.addingTimeInterval(-20), total: 20,
+                    project: childProject, threadID: "child-thread", turnID: "child-turn"
+                )
+            ],
+            quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "parent-start", threadID: "parent-thread", turnID: "parent-turn",
+                    kind: .started, at: now.addingTimeInterval(-50)
+                ),
+                lifecycle(
+                    "parent-end", threadID: "parent-thread", turnID: "parent-turn",
+                    kind: .completed, at: now.addingTimeInterval(-5)
+                )
+            ],
+            sessions: [
+                session(threadID: "parent-thread", updatedAtMilliseconds: 19_990_000),
+                session(
+                    threadID: "child-thread",
+                    createdAtMilliseconds: 19_965_000,
+                    updatedAtMilliseconds: 19_995_000
+                )
+            ]
+        ))
+
+        let ranking = try DashboardQueryService(store: store)
+            .snapshot(
+                now: now,
+                calendar: .current,
+                threadTitlesByThreadID: [
+                    "parent-thread": "主任务",
+                    "child-thread": "子任务"
+                ],
+                parentThreadIDsByChildThreadID: ["child-thread": "parent-thread"]
+            )
+            .workspaceUsage.allTime
+
+        XCTAssertEqual(ranking.totalAIWorktimeMilliseconds, 45_000)
+        XCTAssertEqual(
+            ranking.entries.first { $0.name == "Parent" }?.aiWorktimeMilliseconds,
+            45_000
+        )
+        XCTAssertEqual(
+            ranking.entries.first { $0.name == "Child" }?.aiWorktimeMilliseconds,
+            0
+        )
+    }
+
     func testCompletedChildDoesNotCompleteRunningParentTask() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
@@ -886,7 +1146,9 @@ final class DashboardQueryServiceTests: XCTestCase {
             sessions: [
                 session(
                     threadID: "parent-thread",
-                    updatedAtMilliseconds: Int64((now.timeIntervalSince1970 * 1_000).rounded())
+                    updatedAtMilliseconds: Int64((now.timeIntervalSince1970 * 1_000).rounded()),
+                    activity: .running,
+                    activeTurnID: "parent-turn"
                 ),
                 session(
                     threadID: "child-thread",
@@ -916,6 +1178,7 @@ final class DashboardQueryServiceTests: XCTestCase {
 
         XCTAssertEqual(task.title, "仍在运行的主任务")
         XCTAssertEqual(task.status, .inProgress)
+        XCTAssertEqual(task.aiWorktimeMilliseconds, 50_000)
     }
 
     func testGuardianUsageKeepsTokensButIsExcludedFromEveryTaskAndReplyMetric() throws {
@@ -934,6 +1197,24 @@ final class DashboardQueryServiceTests: XCTestCase {
                 )
             ],
             quotas: [],
+            stateEvents: [
+                lifecycle(
+                    "visible-start", threadID: "visible-thread", turnID: "visible-turn",
+                    kind: .started, at: now.addingTimeInterval(-30)
+                ),
+                lifecycle(
+                    "visible-end", threadID: "visible-thread", turnID: "visible-turn",
+                    kind: .completed, at: now.addingTimeInterval(-20)
+                ),
+                lifecycle(
+                    "guardian-start", threadID: "guardian-thread", turnID: "guardian-turn",
+                    kind: .started, at: now.addingTimeInterval(-18)
+                ),
+                lifecycle(
+                    "guardian-end", threadID: "guardian-thread", turnID: "guardian-turn",
+                    kind: .completed, at: now.addingTimeInterval(-10)
+                )
+            ],
             sessions: [
                 session(threadID: "visible-thread", updatedAtMilliseconds: 10_000),
                 session(threadID: "guardian-thread", updatedAtMilliseconds: 19_000)
@@ -964,6 +1245,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(entry.conversations.count, 2, "Raw conversations remain available for usage")
         XCTAssertEqual(entry.visibleConversations.map(\.displayTitle), ["可见任务"])
         XCTAssertEqual(entry.visibleReplyCount, 1)
+        XCTAssertEqual(entry.aiWorktimeMilliseconds, 10_000)
         XCTAssertEqual(entry.lastVisibleActivityAtMilliseconds, 10_000)
         XCTAssertEqual(projectEntry.conversationCount, 1)
         XCTAssertEqual(projectEntry.replyCount, 1)
@@ -1693,7 +1975,9 @@ final class DashboardQueryServiceTests: XCTestCase {
     private func session(
         threadID: String,
         createdAtMilliseconds: Int64? = nil,
-        updatedAtMilliseconds: Int64
+        updatedAtMilliseconds: Int64,
+        activity: SessionActivityState = .completed,
+        activeTurnID: String? = nil
     ) -> StoredSession {
         StoredSession(
             threadID: threadID,
@@ -1702,10 +1986,10 @@ final class DashboardQueryServiceTests: XCTestCase {
             updatedAtMilliseconds: updatedAtMilliseconds,
             state: SessionStateSnapshot(
                 threadID: threadID,
-                activity: .completed,
+                activity: activity,
                 archive: .active,
                 childEdgeStatus: nil,
-                activeTurnID: nil,
+                activeTurnID: activeTurnID,
                 lastActivityAtMilliseconds: updatedAtMilliseconds,
                 lastActivityEventKey: "\(threadID):1",
                 archiveObservedAtMilliseconds: nil

@@ -79,6 +79,22 @@ private extension DashboardSnapshot {
 }
 
 final class TokenFormatterTests: XCTestCase {
+    func testWorktimeFormattingKeepsShortNonzeroDurationsVisible() {
+        XCTAssertEqual(TokenFormatter.compactWorktime(0), "0M")
+        XCTAssertEqual(TokenFormatter.compactWorktime(30_000), "<1M")
+        XCTAssertEqual(TokenFormatter.compactWorktime(59 * 60_000), "59M")
+        XCTAssertEqual(TokenFormatter.compactWorktime(60 * 60_000), "1H")
+        XCTAssertEqual(TokenFormatter.compactWorktime(5_400_000), "1H 30M")
+        XCTAssertEqual(TokenFormatter.compactWorktime(24 * 3_600_000), "1D")
+        XCTAssertEqual(TokenFormatter.compactWorktime(26 * 3_600_000), "1D 2H")
+        XCTAssertEqual(TokenFormatter.worktime(30_000), "少于 1 分钟")
+        XCTAssertEqual(TokenFormatter.worktime(5_400_000), "1 小时 30 分钟")
+        XCTAssertEqual(
+            TokenFormatter.worktime(26 * 3_600_000 + 30 * 60_000),
+            "1 天 2 小时 30 分钟"
+        )
+    }
+
     func testDashboardDefaultsToTodayTasksTab() {
         XCTAssertEqual(DashboardAnalyticsTab.defaultTab, .todayTasks)
         XCTAssertEqual(

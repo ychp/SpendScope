@@ -89,6 +89,11 @@ struct TodayTaskPanel: View {
             headerMetric("进行中", value: "\(runningTaskCount)")
             headerSeparator
             headerMetric("今日 Token", value: TokenFormatter.compact(ranking.totalTokens))
+            headerSeparator
+            headerMetric(
+                "耗时",
+                value: TokenFormatter.compactWorktime(ranking.totalAIWorktimeMilliseconds)
+            )
         }
         .frame(height: 42)
         .padding(.horizontal, 12)
@@ -101,6 +106,8 @@ struct TodayTaskPanel: View {
             workspace: "所属工作区",
             lastUpdated: "最后更新",
             replies: "回复",
+            aiWorktime: "耗时",
+            aiWorktimeHelp: "今日回复生命周期累计耗时",
             tokens: "今日 Token",
             action: "操作",
             isHeader: true
@@ -152,6 +159,9 @@ struct TodayTaskPanel: View {
             workspace: task.workspace.name,
             lastUpdated: ProjectUsageDateFormatter.relative(task.lastUpdatedAtMilliseconds),
             replies: "\(task.conversation.replies.count)",
+            aiWorktime: TokenFormatter.compactWorktime(task.aiWorktimeMilliseconds),
+            aiWorktimeHelp: "今日耗时："
+                + TokenFormatter.worktime(task.aiWorktimeMilliseconds),
             tokens: TokenFormatter.compact(task.conversation.tokens),
             action: "查看详情",
             isHeader: false,
@@ -165,6 +175,7 @@ struct TodayTaskPanel: View {
             "\(task.title)，所属工作区 \(task.workspace.name)，"
                 + "状态 \(status.title)，今日 "
                 + "\(TokenFormatter.compact(task.conversation.tokens)) Token，"
+                + "耗时 \(TokenFormatter.worktime(task.aiWorktimeMilliseconds))，"
                 + "\(task.conversation.replies.count) 次回复"
         )
         .accessibilityHint("打开今日任务详情窗口")
@@ -176,6 +187,8 @@ struct TodayTaskPanel: View {
         workspace: String,
         lastUpdated: String,
         replies: String,
+        aiWorktime: String,
+        aiWorktimeHelp: String,
         tokens: String,
         action: String,
         isHeader: Bool,
@@ -234,6 +247,21 @@ struct TodayTaskPanel: View {
             Text(replies)
                 .monospacedDigit()
                 .frame(width: 42, alignment: .trailing)
+
+            Text(aiWorktime)
+                .font(
+                    isHeader
+                        ? font
+                        : .system(size: 10.5, weight: .semibold, design: .rounded)
+                )
+                .foregroundStyle(
+                    isHeader ? textColor : SpendScopeTheme.dashboardAccentSecondary
+                )
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(width: 68, alignment: .trailing)
+                .help(aiWorktimeHelp)
 
             Text(tokens)
                 .font(isHeader ? font : .system(size: 11, weight: .semibold, design: .rounded))
@@ -435,12 +463,29 @@ struct TodayTaskDetailView: View {
     }
 
     private var summaryCards: some View {
-        HStack(spacing: 10) {
+        LazyVGrid(
+            columns: [GridItem(.flexible()), GridItem(.flexible())],
+            spacing: 10
+        ) {
             metricCard(
                 "今日 Token",
                 value: TokenFormatter.compact(task.conversation.tokens),
                 icon: "number.square.fill",
                 tint: SpendScopeTheme.dashboardAccent
+            )
+            metricCard(
+                "耗时",
+                value: TokenFormatter.compactWorktime(task.aiWorktimeMilliseconds),
+                icon: "stopwatch.fill",
+                tint: SpendScopeTheme.dashboardAccentSecondary
+            )
+            .help(
+                "今日耗时："
+                    + TokenFormatter.worktime(task.aiWorktimeMilliseconds)
+            )
+            .accessibilityLabel(
+                "今日耗时 "
+                    + TokenFormatter.worktime(task.aiWorktimeMilliseconds)
             )
             metricCard(
                 "回复数",

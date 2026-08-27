@@ -1108,6 +1108,7 @@ private struct DashboardContentView: View {
                     SpendScopeTheme.dashboardAccent.opacity(0.10),
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                 )
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(period.title)
@@ -1116,6 +1117,7 @@ private struct DashboardContentView: View {
                 Text(subscriptionCycleRangeText(cycle))
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                    .lineLimit(1)
             }
 
             PeriodModelUsageControl(
@@ -1130,10 +1132,12 @@ private struct DashboardContentView: View {
                 .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
                 .monospacedDigit()
+                .accessibilityLabel("Token 总量 \(period.total.formatted())")
 
             Rectangle()
                 .fill(SpendScopeTheme.dashboardBorder.opacity(0.82))
                 .frame(width: 1, height: 28)
+                .accessibilityHidden(true)
 
             subscriptionMetric("输入", value: period.uncachedInput, color: SpendScopeTheme.dashboardInput)
             subscriptionMetric("缓存", value: period.cachedInput, color: SpendScopeTheme.dashboardCachedInput)
@@ -1151,13 +1155,16 @@ private struct DashboardContentView: View {
                 .stroke(SpendScopeTheme.dashboardBorder)
         }
         .shadow(color: SpendScopeTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private func subscriptionMetric(_ title: String, value: Int, color: Color) -> some View {
         VStack(alignment: .trailing, spacing: 2) {
             HStack(spacing: 4) {
-                Circle().fill(color).frame(width: 5, height: 5)
+                Circle()
+                    .fill(color)
+                    .frame(width: 5, height: 5)
+                    .accessibilityHidden(true)
                 Text(title)
             }
             .font(.system(size: 9.5, weight: .medium))
@@ -1169,6 +1176,8 @@ private struct DashboardContentView: View {
                 .monospacedDigit()
         }
         .frame(minWidth: 42, alignment: .trailing)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title) \(value.formatted())")
     }
 
     private func subscriptionCycleRangeText(_ cycle: SubscriptionCycle) -> String {
@@ -1188,6 +1197,8 @@ private struct DashboardContentView: View {
                         SpendScopeTheme.dashboardAccent.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                     )
+                    .accessibilityHidden(true)
+
                 Text(period.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.88))
@@ -1207,11 +1218,13 @@ private struct DashboardContentView: View {
                     .monospacedDigit()
                     .minimumScaleFactor(0.72)
                     .lineLimit(1)
+                    .accessibilityLabel("Token 总量 \(period.total.formatted())")
             }
 
             Rectangle()
                 .fill(SpendScopeTheme.dashboardBorder.opacity(0.82))
                 .frame(height: 1)
+                .accessibilityHidden(true)
 
             periodMetricMatrix(period)
         }
@@ -1226,6 +1239,7 @@ private struct DashboardContentView: View {
                 .stroke(SpendScopeTheme.dashboardBorder)
         }
         .shadow(color: SpendScopeTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
+        .accessibilityElement(children: .contain)
     }
 
     private func periodMetricMatrix(_ period: PeriodUsage) -> some View {
@@ -1254,6 +1268,7 @@ private struct DashboardContentView: View {
             Rectangle()
                 .fill(SpendScopeTheme.dashboardBorder.opacity(0.72))
                 .frame(height: 1)
+                .accessibilityHidden(true)
 
             HStack(spacing: 0) {
                 periodMetric(
@@ -1284,6 +1299,7 @@ private struct DashboardContentView: View {
             .fill(SpendScopeTheme.dashboardBorder.opacity(0.72))
             .frame(width: 1)
             .padding(.vertical, 2)
+            .accessibilityHidden(true)
     }
 
     private func periodIcon(for period: PeriodUsage) -> String {
@@ -1303,7 +1319,10 @@ private struct DashboardContentView: View {
         color: Color
     ) -> some View {
         HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 5, height: 5)
+            Circle()
+                .fill(color)
+                .frame(width: 5, height: 5)
+                .accessibilityHidden(true)
             Text(title)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(SpendScopeTheme.dashboardMutedText)
@@ -1318,7 +1337,7 @@ private struct DashboardContentView: View {
         .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(title) \(TokenFormatter.compact(value))，占当前订阅周期 \(TokenFormatter.percentage(share))"
+            "\(title) \(value.formatted())，占该周期 \(TokenFormatter.percentage(share))"
         )
     }
 
@@ -1374,7 +1393,10 @@ private struct DashboardContentView: View {
                 case .activity:
                     ActivityRankingPanel(ranking: selectedActivityRanking)
                 case .project:
-                    ProjectUsagePanel(ranking: selectedWorkspaceRanking)
+                    ProjectUsagePanel(
+                        ranking: selectedWorkspaceRanking,
+                        range: selectedProjectRange
+                    )
                 }
             }
             .id(selectedAnalyticsTab)

@@ -4,6 +4,7 @@ import SwiftUI
 struct ProjectDetailView: View {
     let entry: WorkspaceUsageEntry
     let rank: Int
+    let range: ActivityRange
     let onClose: () -> Void
     let onDetailHover: (ProjectDetailHoverItem?) -> Void
 
@@ -159,12 +160,29 @@ struct ProjectDetailView: View {
     }
 
     private var summaryCards: some View {
-        HStack(spacing: 10) {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 190), spacing: 10)],
+            spacing: 10
+        ) {
             metricCard(
                 "总 Token",
                 value: TokenFormatter.compact(entry.tokens),
                 icon: "number.square.fill",
                 tint: SpendScopeTheme.dashboardAccent
+            )
+            metricCard(
+                "耗时",
+                value: TokenFormatter.compactWorktime(entry.aiWorktimeMilliseconds),
+                icon: "stopwatch.fill",
+                tint: SpendScopeTheme.dashboardAccentSecondary
+            )
+            .help(
+                "\(range.rawValue)耗时："
+                    + TokenFormatter.worktime(entry.aiWorktimeMilliseconds)
+            )
+            .accessibilityLabel(
+                "\(range.rawValue)耗时 "
+                    + TokenFormatter.worktime(entry.aiWorktimeMilliseconds)
             )
             metricCard(
                 "工作区占比",
@@ -666,6 +684,18 @@ struct ProjectDetailView: View {
                         "\(conversation.replies.count) 次回复",
                         systemImage: "bubble.left"
                     )
+                    Label(
+                        TokenFormatter.compactWorktime(
+                            conversation.aiWorktimeMilliseconds
+                        ),
+                        systemImage: "stopwatch"
+                    )
+                    .help(
+                        "\(range.rawValue)耗时："
+                            + TokenFormatter.worktime(
+                                conversation.aiWorktimeMilliseconds
+                            )
+                    )
                 }
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(SpendScopeTheme.dashboardMutedText)
@@ -723,6 +753,13 @@ struct ProjectDetailView: View {
             conversation.displayTitle.map {
                 "\($0) · 任务标识 \(conversation.shortThreadID)"
             } ?? conversation.shortThreadID
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(title)，\(conversation.tokens.formatted()) Token，"
+                + "\(conversation.replies.count) 次回复，"
+                + "\(range.rawValue)耗时 "
+                + TokenFormatter.worktime(conversation.aiWorktimeMilliseconds)
         )
         .contentShape(Rectangle())
         .onHover { isHovering in
@@ -1125,7 +1162,9 @@ struct ProjectReplyDetailList: View {
 
                 HStack(spacing: 7) {
                     Label(
-                        ProjectUsageDateFormatter.duration(row.reply.durationMilliseconds),
+                        ProjectUsageDateFormatter.duration(
+                            row.reply.aiWorktimeMilliseconds
+                        ),
                         systemImage: "stopwatch"
                     )
                     .font(.system(size: 9, weight: .medium, design: .rounded))
@@ -1159,6 +1198,12 @@ struct ProjectReplyDetailList: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72), lineWidth: 1)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(row.conversationTitle)，状态 \(status.title)，"
+                + "\(row.reply.totalTokens.formatted()) Token，耗时 "
+                + TokenFormatter.worktime(row.reply.aiWorktimeMilliseconds)
+        )
         .contentShape(Rectangle())
         .onHover { isHovering in
             onHover(isHovering ? row : nil)
@@ -1214,12 +1259,33 @@ struct ProjectReplyHoverCard: View {
                     .monospacedDigit()
                 }
                 Spacer()
-                Text(status.title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(status.color)
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text(status.title)
+                        .foregroundStyle(status.color)
+                        .padding(.horizontal, 9)
+                        .frame(height: 23)
+                        .background(status.color.opacity(0.09), in: Capsule())
+                    Label(
+                        ProjectUsageDateFormatter.duration(
+                            row.reply.aiWorktimeMilliseconds
+                        ),
+                        systemImage: "stopwatch"
+                    )
+                    .foregroundStyle(SpendScopeTheme.dashboardAccentSecondary)
                     .padding(.horizontal, 9)
                     .frame(height: 23)
-                    .background(status.color.opacity(0.09), in: Capsule())
+                    .background(
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(0.09),
+                        in: Capsule()
+                    )
+                }
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    "状态 \(status.title)，耗时 "
+                        + TokenFormatter.worktime(row.reply.aiWorktimeMilliseconds)
+                )
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {

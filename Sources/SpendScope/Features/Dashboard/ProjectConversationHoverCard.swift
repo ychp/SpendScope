@@ -31,16 +31,40 @@ struct ProjectConversationHoverCard: View {
 
                 Spacer()
 
-                Text("\(TokenFormatter.compact(conversation.tokens)) Token")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
-                    .monospacedDigit()
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text("\(TokenFormatter.compact(conversation.tokens)) Token")
+                        .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                        .padding(.horizontal, 9)
+                        .frame(height: 22)
+                        .background(
+                            SpendScopeTheme.dashboardAccent.opacity(0.09),
+                            in: Capsule()
+                        )
+                    Label(
+                        TokenFormatter.compactWorktime(
+                            conversation.aiWorktimeMilliseconds
+                        ),
+                        systemImage: "stopwatch"
+                    )
+                    .foregroundStyle(SpendScopeTheme.dashboardAccentSecondary)
                     .padding(.horizontal, 9)
-                    .frame(height: 23)
+                    .frame(height: 22)
                     .background(
-                        SpendScopeTheme.dashboardAccent.opacity(0.09),
+                        SpendScopeTheme.dashboardAccentSecondary.opacity(0.09),
                         in: Capsule()
                     )
+                }
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    "\(conversation.tokens.formatted()) Token，耗时 "
+                        + TokenFormatter.worktime(conversation.aiWorktimeMilliseconds)
+                )
+                .help(
+                    "耗时："
+                        + TokenFormatter.worktime(conversation.aiWorktimeMilliseconds)
+                )
             }
 
             VStack(alignment: .leading, spacing: 3) {

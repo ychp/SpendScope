@@ -42,6 +42,7 @@ final class DashboardQueryService: @unchecked Sendable {
         }
 
         let end = exclusiveEndMilliseconds(for: now)
+        let nowMilliseconds = milliseconds(for: now)
         let todayRows = try store.usageEvents(
             fromMilliseconds: milliseconds(for: todayStart), toMilliseconds: end
         )
@@ -83,7 +84,13 @@ final class DashboardQueryService: @unchecked Sendable {
         let turnLifecycleFacts = makeTurnLifecycleFacts(
             from: lifecycleRows,
             replyAttribution: replyAttribution,
-            threadTitlesByThreadID: threadTitlesByThreadID
+            threadTitlesByThreadID: threadTitlesByThreadID,
+            activeTurnKeys: Set(sessions.compactMap { session in
+                guard session.activity == .running,
+                      let activeTurnID = session.activeTurnID,
+                      !activeTurnID.isEmpty else { return nil }
+                return ThreadTurnKey(threadID: session.threadID, turnID: activeTurnID)
+            })
         )
         let sessionLastMessageTimes = sessions.reduce(into: [String: Int64]()) {
             result, session in
@@ -152,6 +159,8 @@ final class DashboardQueryService: @unchecked Sendable {
                 threadTitlesByThreadID: threadTitlesByThreadID,
                 replyAttribution: replyAttribution,
                 turnLifecycleFacts: turnLifecycleFacts,
+                worktimeFromMilliseconds: milliseconds(for: todayStart),
+                worktimeToMilliseconds: nowMilliseconds,
                 workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: todayStart)
@@ -166,6 +175,8 @@ final class DashboardQueryService: @unchecked Sendable {
                 threadTitlesByThreadID: threadTitlesByThreadID,
                 replyAttribution: replyAttribution,
                 turnLifecycleFacts: turnLifecycleFacts,
+                worktimeFromMilliseconds: milliseconds(for: sevenDayStart),
+                worktimeToMilliseconds: nowMilliseconds,
                 workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: sevenDayStart)
@@ -180,6 +191,8 @@ final class DashboardQueryService: @unchecked Sendable {
                 threadTitlesByThreadID: threadTitlesByThreadID,
                 replyAttribution: replyAttribution,
                 turnLifecycleFacts: turnLifecycleFacts,
+                worktimeFromMilliseconds: milliseconds(for: thirtyDayStart),
+                worktimeToMilliseconds: nowMilliseconds,
                 workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: thirtyDayStart)
@@ -194,6 +207,8 @@ final class DashboardQueryService: @unchecked Sendable {
                 threadTitlesByThreadID: threadTitlesByThreadID,
                 replyAttribution: replyAttribution,
                 turnLifecycleFacts: turnLifecycleFacts,
+                worktimeFromMilliseconds: nil,
+                worktimeToMilliseconds: nowMilliseconds,
                 workspaceAliases: workspaceAliases,
                 activityRows: allActivityRows
             )
@@ -296,6 +311,8 @@ final class DashboardQueryService: @unchecked Sendable {
         threadTitlesByThreadID: [String: String],
         replyAttribution: ThreadReplyAttributionResolver,
         turnLifecycleFacts: [ThreadTurnKey: TurnLifecycleFact],
+        worktimeFromMilliseconds: Int64?,
+        worktimeToMilliseconds: Int64,
         workspaceAliases: [WorkspaceUsageKey: WorkspaceUsageKey],
         activityRows: [StoredActivityEvent]
     ) throws -> WorkspaceUsageRanking {
@@ -320,6 +337,50 @@ final class DashboardQueryService: @unchecked Sendable {
                     )
                 )
             }
+        }
+
+        var replyWorkspaceCandidates: [
+            ThreadTurnKey: [WorkspaceUsageKey: ReplyWorkspaceOwnershipCandidate]
+        ] = [:]
+        for row in rows {
+            guard
+                ProjectConversationUsage.isIncludedInTaskMetrics(
+                    displayTitle: threadTitlesByThreadID[row.threadID]
+                ),
+                let turnID = row.turnID,
+                !turnID.isEmpty
+            else { continue }
+
+            let rawWorkspaceKey = WorkspaceUsageKey(identity: row.workspace)
+            let workspaceKey = workspaceAliases[rawWorkspaceKey] ?? rawWorkspaceKey
+            let sourceKey = ThreadTurnKey(threadID: row.threadID, turnID: turnID)
+            let replyKey = resolvedReplyKey(
+                threadID: row.threadID,
+                turnID: turnID,
+                replyAttribution: replyAttribution,
+                threadTitlesByThreadID: threadTitlesByThreadID
+            )
+            var candidate = replyWorkspaceCandidates[replyKey]?[workspaceKey]
+                ?? ReplyWorkspaceOwnershipCandidate(tokens: 0, containsRootUsage: false)
+            candidate.tokens = try checkedAdd(
+                candidate.tokens,
+                row.totalTokens,
+                context: "workspace.reply.owner"
+            )
+            candidate.containsRootUsage = candidate.containsRootUsage || sourceKey == replyKey
+            replyWorkspaceCandidates[replyKey, default: [:]][workspaceKey] = candidate
+        }
+        let replyWorkspaceOwners = replyWorkspaceCandidates.compactMapValues { candidates in
+            candidates.max { left, right in
+                if left.value.containsRootUsage != right.value.containsRootUsage {
+                    return !left.value.containsRootUsage && right.value.containsRootUsage
+                }
+                if left.value.tokens != right.value.tokens {
+                    return left.value.tokens < right.value.tokens
+                }
+                if left.key.id != right.key.id { return left.key.id > right.key.id }
+                return left.key.name > right.key.name
+            }?.key
         }
 
         var workspaceTotals: [WorkspaceUsageKey: Int64] = [:]
@@ -514,6 +575,13 @@ final class DashboardQueryService: @unchecked Sendable {
                     let lifecycle = turnLifecycleFacts[turnKey]
                     let activity = turnActivityFacts[turnKey]
                     let costEstimate = replyCostEstimate(from: usage.modelUsage)
+                    let worktime = replyWorkspaceOwners[turnKey] == entry.key
+                        ? aiWorktimeMilliseconds(
+                            from: lifecycle,
+                            fromMilliseconds: worktimeFromMilliseconds,
+                            toMilliseconds: worktimeToMilliseconds
+                        )
+                        : 0
                     return ProjectReplyUsage(
                         id: turnID,
                         status: lifecycle?.status ?? .unknown,
@@ -528,6 +596,7 @@ final class DashboardQueryService: @unchecked Sendable {
                         referencePricedModelCount: costEstimate.referencePricedModelCount,
                         startedAtMilliseconds: lifecycle?.startedAtMilliseconds,
                         endedAtMilliseconds: lifecycle?.endedAtMilliseconds,
+                        aiWorktimeMilliseconds: worktime,
                         lastUsageAtMilliseconds: usage.lastUsageAtMilliseconds,
                         skillCalls: activity?.skills ?? [],
                         toolCalls: activity?.tools ?? []
@@ -609,7 +678,8 @@ final class DashboardQueryService: @unchecked Sendable {
     private func makeTurnLifecycleFacts(
         from rows: [StoredTurnLifecycleQueryRow],
         replyAttribution: ThreadReplyAttributionResolver,
-        threadTitlesByThreadID: [String: String]
+        threadTitlesByThreadID: [String: String],
+        activeTurnKeys: Set<ThreadTurnKey>
     ) -> [ThreadTurnKey: TurnLifecycleFact] {
         var facts: [ThreadTurnKey: TurnLifecycleFact] = [:]
         for row in rows {
@@ -626,23 +696,30 @@ final class DashboardQueryService: @unchecked Sendable {
             var fact = facts[key] ?? TurnLifecycleFact()
             switch row.kind {
             case .started:
-                fact.startedAtMilliseconds = fact.startedAtMilliseconds
-                    .map { min($0, row.observedAtMilliseconds) }
-                    ?? row.observedAtMilliseconds
-                if fact.endedAtMilliseconds == nil {
-                    fact.status = .inProgress
-                }
+                fact.startedAtMilliseconds = row.observedAtMilliseconds
+                fact.endedAtMilliseconds = nil
+                fact.openedAtMilliseconds = row.observedAtMilliseconds
+                fact.status = .inProgress
             case .completed:
+                fact.closeOpenInterval(at: row.observedAtMilliseconds)
                 fact.status = .completed
                 fact.endedAtMilliseconds = row.observedAtMilliseconds
             case .interrupted:
+                fact.closeOpenInterval(at: row.observedAtMilliseconds)
                 fact.status = .interrupted
                 fact.endedAtMilliseconds = row.observedAtMilliseconds
             case .rolledBack:
+                fact.closeOpenInterval(at: row.observedAtMilliseconds)
                 fact.status = .rolledBack
                 fact.endedAtMilliseconds = row.observedAtMilliseconds
             }
             facts[key] = fact
+        }
+        for key in Array(facts.keys) {
+            guard facts[key]?.openedAtMilliseconds != nil,
+                  !activeTurnKeys.contains(key) else { continue }
+            facts[key]?.openedAtMilliseconds = nil
+            facts[key]?.status = .unknown
         }
         return facts
     }
@@ -824,6 +901,45 @@ final class DashboardQueryService: @unchecked Sendable {
             )),
             reasoning: Int(clamping: aggregate.reasoning)
         )
+    }
+
+    private func aiWorktimeMilliseconds(
+        from fact: TurnLifecycleFact?,
+        fromMilliseconds lowerBound: Int64?,
+        toMilliseconds upperBound: Int64
+    ) -> Int64 {
+        guard let fact else { return 0 }
+        var intervals = fact.closedIntervals
+        if let openedAtMilliseconds = fact.openedAtMilliseconds {
+            intervals.append(TurnLifecycleInterval(
+                startedAtMilliseconds: openedAtMilliseconds,
+                endedAtMilliseconds: upperBound
+            ))
+        }
+        return intervals.reduce(into: Int64(0)) { total, interval in
+            let duration = clippedDuration(
+                of: interval,
+                fromMilliseconds: lowerBound,
+                toMilliseconds: upperBound
+            )
+            let (sum, overflow) = total.addingReportingOverflow(duration)
+            total = overflow ? Int64.max : sum
+        }
+    }
+
+    private func clippedDuration(
+        of interval: TurnLifecycleInterval,
+        fromMilliseconds lowerBound: Int64?,
+        toMilliseconds upperBound: Int64
+    ) -> Int64 {
+        let startedAt = interval.startedAtMilliseconds
+        let endedAt = interval.endedAtMilliseconds
+        let intervalStart = max(startedAt, lowerBound ?? Int64.min)
+        let intervalEnd = min(endedAt, upperBound)
+        guard intervalEnd > intervalStart else { return 0 }
+
+        let (duration, overflow) = intervalEnd.subtractingReportingOverflow(intervalStart)
+        return overflow ? Int64.max : duration
     }
 
     private func models(from rows: [StoredUsageQueryRow]) throws -> [ModelUsage] {
@@ -1304,6 +1420,11 @@ private struct ProjectReplyUsageAccumulator {
     var lastUsageAtMilliseconds: Int64
 }
 
+private struct ReplyWorkspaceOwnershipCandidate {
+    var tokens: Int64
+    var containsRootUsage: Bool
+}
+
 private struct ProjectReplyModelCallKey: Hashable {
     let threadID: String
     let turnID: String
@@ -1418,6 +1539,26 @@ private struct TurnLifecycleFact {
     var status: ProjectReplyUsageStatus = .unknown
     var startedAtMilliseconds: Int64?
     var endedAtMilliseconds: Int64?
+    var closedIntervals: [TurnLifecycleInterval] = []
+    var openedAtMilliseconds: Int64?
+
+    mutating func closeOpenInterval(at endedAtMilliseconds: Int64) {
+        guard let openedAtMilliseconds,
+              endedAtMilliseconds > openedAtMilliseconds else {
+            self.openedAtMilliseconds = nil
+            return
+        }
+        closedIntervals.append(TurnLifecycleInterval(
+            startedAtMilliseconds: openedAtMilliseconds,
+            endedAtMilliseconds: endedAtMilliseconds
+        ))
+        self.openedAtMilliseconds = nil
+    }
+}
+
+private struct TurnLifecycleInterval {
+    let startedAtMilliseconds: Int64
+    let endedAtMilliseconds: Int64
 }
 
 private struct TurnActivityFact {

@@ -195,8 +195,19 @@ struct WorkspaceUsageEntry: Identifiable, Equatable, Sendable {
         visibleConversations.reduce(0) { $0 + $1.replies.count }
     }
 
+    var aiWorktimeMilliseconds: Int64 {
+        visibleConversations.reduce(into: Int64(0)) { total, conversation in
+            total = Self.saturatingAdd(total, conversation.aiWorktimeMilliseconds)
+        }
+    }
+
     var lastVisibleActivityAtMilliseconds: Int64? {
         visibleConversations.compactMap(\.lastMessageAtMilliseconds).max()
+    }
+
+    private static func saturatingAdd(_ left: Int64, _ right: Int64) -> Int64 {
+        let (result, overflow) = left.addingReportingOverflow(right)
+        return overflow ? Int64.max : result
     }
 }
 
@@ -275,6 +286,15 @@ struct ProjectConversationUsage: Identifiable, Equatable, Sendable {
         estimatedCostBreakdown?.totalUSD
     }
 
+    var aiWorktimeMilliseconds: Int64 {
+        replies.reduce(into: Int64(0)) { total, reply in
+            let (result, overflow) = total.addingReportingOverflow(
+                reply.aiWorktimeMilliseconds
+            )
+            total = overflow ? Int64.max : result
+        }
+    }
+
     var unpricedModelCount: Int {
         modelCalls.count { ModelPricingCatalog.rule(for: $0.name) == nil }
     }
@@ -331,6 +351,7 @@ struct ProjectReplyUsage: Identifiable, Equatable, Sendable {
     let referencePricedModelCount: Int
     let startedAtMilliseconds: Int64?
     let endedAtMilliseconds: Int64?
+    let aiWorktimeMilliseconds: Int64
     let lastUsageAtMilliseconds: Int64
     let skillCalls: [ProjectReplyActivityCall]
     let toolCalls: [ProjectReplyActivityCall]
@@ -408,6 +429,15 @@ struct WorkspaceUsageRanking: Equatable, Sendable {
         projectCount: 0
     )
 
+    var totalAIWorktimeMilliseconds: Int64 {
+        entries.reduce(into: Int64(0)) { total, entry in
+            let (result, overflow) = total.addingReportingOverflow(
+                entry.aiWorktimeMilliseconds
+            )
+            total = overflow ? Int64.max : result
+        }
+    }
+
     var todayTasks: [TodayTaskUsageEntry] {
         entries.flatMap { workspace in
             workspace.visibleConversations.map { conversation in
@@ -473,6 +503,10 @@ struct TodayTaskUsageEntry: Identifiable, Equatable, Sendable {
 
     var unattributedTokens: Int {
         max(0, conversation.tokens - tokenBreakdown.total)
+    }
+
+    var aiWorktimeMilliseconds: Int64 {
+        conversation.aiWorktimeMilliseconds
     }
 }
 

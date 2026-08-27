@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ProjectUsagePanel: View {
     let ranking: WorkspaceUsageRanking
+    let range: ActivityRange
 
     @State private var searchText = ""
     @State private var selectedWorkspaceID: WorkspaceUsageEntry.ID?
@@ -40,7 +41,11 @@ struct ProjectUsagePanel: View {
                 dismissProjectDetail()
                 return
             }
-            detailWindowController.update(entry: entries[index], rank: index + 1)
+            detailWindowController.update(
+                entry: entries[index],
+                rank: index + 1,
+                range: range
+            )
         }
         .onDisappear {
             dismissProjectDetail()
@@ -129,7 +134,14 @@ struct ProjectUsagePanel: View {
 
             headerSeparator
 
-            headerMetric("总计", value: TokenFormatter.compact(ranking.totalTokens))
+            headerMetric("Token", value: TokenFormatter.compact(ranking.totalTokens))
+
+            headerSeparator
+
+            headerMetric(
+                "耗时",
+                value: TokenFormatter.compactWorktime(ranking.totalAIWorktimeMilliseconds)
+            )
         }
         .padding(.horizontal, 9)
         .frame(height: 26, alignment: .center)
@@ -141,6 +153,17 @@ struct ProjectUsagePanel: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .stroke(SpendScopeTheme.dashboardBorder.opacity(0.62), lineWidth: 1)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "按 Token 用量排序，\(ranking.workspaceCount) 个工作区，"
+                + "\(ranking.projectCount) 个目录，\(ranking.totalTokens.formatted()) Token，"
+                + "\(range.rawValue)耗时 "
+                + TokenFormatter.worktime(ranking.totalAIWorktimeMilliseconds)
+        )
+        .help(
+            "\(range.rawValue)耗时："
+                + TokenFormatter.worktime(ranking.totalAIWorktimeMilliseconds)
+        )
     }
 
     private var headerSeparator: some View {
@@ -157,6 +180,8 @@ struct ProjectUsagePanel: View {
             lastActivity: "最后活动",
             conversations: "任务",
             replies: "回复",
+            aiWorktime: "耗时",
+            aiWorktimeHelp: "所选范围内回复生命周期累计耗时",
             share: "工作区占比",
             tokens: "Token",
             action: "操作",
@@ -215,6 +240,9 @@ struct ProjectUsagePanel: View {
             lastActivity: lastActivityText(for: entry),
             conversations: "\(entry.visibleConversations.count)",
             replies: "\(entry.visibleReplyCount)",
+            aiWorktime: TokenFormatter.compactWorktime(entry.aiWorktimeMilliseconds),
+            aiWorktimeHelp: "\(range.rawValue)耗时："
+                + TokenFormatter.worktime(entry.aiWorktimeMilliseconds),
             share: TokenFormatter.percentage(entry.share),
             tokens: TokenFormatter.compact(entry.tokens),
             action: "查看详情",
@@ -235,6 +263,8 @@ struct ProjectUsagePanel: View {
         lastActivity: String,
         conversations: String,
         replies: String,
+        aiWorktime: String,
+        aiWorktimeHelp: String,
         share: String,
         tokens: String,
         action: String,
@@ -295,6 +325,21 @@ struct ProjectUsagePanel: View {
             Text(replies)
                 .monospacedDigit()
                 .frame(width: 40, alignment: .trailing)
+
+            Text(aiWorktime)
+                .font(
+                    isHeader
+                        ? font
+                        : .system(size: 10.5, weight: .semibold, design: .rounded)
+                )
+                .foregroundStyle(
+                    isHeader ? textColor : SpendScopeTheme.dashboardAccentSecondary
+                )
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(width: 72, alignment: .trailing)
+                .help(aiWorktimeHelp)
 
             HStack(spacing: 7) {
                 if isHeader {
@@ -379,6 +424,7 @@ struct ProjectUsagePanel: View {
         let controller = ProjectDetailWindowController(
             entry: entry,
             rank: rank,
+            range: range,
             parentWindow: parentWindow
         ) {
             detailWindowController = nil
@@ -419,6 +465,8 @@ struct ProjectUsagePanel: View {
     private func projectAccessibilityLabel(_ entry: WorkspaceUsageEntry, rank: Int) -> String {
         return "第 \(rank) 名工作区，\(projectDisplayName(entry))，"
             + "\(TokenFormatter.compact(entry.tokens)) Token，"
+            + "\(range.rawValue)耗时 "
+            + "\(TokenFormatter.worktime(entry.aiWorktimeMilliseconds))，"
             + "占比 \(TokenFormatter.percentage(entry.share))，"
             + (entry.isInferred ? "由工作目录推测，" : "")
             + "\(entry.projects.count) 个目录，\(entry.visibleConversations.count) 个任务，"
