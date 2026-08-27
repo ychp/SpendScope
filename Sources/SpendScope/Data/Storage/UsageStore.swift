@@ -1652,7 +1652,7 @@ final class UsageStore: @unchecked Sendable {
         "ALTER TABLE thread_checkpoints ADD COLUMN workspace_name TEXT",
         "ALTER TABLE thread_checkpoints ADD COLUMN workspace_root_count INTEGER",
         "ALTER TABLE usage_events ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'unknown'",
-        "ALTER TABLE usage_events ADD COLUMN workspace_name TEXT NOT NULL DEFAULT '未识别工作区'",
+        "ALTER TABLE usage_events ADD COLUMN workspace_name TEXT NOT NULL DEFAULT '未识别项目'",
         "ALTER TABLE usage_events ADD COLUMN workspace_root_count INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX usage_events_workspace_time_idx ON usage_events(workspace_id, observed_at_ms)"
     ]

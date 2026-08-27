@@ -46,7 +46,7 @@ enum TokenFormatter {
 
     static func compactWorktime(_ milliseconds: Int64) -> String {
         if milliseconds > 0, milliseconds < 60_000 {
-            return "<1M"
+            return "<1m"
         }
         let totalMinutes = max(0, Int(Double(milliseconds) / 60_000))
         let hours = totalMinutes / 60
@@ -56,14 +56,14 @@ enum TokenFormatter {
             let totalHours = max(24, Int(Double(milliseconds) / 3_600_000))
             let days = totalHours / 24
             let remainingHours = totalHours % 24
-            return remainingHours == 0 ? "\(days)D" : "\(days)D \(remainingHours)H"
+            return remainingHours == 0 ? "\(days)d" : "\(days)d \(remainingHours)h"
         }
         if hours == 0 {
-            return "\(minutes)M"
+            return "\(minutes)m"
         }
         if minutes == 0 {
-            return "\(hours)H"
+            return "\(hours)h"
         }
-        return "\(hours)H \(minutes)M"
+        return "\(hours)h \(minutes)m"
     }
 }

@@ -80,13 +80,13 @@ private extension DashboardSnapshot {
 
 final class TokenFormatterTests: XCTestCase {
     func testWorktimeFormattingKeepsShortNonzeroDurationsVisible() {
-        XCTAssertEqual(TokenFormatter.compactWorktime(0), "0M")
-        XCTAssertEqual(TokenFormatter.compactWorktime(30_000), "<1M")
-        XCTAssertEqual(TokenFormatter.compactWorktime(59 * 60_000), "59M")
-        XCTAssertEqual(TokenFormatter.compactWorktime(60 * 60_000), "1H")
-        XCTAssertEqual(TokenFormatter.compactWorktime(5_400_000), "1H 30M")
-        XCTAssertEqual(TokenFormatter.compactWorktime(24 * 3_600_000), "1D")
-        XCTAssertEqual(TokenFormatter.compactWorktime(26 * 3_600_000), "1D 2H")
+        XCTAssertEqual(TokenFormatter.compactWorktime(0), "0m")
+        XCTAssertEqual(TokenFormatter.compactWorktime(30_000), "<1m")
+        XCTAssertEqual(TokenFormatter.compactWorktime(59 * 60_000), "59m")
+        XCTAssertEqual(TokenFormatter.compactWorktime(60 * 60_000), "1h")
+        XCTAssertEqual(TokenFormatter.compactWorktime(5_400_000), "1h 30m")
+        XCTAssertEqual(TokenFormatter.compactWorktime(24 * 3_600_000), "1d")
+        XCTAssertEqual(TokenFormatter.compactWorktime(26 * 3_600_000), "1d 2h")
         XCTAssertEqual(TokenFormatter.worktime(30_000), "少于 1 分钟")
         XCTAssertEqual(TokenFormatter.worktime(5_400_000), "1 小时 30 分钟")
         XCTAssertEqual(
@@ -99,7 +99,7 @@ final class TokenFormatterTests: XCTestCase {
         XCTAssertEqual(DashboardAnalyticsTab.defaultTab, .todayTasks)
         XCTAssertEqual(
             DashboardAnalyticsTab.allCases.map(\.rawValue),
-            ["今日任务", "用量趋势", "Skills / Tools", "工作区用量"]
+            ["今日任务", "用量趋势", "Skills / Tools", "项目用量"]
         )
     }
 

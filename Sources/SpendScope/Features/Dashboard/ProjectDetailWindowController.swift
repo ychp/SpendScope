@@ -22,7 +22,7 @@ final class ProjectDetailWindowController: NSWindowController, NSWindowDelegate 
         onDismiss: @escaping () -> Void
     ) {
         self.init(
-            title: "工作区详情",
+            title: "项目详情",
             parentWindow: parentWindow,
             onDismiss: onDismiss
         )

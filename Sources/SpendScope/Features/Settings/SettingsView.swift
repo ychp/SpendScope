@@ -43,7 +43,7 @@ enum CodexPlanCatalog {
         ),
         .init(
             name: "Business",
-            summary: "面向团队，包含工作区和基础管理能力",
+            summary: "面向团队，包含项目和基础管理能力",
             symbol: "person.2.fill",
             isPaid: true
         ),

@@ -11,6 +11,7 @@ struct ProjectDetailView: View {
     @State private var selectedTab: ProjectDetailTab = .overview
     @State private var conversationSortOrder = ProjectConversationSortOrder.defaultOrder
     @State private var conversationSearchText = ""
+    @State private var selectedReplyConversationID: String?
     @State private var hoveredTrendDayID: Int64?
 
     var body: some View {
@@ -68,7 +69,7 @@ struct ProjectDetailView: View {
                 Image(systemName: "circle.grid.3x3.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(SpendScopeTheme.dashboardMutedText.opacity(0.55))
-                Text("工作区详情")
+                Text("项目详情")
                     .font(.system(size: 12, weight: .semibold))
             }
 
@@ -81,7 +82,7 @@ struct ProjectDetailView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("关闭工作区详情")
+                .help("关闭项目详情")
                 .keyboardShortcut(.cancelAction)
             }
         }
@@ -146,7 +147,7 @@ struct ProjectDetailView: View {
                                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                                     .stroke(SpendScopeTheme.dashboardInput.opacity(0.32), lineWidth: 1)
                             }
-                            .help("Codex 未记录 workspace_roots；此工作区由会话工作目录推测，未与确定工作区合并。")
+                            .help("Codex 未记录 workspace_roots；此项目由会话工作目录推测，未与确定项目合并。")
                     }
                 }
                 Text("\(entry.rootCount) 个根目录 · 最近活动 \(ProjectUsageDateFormatter.relative(lastActivityMilliseconds))")
@@ -185,7 +186,7 @@ struct ProjectDetailView: View {
                     + TokenFormatter.worktime(entry.aiWorktimeMilliseconds)
             )
             metricCard(
-                "工作区占比",
+                "项目占比",
                 value: TokenFormatter.percentage(entry.share),
                 icon: "chart.pie.fill",
                 tint: SpendScopeTheme.dashboardInput
@@ -296,7 +297,6 @@ struct ProjectDetailView: View {
             }
             .frame(height: 148)
             workspaceProjectCard
-            conversationTable
         }
     }
 
@@ -589,10 +589,6 @@ struct ProjectDetailView: View {
         .shadow(color: SpendScopeTheme.dashboardShadow, radius: 6, y: 2)
     }
 
-    private var conversationTable: some View {
-        conversationListCard(title: "任务用量", enablesHover: false)
-    }
-
     private var conversationDetailList: some View {
         conversationListCard(title: "任务明细", enablesHover: true)
     }
@@ -750,9 +746,10 @@ struct ProjectDetailView: View {
                 .stroke(SpendScopeTheme.dashboardBorder.opacity(0.72), lineWidth: 1)
         }
         .help(
-            conversation.displayTitle.map {
+            (conversation.displayTitle.map {
                 "\($0) · 任务标识 \(conversation.shortThreadID)"
-            } ?? conversation.shortThreadID
+            } ?? conversation.shortThreadID)
+                + (enablesHover ? " · 点击筛选回复明细" : "")
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -765,6 +762,10 @@ struct ProjectDetailView: View {
         .onHover { isHovering in
             guard enablesHover else { return }
             onDetailHover(isHovering ? .conversation(conversation) : nil)
+        }
+        .onTapGesture {
+            guard enablesHover else { return }
+            showReplies(for: conversation)
         }
     }
 
@@ -856,13 +857,66 @@ struct ProjectDetailView: View {
     }
 
     private var replyTable: some View {
-        detailCard(title: "回复明细", icon: "bubble.left.and.text.bubble.right") {
+        detailCard(
+            title: "回复明细",
+            icon: "bubble.left.and.text.bubble.right",
+            titleAccessory: {
+                replyConversationFilter
+            },
+            trailing: {
+                EmptyView()
+            }
+        ) {
             ProjectReplyDetailList(
                 rows: replyRows,
-                emptyDescription: "该工作区还没有可展示的回复"
+                emptyDescription: selectedReplyConversation == nil
+                    ? "该项目还没有可展示的回复"
+                    : "该任务还没有可展示的回复"
             ) { row in
                 onDetailHover(row.map(ProjectDetailHoverItem.reply))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var replyConversationFilter: some View {
+        if let conversation = selectedReplyConversation {
+            Button {
+                onDetailHover(nil)
+                selectedReplyConversationID = nil
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                        .font(.system(size: 9.5, weight: .semibold))
+                    Text(conversation.displayTitle ?? conversation.shortThreadID)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                }
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                .padding(.horizontal, 8)
+                .frame(maxWidth: 280, minHeight: 24)
+                .background(SpendScopeTheme.dashboardAccent.opacity(0.09), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(SpendScopeTheme.dashboardAccent.opacity(0.30), lineWidth: 1)
+                }
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("清除任务筛选，显示全部回复")
+            .accessibilityLabel("当前仅显示任务 \(conversation.displayTitle ?? conversation.shortThreadID) 的回复")
+            .accessibilityHint("清除筛选并显示全部回复")
+        }
+    }
+
+    private func showReplies(for conversation: ProjectConversationUsage) {
+        onDetailHover(nil)
+        selectedReplyConversationID = conversation.id
+        withAnimation(.easeOut(duration: 0.16)) {
+            selectedTab = .replies
         }
     }
 
@@ -993,7 +1047,11 @@ struct ProjectDetailView: View {
     }
 
     private var replyRows: [ProjectReplyDetailRow] {
-        visibleConversations.flatMap { conversation in
+        let conversations = selectedReplyConversationID.map { selectedID in
+            visibleConversations.filter { $0.id == selectedID }
+        } ?? visibleConversations
+
+        return conversations.flatMap { conversation in
             let title = conversation.displayTitle ?? conversation.shortThreadID
             return conversation.replies.map {
                 ProjectReplyDetailRow(
@@ -1009,6 +1067,11 @@ struct ProjectDetailView: View {
             }
             return $0.id < $1.id
         }
+    }
+
+    private var selectedReplyConversation: ProjectConversationUsage? {
+        guard let selectedReplyConversationID else { return nil }
+        return visibleConversations.first { $0.id == selectedReplyConversationID }
     }
 
     private var visibleConversations: [ProjectConversationUsage] {

@@ -410,7 +410,7 @@ private struct DashboardLoadingView: View {
         VStack(spacing: 9) {
             HStack(spacing: 2) {
                 ForEach(
-                    Array(["今日任务", "用量趋势", "Skills / Tools", "工作区用量"].enumerated()),
+                    Array(["今日任务", "用量趋势", "Skills / Tools", "项目用量"].enumerated()),
                     id: \.offset
                 ) { index, title in
                     Text(title)
@@ -1181,8 +1181,8 @@ private struct DashboardContentView: View {
     }
 
     private func subscriptionCycleRangeText(_ cycle: SubscriptionCycle) -> String {
-        let start = cycle.start.formatted(.dateTime.month().day().hour().minute())
-        let end = cycle.end.formatted(.dateTime.month().day().hour().minute())
+        let start = cycle.start.formatted(.dateTime.month().day())
+        let end = cycle.end.formatted(.dateTime.month().day())
         return "\(start) – \(end)"
     }
 
@@ -1448,7 +1448,7 @@ private struct DashboardContentView: View {
     private var projectRangeSelector: some View {
         analyticsRangeSelector(
             selectedRange: selectedProjectRange,
-            accessibilityLabel: "工作区用量时间范围"
+            accessibilityLabel: "项目用量时间范围"
         ) { selectedProjectRange = $0 }
     }
 
@@ -1754,7 +1754,7 @@ enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
     case todayTasks = "今日任务"
     case trend = "用量趋势"
     case activity = "Skills / Tools"
-    case project = "工作区用量"
+    case project = "项目用量"
 
     static let defaultTab: DashboardAnalyticsTab = .todayTasks
 

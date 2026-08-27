@@ -2,6 +2,16 @@ import XCTest
 @testable import SpendScope
 
 final class CodexEventDecoderTests: XCTestCase {
+    func testLegacyUnknownWorkspaceNameUsesProjectCopy() {
+        let identity = WorkspaceIdentity(
+            id: "unknown",
+            name: "未识别工作区",
+            rootCount: 0
+        )
+
+        XCTAssertEqual(identity.name, "未识别项目")
+    }
+
     private let decoder = CodexEventDecoder()
 
     func testDecodesDesktopSessionAndTurnModel() throws {

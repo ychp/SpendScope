@@ -47,6 +47,9 @@ struct ProjectIdentity: Equatable, Sendable {
 }
 
 struct WorkspaceIdentity: Equatable, Sendable {
+    private static let legacyUnknownName = "未识别工作区"
+    private static let unknownName = "未识别项目"
+
     let id: String
     let name: String
     let rootCount: Int
@@ -54,14 +57,14 @@ struct WorkspaceIdentity: Equatable, Sendable {
 
     init(id: String, name: String, rootCount: Int, isInferred: Bool = false) {
         self.id = id
-        self.name = name
+        self.name = name == Self.legacyUnknownName ? Self.unknownName : name
         self.rootCount = rootCount
         self.isInferred = isInferred
     }
 
     static let unknown = WorkspaceIdentity(
         id: "unknown",
-        name: "未识别工作区",
+        name: unknownName,
         rootCount: 0,
         isInferred: false
     )
@@ -113,7 +116,7 @@ struct WorkspaceIdentity: Equatable, Sendable {
         let name = if let preferredName, !preferredName.isEmpty {
             String(preferredName.prefix(120))
         } else {
-            names.isEmpty ? "未识别工作区" : names.joined(separator: " + ")
+            names.isEmpty ? unknownName : names.joined(separator: " + ")
         }
         return WorkspaceIdentity(
             id: id,

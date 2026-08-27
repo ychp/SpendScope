@@ -39,7 +39,7 @@
 | `Data/Codex/` | 核心 | 发现 Codex 数据、解析 JSONL 中的用量与额度、计算 Token 增量、归约会话状态并协调导入 | 必须保持隐私白名单和幂等性 |
 | `Data/Dashboard/` | 核心 | 从本地数据库生成看板和会话查询结果 | 统计口径应与存储层一致 |
 | `Data/Storage/` | 核心 | SQLite 连接、迁移、事务、事件、聚合和文件检查点 | 表结构变化必须提供迁移 |
-| `Features/Dashboard/` | 核心 | Token 看板、趋势、日历、活动/工作区/模型排行、工作区详情窗口、回复调用悬浮面板和费用明细 | 不在 UI 中重复计算业务口径 |
+| `Features/Dashboard/` | 核心 | Token 看板、趋势、日历、活动/项目/模型排行、项目详情窗口、回复调用悬浮面板和费用明细 | 不在 UI 中重复计算业务口径 |
 | `Features/MenuBar/` | 核心 | 菜单栏状态项及其弹窗 | 与 `DashboardStore` 共享状态 |
 | `Features/Settings/` | 核心 | 设置窗口、刷新、提醒、数据来源和更新选项 | 新设置需补默认值与持久化 |
 | `Models/` | 核心 | 查询层与界面层共享的数据模型 | 避免放入数据库或 UI 专属逻辑 |
@@ -73,8 +73,8 @@ Features：菜单栏、看板和设置
 | 看板统计 | `Sources/SpendScope/Data/Dashboard/DashboardQueryService.swift` |
 | 模型价格规则 | `Sources/SpendScope/Support/ModelPricing.swift` |
 | 模型用量界面 | `Sources/SpendScope/Features/Dashboard/ModelUsagePanel.swift` |
-| 工作区详情界面 | `Sources/SpendScope/Features/Dashboard/ProjectDetailView.swift` |
-| 工作区详情与外置悬浮窗口 | `Sources/SpendScope/Features/Dashboard/ProjectDetailWindowController.swift` |
+| 项目详情界面 | `Sources/SpendScope/Features/Dashboard/ProjectDetailView.swift` |
+| 项目详情与外置悬浮窗口 | `Sources/SpendScope/Features/Dashboard/ProjectDetailWindowController.swift` |
 | 今日任务列表与详情 | `Sources/SpendScope/Features/Dashboard/TodayTaskPanel.swift` |
 | 全局状态 | `Sources/SpendScope/App/DashboardStore.swift` |
 
@@ -139,7 +139,7 @@ Features：菜单栏、看板和设置
 - `FEATURES.md`：完整记录用户功能、设置、数据口径、刷新机制与产品限制。
 - `TECHNICAL_ARCHIVE.md`：架构、统计口径、迁移、兼容和演进决策。
 - `PROJECT_STRUCTURE.md`：本文档，说明文件分级和清理边界。
-- `images/`：README 与功能说明使用的产品截图，包括状态栏、弹窗、看板、工作区详情和设置界面。
+- `images/`：README 与功能说明使用的产品截图，包括状态栏、弹窗、看板、项目详情和设置界面。
 
 截图不参与 App 构建；移除前必须同步删除 README 与功能说明中的引用。
 

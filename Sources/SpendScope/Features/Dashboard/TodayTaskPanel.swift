@@ -103,7 +103,7 @@ struct TodayTaskPanel: View {
         taskColumns(
             status: "状态",
             task: "任务名",
-            workspace: "所属工作区",
+            workspace: "所属项目",
             lastUpdated: "最后更新",
             replies: "回复",
             aiWorktime: "耗时",
@@ -172,7 +172,7 @@ struct TodayTaskPanel: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(task.title)，所属工作区 \(task.workspace.name)，"
+            "\(task.title)，所属项目 \(task.workspace.name)，"
                 + "状态 \(status.title)，今日 "
                 + "\(TokenFormatter.compact(task.conversation.tokens)) Token，"
                 + "耗时 \(TokenFormatter.worktime(task.aiWorktimeMilliseconds))，"
@@ -581,7 +581,7 @@ struct TodayTaskDetailView: View {
     }
 
     private var workspaceDirectoryCard: some View {
-        detailCard(title: "工作区相关目录", icon: "folder.fill") {
+        detailCard(title: "项目相关目录", icon: "folder.fill") {
             if task.workspace.projects.isEmpty {
                 Text("未识别到相关目录")
                     .font(.system(size: 10, weight: .medium))

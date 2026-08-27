@@ -80,7 +80,7 @@ struct ProjectUsagePanel: View {
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
 
-            Text("工作区用量排行")
+            Text("项目用量排行")
                 .font(.system(size: 13, weight: .semibold))
 
             Spacer(minLength: 16)
@@ -97,7 +97,7 @@ struct ProjectUsagePanel: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-            TextField("搜索工作区或目录", text: $searchText)
+            TextField("搜索项目或目录", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 10, weight: .medium))
         }
@@ -126,7 +126,7 @@ struct ProjectUsagePanel: View {
 
             headerSeparator
 
-            headerMetric("工作区", value: "\(ranking.workspaceCount)")
+            headerMetric("项目", value: "\(ranking.workspaceCount)")
 
             headerSeparator
 
@@ -155,7 +155,7 @@ struct ProjectUsagePanel: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "按 Token 用量排序，\(ranking.workspaceCount) 个工作区，"
+            "按 Token 用量排序，\(ranking.workspaceCount) 个项目，"
                 + "\(ranking.projectCount) 个目录，\(ranking.totalTokens.formatted()) Token，"
                 + "\(range.rawValue)耗时 "
                 + TokenFormatter.worktime(ranking.totalAIWorktimeMilliseconds)
@@ -175,14 +175,14 @@ struct ProjectUsagePanel: View {
     private var tableHeader: some View {
         projectColumns(
             rank: "排名",
-            project: "工作区 / 目录",
+            project: "项目 / 目录",
             projectSummary: nil,
             lastActivity: "最后活动",
             conversations: "任务",
             replies: "回复",
             aiWorktime: "耗时",
             aiWorktimeHelp: "所选范围内回复生命周期累计耗时",
-            share: "工作区占比",
+            share: "项目占比",
             tokens: "Token",
             action: "操作",
             isHeader: true
@@ -225,9 +225,9 @@ struct ProjectUsagePanel: View {
 
     private var emptyState: some View {
         ContentUnavailableView(
-            "暂无工作区用量",
+            "暂无项目用量",
             systemImage: "square.grid.3x3.topleft.filled",
-            description: Text("使用 Codex 后会按每次回复的工作区目录集合统计 Token。")
+            description: Text("使用 Codex 后会按每次回复的项目目录集合统计 Token。")
         )
         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
     }
@@ -253,7 +253,7 @@ struct ProjectUsagePanel: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(projectAccessibilityLabel(entry, rank: rank))
-        .accessibilityHint("打开工作区详情窗口")
+        .accessibilityHint("打开项目详情窗口")
     }
 
     private func projectColumns(
@@ -463,7 +463,7 @@ struct ProjectUsagePanel: View {
     }
 
     private func projectAccessibilityLabel(_ entry: WorkspaceUsageEntry, rank: Int) -> String {
-        return "第 \(rank) 名工作区，\(projectDisplayName(entry))，"
+        return "第 \(rank) 名项目，\(projectDisplayName(entry))，"
             + "\(TokenFormatter.compact(entry.tokens)) Token，"
             + "\(range.rawValue)耗时 "
             + "\(TokenFormatter.worktime(entry.aiWorktimeMilliseconds))，"
