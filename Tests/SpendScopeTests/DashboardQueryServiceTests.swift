@@ -89,9 +89,24 @@ final class DashboardQueryServiceTests: XCTestCase {
         let store = try makeStore()
         try store.commit(batch(
             events: [
-                usage("before-cycle", at: cycleStart.addingTimeInterval(-0.001), total: 90),
-                usage("cycle-start", at: cycleStart, total: 100),
-                usage("cycle-latest", at: now, total: 20)
+                usage(
+                    "before-cycle",
+                    at: cycleStart.addingTimeInterval(-0.001),
+                    total: 90,
+                    model: "before-cycle-model"
+                ),
+                usage(
+                    "cycle-start",
+                    at: cycleStart,
+                    total: 100,
+                    model: "gpt-5.6-sol"
+                ),
+                usage(
+                    "cycle-latest",
+                    at: now,
+                    total: 20,
+                    model: "codex-auto-review"
+                )
             ],
             quotas: []
         ))
@@ -113,6 +128,11 @@ final class DashboardQueryServiceTests: XCTestCase {
             snapshot.subscriptionCycle?.end,
             calendar.date(byAdding: .month, value: 4, to: firstSubscribedAt)
         )
+        XCTAssertEqual(
+            snapshot.modelUsage.subscriptionCycle.entries.map(\.model),
+            ["gpt-5.6-sol", "codex-auto-review"]
+        )
+        XCTAssertEqual(snapshot.modelUsage.subscriptionCycle.totalTokens, 120)
     }
 
     func testSnapshotGroupsUsageIntoAnchoredSubscriptionCycleTrend() throws {
@@ -161,7 +181,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.subscriptionCycleUsage.map(\.total), [100, 500, 900])
     }
 
-    func testSubscriptionCycleTrendEstimatesKnownModelCostAndMarksUnpricedModels() throws {
+    func testSubscriptionCycleTrendIncludesGPT55ReferencePricedModels() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
         let firstSubscribedAt = try XCTUnwrap(calendar.date(from: DateComponents(
@@ -212,8 +232,9 @@ final class DashboardQueryServiceTests: XCTestCase {
             ).subscriptionCycleUsage.first
         )
 
-        XCTAssertEqual(try XCTUnwrap(cycle.estimatedCostUSD), 248.75, accuracy: 0.000_001)
-        XCTAssertEqual(cycle.unpricedModelCount, 1)
+        XCTAssertEqual(try XCTUnwrap(cycle.estimatedCostUSD), 248.7505, accuracy: 0.000_001)
+        XCTAssertEqual(cycle.unpricedModelCount, 0)
+        XCTAssertEqual(cycle.referencePricedModelCount, 1)
     }
 
     func testDailyUsageUsesCodexUTCDateWithoutChangingLocalTodayWindow() throws {
@@ -949,7 +970,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(projectEntry.lastActivityAtMilliseconds, 10_000)
     }
 
-    func testBuildsModelUsageRankingBreakdownAndStandardAPIEstimate() throws {
+    func testBuildsModelUsageRankingWithPublishedAndReferencePrices() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
         let now = try XCTUnwrap(calendar.date(from: DateComponents(
@@ -1013,12 +1034,17 @@ final class DashboardQueryServiceTests: XCTestCase {
             32.75,
             accuracy: 0.000_001
         )
-        XCTAssertNil(ranking.entries.last?.estimatedCostUSD)
-        XCTAssertEqual(ranking.estimatedCostUSD, 248.75, accuracy: 0.000_001)
-        XCTAssertEqual(ranking.unpricedModelCount, 1)
+        XCTAssertEqual(
+            try XCTUnwrap(ranking.entries.last?.estimatedCostUSD),
+            0.0005,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(ranking.estimatedCostUSD, 248.7505, accuracy: 0.000_001)
+        XCTAssertEqual(ranking.unpricedModelCount, 0)
+        XCTAssertEqual(ranking.referencePricedModelCount, 1)
     }
 
-    func testOfficialModelPricingCatalogUsesPublishedStandardRates() throws {
+    func testModelPricingCatalogUsesPublishedRatesAndGPT55ReferenceFallback() throws {
         let sol = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.6-sol"))
         let terra = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.6-terra"))
         let gpt55 = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.5"))
@@ -1032,7 +1058,98 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(gpt55.inputPerMillionUSD, 5)
         XCTAssertEqual(gpt55.cachedInputPerMillionUSD, 0.5)
         XCTAssertEqual(gpt55.outputPerMillionUSD, 30)
-        XCTAssertNil(ModelPricingCatalog.rule(for: "codex-auto-review"))
+        XCTAssertEqual(ModelPricingCatalog.rule(for: "gpt-5.6"), sol)
+        XCTAssertEqual(
+            ModelPricingCatalog.publishedRules.map(\.modelID),
+            ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"]
+        )
+        let autoReview = try XCTUnwrap(ModelPricingCatalog.rule(for: "codex-auto-review"))
+        XCTAssertEqual(autoReview.modelID, "gpt-5.5")
+        XCTAssertFalse(ModelPricingCatalog.usesReferencePricing(for: "gpt-5.5"))
+        XCTAssertFalse(ModelPricingCatalog.usesReferencePricing(for: "gpt-5.6"))
+        XCTAssertTrue(ModelPricingCatalog.usesReferencePricing(for: "codex-auto-review"))
+        XCTAssertEqual(ModelCostFormatter.usd(0.0005, approximate: true), "≈$0.0005")
+        XCTAssertEqual(
+            autoReview.estimate(
+                uncachedInputTokens: 1_000_000,
+                cachedInputTokens: 1_000_000,
+                visibleOutputTokens: 1_000_000,
+                reasoningTokens: 1_000_000
+            ),
+            65.5,
+            accuracy: 0.000_001
+        )
+    }
+
+    func testReplyCostEstimateUsesTokenAttributionForEachModel() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage(
+                "reply-sol",
+                at: now.addingTimeInterval(-3),
+                total: 10_000_000,
+                usage: TokenUsageDelta(
+                    uncachedInput: 1_000_000,
+                    cachedInput: 2_000_000,
+                    visibleOutput: 3_000_000,
+                    reasoning: 4_000_000
+                ),
+                model: "gpt-5.6-sol",
+                turnID: "turn-1"
+            ),
+            usage(
+                "reply-terra",
+                at: now.addingTimeInterval(-2),
+                total: 4_000_000,
+                usage: TokenUsageDelta(
+                    uncachedInput: 1_000_000,
+                    cachedInput: 1_000_000,
+                    visibleOutput: 1_000_000,
+                    reasoning: 1_000_000
+                ),
+                model: "gpt-5.6-terra",
+                turnID: "turn-1"
+            ),
+            usage(
+                "reply-unpriced",
+                at: now.addingTimeInterval(-1),
+                total: 100,
+                model: "codex-auto-review",
+                turnID: "turn-1"
+            )
+        ], quotas: []))
+
+        let conversation = try XCTUnwrap(
+            DashboardQueryService(store: store)
+                .snapshot(now: now, calendar: .current)
+                .workspaceUsage
+                .ranking(for: .allTime)
+                .entries
+                .first?
+                .conversations
+                .first
+        )
+        let reply = try XCTUnwrap(conversation.replies.first)
+
+        XCTAssertEqual(reply.totalTokens, 14_000_100)
+        let cost = try XCTUnwrap(reply.estimatedCostBreakdown)
+        XCTAssertEqual(cost.cachedInputUSD, 1.25, accuracy: 0.000_001)
+        XCTAssertEqual(cost.visibleOutputUSD, 105, accuracy: 0.000_001)
+        XCTAssertEqual(cost.reasoningUSD, 135, accuracy: 0.000_001)
+        XCTAssertEqual(cost.uncachedInputUSD, 7.5005, accuracy: 0.000_001)
+        XCTAssertEqual(cost.totalUSD, 248.7505, accuracy: 0.000_001)
+        XCTAssertEqual(reply.unpricedModelCount, 0)
+        XCTAssertEqual(reply.referencePricedModelCount, 1)
+
+        let taskCost = try XCTUnwrap(conversation.estimatedCostBreakdown)
+        XCTAssertEqual(taskCost.cachedInputUSD, 1.25, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.visibleOutputUSD, 105, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.reasoningUSD, 135, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.uncachedInputUSD, 7.5005, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.totalUSD, 248.7505, accuracy: 0.000_001)
+        XCTAssertEqual(conversation.unpricedModelCount, 0)
+        XCTAssertEqual(conversation.referencePricedModelCount, 1)
     }
 
     func testWorkspaceUsageReturnsEveryWorkspaceInSelectedRange() throws {

@@ -1241,6 +1241,20 @@ struct ProjectReplyHoverCard: View {
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
 
+            ProjectTokenCostEstimateCard(
+                tokenBreakdown: TokenBreakdown(
+                    input: row.reply.uncachedInputTokens,
+                    cachedInput: row.reply.cachedInputTokens,
+                    output: row.reply.visibleOutputTokens,
+                    reasoning: row.reply.reasoningTokens
+                ),
+                costBreakdown: row.reply.estimatedCostBreakdown,
+                unpricedModelCount: row.reply.unpricedModelCount,
+                referencePricedModelCount: row.reply.referencePricedModelCount,
+                contextName: "本次回复",
+                excludedTokenCount: 0
+            )
+
             HStack(spacing: 9) {
                 hoverSummary(
                     title: "Skills",
@@ -1277,18 +1291,6 @@ struct ProjectReplyHoverCard: View {
             }
             .frame(minHeight: 110, maxHeight: 420)
             .scrollIndicators(.visible)
-
-            Divider()
-
-            Text(
-                "Token  输入 \(TokenFormatter.compact(row.reply.uncachedInputTokens))"
-                    + " · 缓存 \(TokenFormatter.compact(row.reply.cachedInputTokens))"
-                    + " · 输出 \(TokenFormatter.compact(row.reply.visibleOutputTokens))"
-                    + " · 推理 \(TokenFormatter.compact(row.reply.reasoningTokens))"
-            )
-            .font(.system(size: 10, weight: .medium, design: .rounded))
-            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-            .monospacedDigit()
         }
         .padding(16)
         .frame(width: 410)

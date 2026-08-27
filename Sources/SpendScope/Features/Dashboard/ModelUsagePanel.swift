@@ -1,7 +1,294 @@
+import Foundation
 import SwiftUI
+
+struct PeriodModelUsageControl: View {
+    let periodTitle: String
+    let periodSubtitle: String?
+    let ranking: ModelUsageRanking
+
+    @State private var isPresented = false
+    @State private var isPinned = false
+    @State private var isTriggerHovered = false
+    @State private var isPopoverHovered = false
+    @State private var dismissTask: Task<Void, Never>?
+
+    var body: some View {
+        Button {
+            dismissTask?.cancel()
+            if isPinned {
+                closePopover()
+            } else {
+                isPinned = true
+                isPresented = true
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "cpu")
+                    .font(.system(size: 8.5, weight: .semibold))
+                Text("\(ranking.entries.count) 模型")
+                    .lineLimit(1)
+            }
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(
+                ranking.entries.isEmpty
+                    ? SpendScopeTheme.dashboardMutedText
+                    : SpendScopeTheme.dashboardAccent
+            )
+            .padding(.horizontal, 7)
+            .frame(height: 23)
+            .background(
+                SpendScopeTheme.dashboardAccent.opacity(ranking.entries.isEmpty ? 0.04 : 0.09),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .stroke(
+                        SpendScopeTheme.dashboardAccent.opacity(
+                            isPinned ? 0.58 : (ranking.entries.isEmpty ? 0.08 : 0.22)
+                        ),
+                        lineWidth: isPinned ? 1 : 0.7
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(ranking.entries.isEmpty)
+        .contentShape(Capsule())
+        .onHover(perform: updateTriggerHover)
+        .popover(
+            isPresented: presentationBinding,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .top
+        ) {
+            PeriodModelRankingPopover(
+                periodTitle: periodTitle,
+                periodSubtitle: periodSubtitle,
+                ranking: ranking,
+                isPinned: isPinned,
+                onTogglePin: togglePinned,
+                onClose: closePopover
+            )
+            .onHover(perform: updatePopoverHover)
+            .onExitCommand(perform: closePopover)
+        }
+        .accessibilityLabel("\(periodTitle)模型排行，\(ranking.entries.count) 个模型")
+        .accessibilityHint(
+            ranking.entries.isEmpty
+                ? "当前范围暂无模型用量"
+                : "悬浮预览，点击固定排行榜"
+        )
+        .help(
+            ranking.entries.isEmpty
+                ? "当前范围暂无模型用量"
+                : "悬浮预览模型排行，点击固定"
+        )
+        .onDisappear { dismissTask?.cancel() }
+    }
+
+    private var presentationBinding: Binding<Bool> {
+        Binding(
+            get: { isPresented },
+            set: { newValue in
+                isPresented = newValue
+                if !newValue {
+                    isPinned = false
+                    isTriggerHovered = false
+                    isPopoverHovered = false
+                }
+            }
+        )
+    }
+
+    private func updateTriggerHover(_ isHovered: Bool) {
+        isTriggerHovered = isHovered
+        if isHovered {
+            dismissTask?.cancel()
+            isPresented = true
+        } else {
+            scheduleDismissIfNeeded()
+        }
+    }
+
+    private func updatePopoverHover(_ isHovered: Bool) {
+        isPopoverHovered = isHovered
+        if isHovered {
+            dismissTask?.cancel()
+            isPresented = true
+        } else {
+            scheduleDismissIfNeeded()
+        }
+    }
+
+    private func scheduleDismissIfNeeded() {
+        guard !isPinned else { return }
+        dismissTask?.cancel()
+        dismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 160_000_000)
+            guard !Task.isCancelled,
+                  !isPinned,
+                  !isTriggerHovered,
+                  !isPopoverHovered
+            else { return }
+            isPresented = false
+        }
+    }
+
+    private func togglePinned() {
+        dismissTask?.cancel()
+        isPinned.toggle()
+        isPresented = isPinned || isTriggerHovered || isPopoverHovered
+    }
+
+    private func closePopover() {
+        dismissTask?.cancel()
+        isPinned = false
+        isPresented = false
+        isTriggerHovered = false
+        isPopoverHovered = false
+    }
+}
+
+private struct PeriodModelRankingPopover: View {
+    private static let maximumVisibleModelCount = 5
+
+    let periodTitle: String
+    let periodSubtitle: String?
+    let ranking: ModelUsageRanking
+    let isPinned: Bool
+    let onTogglePin: () -> Void
+    let onClose: () -> Void
+
+    private var visibleRanking: ModelUsageRanking {
+        let entries = isPinned
+            ? ranking.entries
+            : Array(ranking.entries.prefix(Self.maximumVisibleModelCount))
+        return ModelUsageRanking(
+            entries: entries,
+            totalTokens: ranking.totalTokens,
+            estimatedCostUSD: ranking.estimatedCostUSD,
+            unpricedModelCount: ranking.unpricedModelCount,
+            referencePricedModelCount: ranking.referencePricedModelCount
+        )
+    }
+
+    private var omittedModelCount: Int {
+        guard !isPinned else { return 0 }
+        return max(0, ranking.entries.count - Self.maximumVisibleModelCount)
+    }
+
+    private var contentHeight: CGFloat {
+        let visibleCount = max(visibleRanking.entries.count, 1)
+        return min(420, 72 + CGFloat(visibleCount) * 33)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ModelUsagePanel(
+                ranking: visibleRanking,
+                title: "\(periodTitle) · 模型用量",
+                subtitle: periodSubtitle
+            )
+            .frame(height: contentHeight)
+
+            if omittedModelCount > 0 {
+                omittedModelsIndicator
+            }
+
+            HStack(spacing: 10) {
+                Text("排行范围继承当前卡片")
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+
+                Spacer(minLength: 12)
+
+                Button(action: onTogglePin) {
+                    Label(
+                        isPinned
+                            ? "取消固定"
+                            : (omittedModelCount > 0 ? "固定并展开全部" : "固定排行"),
+                        systemImage: isPinned ? "pin.slash" : "pin"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("关闭模型排行")
+                .help("关闭")
+            }
+            .font(.system(size: 9.5, weight: .medium))
+            .padding(.horizontal, 2)
+        }
+        .padding(10)
+        .frame(width: 560)
+        .background(SpendScopeVisualEffect(style: .popover))
+    }
+
+    private var omittedModelsIndicator: some View {
+        Button(action: onTogglePin) {
+            HStack(spacing: 8) {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        SpendScopeTheme.dashboardAccent.opacity(0.10),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+
+                Text("仅显示 Token 用量前 5 名")
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+
+                Spacer(minLength: 12)
+
+                Text("另有 \(omittedModelCount) 个模型 · 固定后展开")
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.82))
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 9.5, weight: .semibold))
+        .padding(.horizontal, 10)
+        .frame(height: 36)
+        .background(
+            SpendScopeTheme.dashboardControlBackground.opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(
+                    SpendScopeTheme.dashboardBorder,
+                    style: StrokeStyle(lineWidth: 0.8, dash: [3, 3])
+                )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "仅显示 Token 用量前 5 名，另有 \(omittedModelCount) 个模型，点击固定并展开全部"
+        )
+        .help("固定排行榜并展开全部模型")
+    }
+}
 
 struct ModelUsagePanel: View {
     let ranking: ModelUsageRanking
+    let title: String
+    let subtitle: String?
+
+    init(
+        ranking: ModelUsageRanking,
+        title: String = "模型用量排行",
+        subtitle: String? = nil
+    ) {
+        self.ranking = ranking
+        self.title = title
+        self.subtitle = subtitle
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -53,25 +340,46 @@ struct ModelUsagePanel: View {
             Image(systemName: "cpu")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(SpendScopeTheme.dashboardAccent)
-            Text("模型用量排行")
-                .font(.system(size: 13, weight: .semibold))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                }
+            }
 
             if ranking.unpricedModelCount > 0 {
                 Text("\(ranking.unpricedModelCount) 个模型暂无定价")
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(SpendScopeTheme.dashboardMutedText)
             }
+            if ranking.referencePricedModelCount > 0 {
+                Text("\(ranking.referencePricedModelCount) 个模型采用参考价")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            }
 
             Spacer()
 
-            Text("总用量")
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(TokenFormatter.compact(ranking.totalTokens))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
+                    .monospacedDigit()
+                Text("总 Token")
+                    .font(.system(size: 8.5, weight: .medium))
+            }
+            .frame(width: 84, alignment: .trailing)
+
+            Text("预估费用")
                 .frame(width: 84, alignment: .trailing)
-            Text("预估费用总额")
-                .frame(width: 96, alignment: .trailing)
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-        .frame(height: 30)
+        .frame(minHeight: subtitle == nil ? 30 : 40)
         .padding(.horizontal, 12)
     }
 
@@ -88,15 +396,11 @@ struct ModelUsagePanel: View {
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
 
-            HStack(spacing: 5) {
-                Text(entry.model)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                ModelPricingInfoButton(modelID: entry.model)
-            }
-            .frame(width: 205, alignment: .leading)
+            Text(entry.model)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(width: 190, alignment: .leading)
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
@@ -123,7 +427,7 @@ struct ModelUsagePanel: View {
                 .frame(width: 84, alignment: .trailing)
 
             ModelCostValue(entry: entry)
-                .frame(width: 96, alignment: .trailing)
+                .frame(width: 84, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, minHeight: 32)
         .accessibilityElement(children: .contain)
@@ -131,7 +435,12 @@ struct ModelUsagePanel: View {
     }
 
     private func accessibilityLabel(for entry: ModelUsageEntry, rank: Int) -> String {
-        let cost = entry.estimatedCostUSD.map(ModelCostFormatter.usd) ?? "暂无官方定价"
+        let cost = entry.estimatedCostUSD.map {
+            ModelCostFormatter.usd(
+                $0,
+                approximate: ModelPricingCatalog.usesReferencePricing(for: entry.model)
+            )
+        } ?? "暂无官方定价"
         return "第 \(rank) 名，\(entry.model)，\(entry.totalTokens) Token，API 预估 \(cost)"
     }
 }
@@ -164,7 +473,12 @@ private struct ModelCostValue: View {
     @State private var isHovered = false
 
     var body: some View {
-        Text(entry.estimatedCostUSD.map(ModelCostFormatter.usd) ?? "—")
+        Text(entry.estimatedCostUSD.map {
+            ModelCostFormatter.usd(
+                $0,
+                approximate: ModelPricingCatalog.usesReferencePricing(for: entry.model)
+            )
+        } ?? "—")
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .foregroundStyle(
                 entry.estimatedCostUSD == nil
@@ -183,48 +497,6 @@ private struct ModelCostValue: View {
                     .padding(4)
             }
             .help("悬浮查看费用明细")
-    }
-}
-
-private struct ModelPricingInfoButton: View {
-    let modelID: String
-    @State private var isHovered = false
-    @State private var isPinned = false
-
-    var body: some View {
-        Button {
-            isPinned.toggle()
-        } label: {
-            Image(systemName: "info.circle")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(SpendScopeTheme.dashboardAccent)
-                .frame(width: 16, height: 16)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-        .popover(
-            isPresented: presentationBinding,
-            attachmentAnchor: .rect(.bounds),
-            arrowEdge: .bottom
-        ) {
-            ModelPricingRuleCard(modelID: modelID)
-                .padding(4)
-        }
-        .help("查看 \(modelID) API 费用规则")
-        .accessibilityLabel("\(modelID) API 费用规则")
-    }
-
-    private var presentationBinding: Binding<Bool> {
-        Binding(
-            get: { isHovered || isPinned },
-            set: { presented in
-                if !presented {
-                    isHovered = false
-                    isPinned = false
-                }
-            }
-        )
     }
 }
 
@@ -261,8 +533,17 @@ private struct ModelCostDetailCard: View {
                 costRow("可见输出", tokens: entry.visibleOutputTokens, rate: rule.outputPerMillionUSD)
                 costRow("推理输出", tokens: entry.reasoningTokens, rate: rule.outputPerMillionUSD)
                 Divider()
-                detailRow("API 等值总额", value: ModelCostFormatter.usd(total), emphasized: true)
-                Text("按标准 API 单价估算，不代表 Codex 实际账单；未计长上下文、缓存写入和工具调用附加费。")
+                let usesReferencePricing = ModelPricingCatalog.usesReferencePricing(for: entry.model)
+                detailRow(
+                    "API 等值总额",
+                    value: ModelCostFormatter.usd(total, approximate: usesReferencePricing),
+                    emphasized: true
+                )
+                Text(
+                    usesReferencePricing
+                        ? "该模型没有独立公开价，按 GPT-5.5 参考价估算；不代表 Codex 实际账单。"
+                        : "按标准 API 单价估算，不代表 Codex 实际账单；未计长上下文、缓存写入和工具调用附加费。"
+                )
                     .font(.system(size: 9.5))
                     .foregroundStyle(SpendScopeTheme.dashboardMutedText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -284,66 +565,6 @@ private struct ModelCostDetailCard: View {
             value: "\(TokenFormatter.compact(tokens)) × \(ModelCostFormatter.rate(rate)) = "
                 + ModelCostFormatter.usd(Double(tokens) / 1_000_000 * rate)
         )
-    }
-}
-
-private struct ModelPricingRuleCard: View {
-    let modelID: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("\(modelID) · API 费用规则")
-                .font(.system(size: 12, weight: .semibold))
-
-            if let rule = ModelPricingCatalog.rule(for: modelID) {
-                Text("标准价格 · 每 100 万 Token")
-                    .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                detailRow("输入", value: ModelCostFormatter.rate(rule.inputPerMillionUSD))
-                detailRow("缓存输入", value: ModelCostFormatter.rate(rule.cachedInputPerMillionUSD))
-                detailRow("输出 / 推理", value: ModelCostFormatter.rate(rule.outputPerMillionUSD))
-
-                if let threshold = rule.longContextThresholdTokens,
-                   let inputMultiplier = rule.longContextInputMultiplier,
-                   let outputMultiplier = rule.longContextOutputMultiplier {
-                    Divider()
-                    Text(
-                        "单次输入超过 \(TokenFormatter.compact(threshold)) 时，整次请求输入按 "
-                            + "\(inputMultiplier.formatted())×、输出按 \(outputMultiplier.formatted())× 计价。"
-                    )
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                if let cacheWriteMultiplier = rule.cacheWriteMultiplier {
-                    Text("缓存写入按普通输入价的 \(cacheWriteMultiplier.formatted())× 计价。")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                }
-            } else {
-                Label("暂无公开的独立 API 单价", systemImage: "exclamationmark.circle")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                Text(unknownPricingDescription)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Link(
-                "查看 OpenAI 官方价格",
-                destination: URL(string: "https://openai.com/api/pricing/")!
-            )
-            .font(.system(size: 9.5, weight: .medium))
-        }
-        .modelDetailCard()
-    }
-
-    private var unknownPricingDescription: String {
-        if modelID.lowercased() == "codex-auto-review" {
-            return "这是 Codex 自动审批审查使用的内部路由名称，官方未公布可独立套用的模型单价。"
-        }
-        return "当前价格目录尚未收录该模型，费用估算中会保留为未定价。"
     }
 }
 

@@ -258,6 +258,31 @@ struct ProjectConversationUsage: Identifiable, Equatable, Sendable {
         Self.mergedCalls(replies.flatMap(\.toolCalls))
     }
 
+    var estimatedCostBreakdown: ModelCostBreakdown? {
+        var total = ModelCostBreakdown()
+        var hasPricedUsage = false
+
+        for reply in replies {
+            guard let breakdown = reply.estimatedCostBreakdown else { continue }
+            total.add(breakdown)
+            hasPricedUsage = true
+        }
+
+        return hasPricedUsage ? total : nil
+    }
+
+    var estimatedCostUSD: Double? {
+        estimatedCostBreakdown?.totalUSD
+    }
+
+    var unpricedModelCount: Int {
+        modelCalls.count { ModelPricingCatalog.rule(for: $0.name) == nil }
+    }
+
+    var referencePricedModelCount: Int {
+        modelCalls.count { ModelPricingCatalog.usesReferencePricing(for: $0.name) }
+    }
+
     var isIncludedInTaskMetrics: Bool {
         Self.isIncludedInTaskMetrics(displayTitle: displayTitle)
     }
@@ -301,6 +326,9 @@ struct ProjectReplyUsage: Identifiable, Equatable, Sendable {
     let visibleOutputTokens: Int
     let reasoningTokens: Int
     let totalTokens: Int
+    let estimatedCostBreakdown: ModelCostBreakdown?
+    let unpricedModelCount: Int
+    let referencePricedModelCount: Int
     let startedAtMilliseconds: Int64?
     let endedAtMilliseconds: Int64?
     let lastUsageAtMilliseconds: Int64
@@ -309,6 +337,10 @@ struct ProjectReplyUsage: Identifiable, Equatable, Sendable {
 
     var model: String {
         modelCalls.map { "\($0.name) ×\($0.count)" }.joined(separator: " · ")
+    }
+
+    var estimatedCostUSD: Double? {
+        estimatedCostBreakdown?.totalUSD
     }
 
     var displayAtMilliseconds: Int64 {
@@ -681,12 +713,14 @@ struct ModelUsageRanking: Equatable, Sendable {
     let totalTokens: Int
     let estimatedCostUSD: Double
     let unpricedModelCount: Int
+    let referencePricedModelCount: Int
 
     static let empty = ModelUsageRanking(
         entries: [],
         totalTokens: 0,
         estimatedCostUSD: 0,
-        unpricedModelCount: 0
+        unpricedModelCount: 0,
+        referencePricedModelCount: 0
     )
 }
 
@@ -694,12 +728,28 @@ struct ModelUsageSnapshot: Equatable, Sendable {
     let today: ModelUsageRanking
     let sevenDays: ModelUsageRanking
     let thirtyDays: ModelUsageRanking
+    let subscriptionCycle: ModelUsageRanking
     let allTime: ModelUsageRanking
+
+    init(
+        today: ModelUsageRanking,
+        sevenDays: ModelUsageRanking,
+        thirtyDays: ModelUsageRanking,
+        subscriptionCycle: ModelUsageRanking = .empty,
+        allTime: ModelUsageRanking
+    ) {
+        self.today = today
+        self.sevenDays = sevenDays
+        self.thirtyDays = thirtyDays
+        self.subscriptionCycle = subscriptionCycle
+        self.allTime = allTime
+    }
 
     static let empty = ModelUsageSnapshot(
         today: .empty,
         sevenDays: .empty,
         thirtyDays: .empty,
+        subscriptionCycle: .empty,
         allTime: .empty
     )
 
@@ -709,6 +759,17 @@ struct ModelUsageSnapshot: Equatable, Sendable {
         case .sevenDays: sevenDays
         case .thirtyDays: thirtyDays
         case .allTime: allTime
+        }
+    }
+
+    func ranking(forPeriodID periodID: String) -> ModelUsageRanking {
+        switch periodID {
+        case "today": today
+        case "sevenDays": sevenDays
+        case "thirtyDays": thirtyDays
+        case "subscriptionCycle": subscriptionCycle
+        case "allTime": allTime
+        default: .empty
         }
     }
 }
@@ -723,6 +784,7 @@ struct DailyUsage: Identifiable, Sendable {
     let reasoning: Int
     let estimatedCostUSD: Double?
     let unpricedModelCount: Int
+    let referencePricedModelCount: Int
 
     init(
         id: String,
@@ -733,7 +795,8 @@ struct DailyUsage: Identifiable, Sendable {
         output: Int = 0,
         reasoning: Int = 0,
         estimatedCostUSD: Double? = nil,
-        unpricedModelCount: Int = 0
+        unpricedModelCount: Int = 0,
+        referencePricedModelCount: Int = 0
     ) {
         self.id = id
         self.day = day
@@ -744,5 +807,6 @@ struct DailyUsage: Identifiable, Sendable {
         self.reasoning = reasoning
         self.estimatedCostUSD = estimatedCostUSD
         self.unpricedModelCount = unpricedModelCount
+        self.referencePricedModelCount = referencePricedModelCount
     }
 }

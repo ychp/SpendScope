@@ -1,5 +1,23 @@
 import Foundation
 
+struct ModelCostBreakdown: Equatable, Sendable {
+    var uncachedInputUSD = 0.0
+    var cachedInputUSD = 0.0
+    var visibleOutputUSD = 0.0
+    var reasoningUSD = 0.0
+
+    var totalUSD: Double {
+        uncachedInputUSD + cachedInputUSD + visibleOutputUSD + reasoningUSD
+    }
+
+    mutating func add(_ other: ModelCostBreakdown) {
+        uncachedInputUSD += other.uncachedInputUSD
+        cachedInputUSD += other.cachedInputUSD
+        visibleOutputUSD += other.visibleOutputUSD
+        reasoningUSD += other.reasoningUSD
+    }
+}
+
 struct ModelPricingRule: Equatable, Sendable {
     let modelID: String
     let inputPerMillionUSD: Double
@@ -16,11 +34,26 @@ struct ModelPricingRule: Equatable, Sendable {
         visibleOutputTokens: Int64,
         reasoningTokens: Int64
     ) -> Double {
-        let inputCost = tokenCost(uncachedInputTokens, rate: inputPerMillionUSD)
-        let cachedInputCost = tokenCost(cachedInputTokens, rate: cachedInputPerMillionUSD)
-        let visibleOutputCost = tokenCost(visibleOutputTokens, rate: outputPerMillionUSD)
-        let reasoningCost = tokenCost(reasoningTokens, rate: outputPerMillionUSD)
-        return inputCost + cachedInputCost + visibleOutputCost + reasoningCost
+        estimateBreakdown(
+            uncachedInputTokens: uncachedInputTokens,
+            cachedInputTokens: cachedInputTokens,
+            visibleOutputTokens: visibleOutputTokens,
+            reasoningTokens: reasoningTokens
+        ).totalUSD
+    }
+
+    func estimateBreakdown(
+        uncachedInputTokens: Int64,
+        cachedInputTokens: Int64,
+        visibleOutputTokens: Int64,
+        reasoningTokens: Int64
+    ) -> ModelCostBreakdown {
+        ModelCostBreakdown(
+            uncachedInputUSD: tokenCost(uncachedInputTokens, rate: inputPerMillionUSD),
+            cachedInputUSD: tokenCost(cachedInputTokens, rate: cachedInputPerMillionUSD),
+            visibleOutputUSD: tokenCost(visibleOutputTokens, rate: outputPerMillionUSD),
+            reasoningUSD: tokenCost(reasoningTokens, rate: outputPerMillionUSD)
+        )
     }
 
     func tokenCost(_ tokens: Int, rate: Double) -> Double {
@@ -33,53 +66,69 @@ struct ModelPricingRule: Equatable, Sendable {
 }
 
 enum ModelPricingCatalog {
+    static let publishedRules: [ModelPricingRule] = [
+        ModelPricingRule(
+            modelID: "gpt-5.6-sol",
+            inputPerMillionUSD: 5,
+            cachedInputPerMillionUSD: 0.5,
+            outputPerMillionUSD: 30,
+            longContextThresholdTokens: 272_000,
+            longContextInputMultiplier: 2,
+            longContextOutputMultiplier: 1.5,
+            cacheWriteMultiplier: 1.25
+        ),
+        ModelPricingRule(
+            modelID: "gpt-5.6-terra",
+            inputPerMillionUSD: 2.5,
+            cachedInputPerMillionUSD: 0.25,
+            outputPerMillionUSD: 15,
+            longContextThresholdTokens: 272_000,
+            longContextInputMultiplier: 2,
+            longContextOutputMultiplier: 1.5,
+            cacheWriteMultiplier: 1.25
+        ),
+        ModelPricingRule(
+            modelID: "gpt-5.5",
+            inputPerMillionUSD: 5,
+            cachedInputPerMillionUSD: 0.5,
+            outputPerMillionUSD: 30,
+            longContextThresholdTokens: 272_000,
+            longContextInputMultiplier: 2,
+            longContextOutputMultiplier: 1.5,
+            cacheWriteMultiplier: nil
+        )
+    ]
+
     static func rule(for modelID: String) -> ModelPricingRule? {
-        switch modelID.lowercased() {
-        case "gpt-5.6", "gpt-5.6-sol":
-            ModelPricingRule(
-                modelID: "gpt-5.6-sol",
-                inputPerMillionUSD: 5,
-                cachedInputPerMillionUSD: 0.5,
-                outputPerMillionUSD: 30,
-                longContextThresholdTokens: 272_000,
-                longContextInputMultiplier: 2,
-                longContextOutputMultiplier: 1.5,
-                cacheWriteMultiplier: 1.25
-            )
-        case "gpt-5.6-terra":
-            ModelPricingRule(
-                modelID: "gpt-5.6-terra",
-                inputPerMillionUSD: 2.5,
-                cachedInputPerMillionUSD: 0.25,
-                outputPerMillionUSD: 15,
-                longContextThresholdTokens: 272_000,
-                longContextInputMultiplier: 2,
-                longContextOutputMultiplier: 1.5,
-                cacheWriteMultiplier: 1.25
-            )
-        case "gpt-5.5":
-            ModelPricingRule(
-                modelID: "gpt-5.5",
-                inputPerMillionUSD: 5,
-                cachedInputPerMillionUSD: 0.5,
-                outputPerMillionUSD: 30,
-                longContextThresholdTokens: 272_000,
-                longContextInputMultiplier: 2,
-                longContextOutputMultiplier: 1.5,
-                cacheWriteMultiplier: nil
-            )
-        default:
-            nil
-        }
+        explicitRule(for: modelID)
+            ?? publishedRules.first { $0.modelID == "gpt-5.5" }
+    }
+
+    static func usesReferencePricing(for modelID: String) -> Bool {
+        explicitRule(for: modelID) == nil
+    }
+
+    private static func explicitRule(for modelID: String) -> ModelPricingRule? {
+        let lowercasedID = modelID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedID = lowercasedID == "gpt-5.6"
+            ? "gpt-5.6-sol"
+            : lowercasedID
+        return publishedRules.first { $0.modelID == normalizedID }
     }
 }
 
 enum ModelCostFormatter {
-    static func usd(_ value: Double) -> String {
+    static func usd(_ value: Double, approximate: Bool = false) -> String {
         guard value.isFinite, value >= 0 else { return "—" }
-        if value >= 1 { return String(format: "$%.2f", value) }
-        if value >= 0.01 { return String(format: "$%.3f", value) }
-        return String(format: "$%.4f", value)
+        let formatted: String
+        if value >= 1 {
+            formatted = String(format: "$%.2f", value)
+        } else if value >= 0.01 {
+            formatted = String(format: "$%.3f", value)
+        } else {
+            formatted = String(format: "$%.4f", value)
+        }
+        return approximate ? "≈" + formatted : formatted
     }
 
     static func rate(_ value: Double) -> String {

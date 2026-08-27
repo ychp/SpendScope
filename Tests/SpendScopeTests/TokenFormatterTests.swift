@@ -81,6 +81,10 @@ private extension DashboardSnapshot {
 final class TokenFormatterTests: XCTestCase {
     func testDashboardDefaultsToTodayTasksTab() {
         XCTAssertEqual(DashboardAnalyticsTab.defaultTab, .todayTasks)
+        XCTAssertEqual(
+            DashboardAnalyticsTab.allCases.map(\.rawValue),
+            ["今日任务", "用量趋势", "Skills / Tools", "工作区用量"]
+        )
     }
 
     func testReplyModelTextPreservesCallCountsAndFallsBackWhenUnknown() {

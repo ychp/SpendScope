@@ -410,7 +410,7 @@ private struct DashboardLoadingView: View {
         VStack(spacing: 9) {
             HStack(spacing: 2) {
                 ForEach(
-                    Array(["今日任务", "用量趋势", "Skills / Tools", "工作区用量", "模型用量"].enumerated()),
+                    Array(["今日任务", "用量趋势", "Skills / Tools", "工作区用量"].enumerated()),
                     id: \.offset
                 ) { index, title in
                     Text(title)
@@ -812,7 +812,6 @@ private struct DashboardContentView: View {
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
     @State private var selectedActivityRange = ActivityRange.defaultRange
     @State private var selectedProjectRange = ActivityRange.defaultRange
-    @State private var selectedModelRange = ActivityRange.defaultRange
     @State private var hoveredUsageID: DailyUsage.ID?
 
     private var hasSubscriptionCycle: Bool {
@@ -1119,6 +1118,12 @@ private struct DashboardContentView: View {
                     .foregroundStyle(SpendScopeTheme.dashboardMutedText)
             }
 
+            PeriodModelUsageControl(
+                periodTitle: period.title,
+                periodSubtitle: subscriptionCycleRangeText(cycle),
+                ranking: snapshot.modelUsage.ranking(forPeriodID: period.id)
+            )
+
             Spacer(minLength: 8)
 
             Text(TokenFormatter.compact(period.total))
@@ -1187,6 +1192,12 @@ private struct DashboardContentView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.88))
                     .lineLimit(1)
+
+                PeriodModelUsageControl(
+                    periodTitle: period.title,
+                    periodSubtitle: nil,
+                    ranking: snapshot.modelUsage.ranking(forPeriodID: period.id)
+                )
 
                 Spacer(minLength: 6)
 
@@ -1332,10 +1343,6 @@ private struct DashboardContentView: View {
         snapshot.workspaceUsage.ranking(for: selectedProjectRange)
     }
 
-    private var selectedModelRanking: ModelUsageRanking {
-        snapshot.modelUsage.ranking(for: selectedModelRange)
-    }
-
     private var analyticsPanel: some View {
         VStack(spacing: 9) {
             HStack(spacing: 10) {
@@ -1346,9 +1353,6 @@ private struct DashboardContentView: View {
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 } else if selectedAnalyticsTab == .project {
                     projectRangeSelector
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
-                } else if selectedAnalyticsTab == .model {
-                    modelRangeSelector
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -1371,8 +1375,6 @@ private struct DashboardContentView: View {
                     ActivityRankingPanel(ranking: selectedActivityRanking)
                 case .project:
                     ProjectUsagePanel(ranking: selectedWorkspaceRanking)
-                case .model:
-                    ModelUsagePanel(ranking: selectedModelRanking)
                 }
             }
             .id(selectedAnalyticsTab)
@@ -1426,13 +1428,6 @@ private struct DashboardContentView: View {
             selectedRange: selectedProjectRange,
             accessibilityLabel: "工作区用量时间范围"
         ) { selectedProjectRange = $0 }
-    }
-
-    private var modelRangeSelector: some View {
-        analyticsRangeSelector(
-            selectedRange: selectedModelRange,
-            accessibilityLabel: "模型用量时间范围"
-        ) { selectedModelRange = $0 }
     }
 
     private func analyticsRangeSelector(
@@ -1738,7 +1733,6 @@ enum DashboardAnalyticsTab: String, CaseIterable, Identifiable {
     case trend = "用量趋势"
     case activity = "Skills / Tools"
     case project = "工作区用量"
-    case model = "模型用量"
 
     static let defaultTab: DashboardAnalyticsTab = .todayTasks
 

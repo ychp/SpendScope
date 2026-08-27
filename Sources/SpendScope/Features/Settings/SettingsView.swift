@@ -92,6 +92,7 @@ struct SettingsView: View {
     @FocusState private var subscriptionDateIsFocused: Bool
     @State private var isEditingSubscriptionDate = false
     @State private var showsRebuildConfirmation = false
+    @State private var showsModelPricingExplanation = false
 
     var body: some View {
         ScrollView {
@@ -588,6 +589,30 @@ struct SettingsView: View {
                         Text("按 Token 用量计费")
                             .font(.callout)
                             .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, Layout.cardHorizontalPadding)
+
+                    settingsDivider
+                        .padding(.horizontal, Layout.cardHorizontalPadding)
+
+                    settingsRow {
+                        settingLabel(
+                            "模型费用说明",
+                            detail: "已收录模型按公开价，其他模型按 GPT-5.5 参考价"
+                        )
+                    } control: {
+                        Button("查看说明") {
+                            showsModelPricingExplanation.toggle()
+                        }
+                        .buttonStyle(.bordered)
+                        .popover(
+                            isPresented: $showsModelPricingExplanation,
+                            attachmentAnchor: .rect(.bounds),
+                            arrowEdge: .trailing
+                        ) {
+                            ModelPricingExplanationView()
+                                .padding(4)
+                        }
                     }
                     .padding(.horizontal, Layout.cardHorizontalPadding)
                 }
@@ -1146,6 +1171,88 @@ struct SettingsView: View {
         case .degraded: .orange
         case .unsupported: .red
         }
+    }
+}
+
+private struct ModelPricingExplanationView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("模型费用说明")
+                    .font(.headline)
+                Text("标准 API 价格 · 每 100 万 Token")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 0) {
+                pricingHeader
+                Divider()
+                ForEach(Array(ModelPricingCatalog.publishedRules.enumerated()), id: \.element.modelID) {
+                    index, rule in
+                    pricingRow(rule)
+                    if index < ModelPricingCatalog.publishedRules.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("费用按未缓存输入、缓存输入、可见输出和推理输出分别估算，推理 Token 按输出价格计算。")
+                Text("未收录独立价格的模型（包括 codex-auto-review）按 GPT-5.5 参考价估算，并以 ≈ 标记。")
+                Text("未计入长上下文、缓存写入和工具调用等无法从聚合数据可靠还原的附加费用。")
+                Text("该结果仅用于理解 API 等值规模，不代表 Codex 订阅的实际账单。")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Link(
+                "查看 OpenAI 官方价格",
+                destination: URL(string: "https://openai.com/api/pricing/")!
+            )
+            .font(.caption.weight(.medium))
+        }
+        .padding(14)
+        .frame(width: 440, alignment: .leading)
+        .background(SpendScopeVisualEffect(style: .popover))
+    }
+
+    private var pricingHeader: some View {
+        HStack(spacing: 8) {
+            Text("模型")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("输入")
+                .frame(width: 62, alignment: .trailing)
+            Text("缓存输入")
+                .frame(width: 68, alignment: .trailing)
+            Text("输出 / 推理")
+                .frame(width: 78, alignment: .trailing)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .frame(height: 28)
+    }
+
+    private func pricingRow(_ rule: ModelPricingRule) -> some View {
+        HStack(spacing: 8) {
+            Text(rule.modelID)
+                .fontWeight(.medium)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            pricingValue(rule.inputPerMillionUSD, width: 62)
+            pricingValue(rule.cachedInputPerMillionUSD, width: 68)
+            pricingValue(rule.outputPerMillionUSD, width: 78)
+        }
+        .font(.caption.monospacedDigit())
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+    }
+
+    private func pricingValue(_ value: Double, width: CGFloat) -> some View {
+        Text(ModelCostFormatter.rate(value))
+            .frame(width: width, alignment: .trailing)
     }
 }
 

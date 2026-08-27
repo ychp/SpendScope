@@ -72,6 +72,20 @@ struct ProjectConversationHoverCard: View {
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
 
+            ProjectTokenCostEstimateCard(
+                tokenBreakdown: TokenBreakdown(
+                    input: totals.uncachedInput,
+                    cachedInput: totals.cachedInput,
+                    output: totals.visibleOutput,
+                    reasoning: totals.reasoning
+                ),
+                costBreakdown: conversation.estimatedCostBreakdown,
+                unpricedModelCount: conversation.unpricedModelCount,
+                referencePricedModelCount: conversation.referencePricedModelCount,
+                contextName: "本任务",
+                excludedTokenCount: conversation.unattributedTokens
+            )
+
             HStack(spacing: 8) {
                 summary(
                     title: "回复",
@@ -114,19 +128,6 @@ struct ProjectConversationHoverCard: View {
             }
             .frame(minHeight: 110, maxHeight: 380)
             .scrollIndicators(.visible)
-
-            Divider()
-
-            Text(
-                "Token  输入 \(TokenFormatter.compact(totals.uncachedInput))"
-                    + " · 缓存 \(TokenFormatter.compact(totals.cachedInput))"
-                    + " · 输出 \(TokenFormatter.compact(totals.visibleOutput))"
-                    + " · 推理 \(TokenFormatter.compact(totals.reasoning))"
-                    + unattributedTokenText
-            )
-            .font(.system(size: 10, weight: .medium, design: .rounded))
-            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-            .monospacedDigit()
         }
         .padding(16)
         .frame(width: 410)
@@ -169,11 +170,6 @@ struct ProjectConversationHoverCard: View {
             totals.2 += reply.visibleOutputTokens
             totals.3 += reply.reasoningTokens
         }
-    }
-
-    private var unattributedTokenText: String {
-        guard conversation.unattributedTokens > 0 else { return "" }
-        return " · 未归属 \(TokenFormatter.compact(conversation.unattributedTokens))"
     }
 
     private func summary(
@@ -238,5 +234,133 @@ struct ProjectConversationHoverCard: View {
                 }
             }
         }
+    }
+}
+
+struct ProjectTokenCostEstimateCard: View {
+    let tokenBreakdown: TokenBreakdown
+    let costBreakdown: ModelCostBreakdown?
+    let unpricedModelCount: Int
+    let referencePricedModelCount: Int
+    let contextName: String
+    let excludedTokenCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label("Token API 等值费用", systemImage: "dollarsign.circle")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(SpendScopeTheme.dashboardAccentSecondary)
+                Spacer(minLength: 8)
+                if let estimatedCostUSD = costBreakdown?.totalUSD {
+                    Text(ModelCostFormatter.usd(
+                        estimatedCostUSD,
+                        approximate: referencePricedModelCount > 0
+                    ))
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(SpendScopeTheme.dashboardAccentSecondary)
+                        .monospacedDigit()
+                } else {
+                    Text("暂无公开定价")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                }
+            }
+
+            if let costBreakdown {
+                Divider()
+                costDetailRow(
+                    "未缓存输入",
+                    tokens: tokenBreakdown.input,
+                    cost: costBreakdown.uncachedInputUSD,
+                    tint: SpendScopeTheme.dashboardInput
+                )
+                costDetailRow(
+                    "缓存输入",
+                    tokens: tokenBreakdown.cachedInput,
+                    cost: costBreakdown.cachedInputUSD,
+                    tint: SpendScopeTheme.dashboardCachedInput
+                )
+                costDetailRow(
+                    "可见输出",
+                    tokens: tokenBreakdown.output,
+                    cost: costBreakdown.visibleOutputUSD,
+                    tint: SpendScopeTheme.output
+                )
+                costDetailRow(
+                    "推理输出",
+                    tokens: tokenBreakdown.reasoning,
+                    cost: costBreakdown.reasoningUSD,
+                    tint: SpendScopeTheme.reasoning
+                )
+            }
+
+            Text(costDescription)
+                .font(.system(size: 8.5, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, minHeight: 38)
+        .background(
+            SpendScopeTheme.dashboardAccentSecondary.opacity(0.055),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(costAccessibilityLabel)
+    }
+
+    private func costDetailRow(
+        _ title: String,
+        tokens: Int,
+        cost: Double,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(tint)
+                .frame(width: 5, height: 5)
+            Text(title)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+            Spacer(minLength: 6)
+            Text(TokenFormatter.compact(tokens))
+                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                .monospacedDigit()
+            Text(ModelCostFormatter.usd(cost))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .frame(width: 58, alignment: .trailing)
+                .monospacedDigit()
+        }
+    }
+
+    private var costDescription: String {
+        let pricingDescription: String
+        if costBreakdown == nil {
+            pricingDescription = "\(contextName)使用的模型均未收录公开 API 单价"
+        } else if unpricedModelCount > 0 {
+            pricingDescription = "部分估算 · \(unpricedModelCount) 个模型未定价；不代表 Codex 实际账单"
+        } else if referencePricedModelCount > 0 {
+            pricingDescription = "参考估算 · \(referencePricedModelCount) 个模型按 GPT-5.5 参考价；不代表 Codex 实际账单"
+        } else {
+            pricingDescription = "按公开 API 标准单价估算，不代表 Codex 实际账单"
+        }
+
+        guard excludedTokenCount > 0 else { return pricingDescription }
+        return pricingDescription
+            + "；另有 \(TokenFormatter.compact(excludedTokenCount)) Token 未归属到回复，未计入估算"
+    }
+
+    private var costAccessibilityLabel: String {
+        guard let costBreakdown else {
+            return "Token API 等值费用，暂无公开定价，\(costDescription)"
+        }
+        return "Token API 等值费用，未缓存输入 \(ModelCostFormatter.usd(costBreakdown.uncachedInputUSD))，"
+            + "缓存输入 \(ModelCostFormatter.usd(costBreakdown.cachedInputUSD))，"
+            + "可见输出 \(ModelCostFormatter.usd(costBreakdown.visibleOutputUSD))，"
+            + "推理输出 \(ModelCostFormatter.usd(costBreakdown.reasoningUSD))，"
+            + "总额 \(ModelCostFormatter.usd(costBreakdown.totalUSD))，\(costDescription)"
     }
 }

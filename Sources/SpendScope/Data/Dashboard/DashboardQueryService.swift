@@ -99,6 +99,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 calendar: calendar
             )
         }
+        var subscriptionRows: [StoredUsageQueryRow] = []
         var periods = try [
             period(id: "today", title: "今日", rows: todayRows),
             period(id: "sevenDays", title: "7 日", rows: sevenDayRows),
@@ -106,7 +107,7 @@ final class DashboardQueryService: @unchecked Sendable {
             period(id: "allTime", title: "累计", rows: allRows)
         ]
         if let subscriptionCycle {
-            let subscriptionRows = try store.usageEvents(
+            subscriptionRows = try store.usageEvents(
                 fromMilliseconds: milliseconds(for: subscriptionCycle.start),
                 toMilliseconds: end
             )
@@ -201,6 +202,7 @@ final class DashboardQueryService: @unchecked Sendable {
             today: try modelRanking(from: todayRows),
             sevenDays: try modelRanking(from: sevenDayRows),
             thirtyDays: try modelRanking(from: thirtyDayRows),
+            subscriptionCycle: try modelRanking(from: subscriptionRows),
             allTime: try modelRanking(from: historicalRows)
         )
 
@@ -248,6 +250,7 @@ final class DashboardQueryService: @unchecked Sendable {
         }
         var estimatedCostUSD = 0.0
         var unpricedModelCount = 0
+        var referencePricedModelCount = 0
         let entries = ordered.map { model, aggregate in
             let rule = ModelPricingCatalog.rule(for: model)
             let estimatedCost = rule?.estimate(
@@ -260,6 +263,9 @@ final class DashboardQueryService: @unchecked Sendable {
                 estimatedCostUSD += estimatedCost
             } else {
                 unpricedModelCount += 1
+            }
+            if ModelPricingCatalog.usesReferencePricing(for: model) {
+                referencePricedModelCount += 1
             }
             return ModelUsageEntry(
                 model: model,
@@ -276,7 +282,8 @@ final class DashboardQueryService: @unchecked Sendable {
             entries: entries,
             totalTokens: Int(clamping: overall),
             estimatedCostUSD: estimatedCostUSD,
-            unpricedModelCount: unpricedModelCount
+            unpricedModelCount: unpricedModelCount,
+            referencePricedModelCount: referencePricedModelCount
         )
     }
 
@@ -399,6 +406,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 var reply = updatedConversation.replies[replyKey.turnID]
                     ?? ProjectReplyUsageAccumulator(
                         modelCalls: [],
+                        modelUsage: [:],
                         uncachedInputTokens: 0,
                         cachedInputTokens: 0,
                         visibleOutputTokens: 0,
@@ -412,6 +420,12 @@ final class DashboardQueryService: @unchecked Sendable {
                         turnID: turnID,
                         model: row.model
                     ))
+                    var modelAggregate = reply.modelUsage[row.model, default: UsageAggregate()]
+                    try modelAggregate.add(
+                        row,
+                        context: "workspace.reply.model.\(row.model)"
+                    )
+                    reply.modelUsage[row.model] = modelAggregate
                 }
                 reply.uncachedInputTokens = try checkedAdd(
                     reply.uncachedInputTokens,
@@ -499,6 +513,7 @@ final class DashboardQueryService: @unchecked Sendable {
                     let turnKey = ThreadTurnKey(threadID: threadID, turnID: turnID)
                     let lifecycle = turnLifecycleFacts[turnKey]
                     let activity = turnActivityFacts[turnKey]
+                    let costEstimate = replyCostEstimate(from: usage.modelUsage)
                     return ProjectReplyUsage(
                         id: turnID,
                         status: lifecycle?.status ?? .unknown,
@@ -508,6 +523,9 @@ final class DashboardQueryService: @unchecked Sendable {
                         visibleOutputTokens: Int(clamping: usage.visibleOutputTokens),
                         reasoningTokens: Int(clamping: usage.reasoningTokens),
                         totalTokens: Int(clamping: usage.totalTokens),
+                        estimatedCostBreakdown: costEstimate.breakdown,
+                        unpricedModelCount: costEstimate.unpricedModelCount,
+                        referencePricedModelCount: costEstimate.referencePricedModelCount,
                         startedAtMilliseconds: lifecycle?.startedAtMilliseconds,
                         endedAtMilliseconds: lifecycle?.endedAtMilliseconds,
                         lastUsageAtMilliseconds: usage.lastUsageAtMilliseconds,
@@ -935,7 +953,8 @@ final class DashboardQueryService: @unchecked Sendable {
                 output: Int(clamping: aggregate.visibleOutput),
                 reasoning: Int(clamping: aggregate.reasoning),
                 estimatedCostUSD: costEstimate.usd,
-                unpricedModelCount: costEstimate.unpricedModelCount
+                unpricedModelCount: costEstimate.unpricedModelCount,
+                referencePricedModelCount: costEstimate.referencePricedModelCount
             ))
             cycleIndex += 1
         }
@@ -944,9 +963,10 @@ final class DashboardQueryService: @unchecked Sendable {
 
     private func subscriptionCycleCostEstimate(
         from modelTotals: [String: UsageAggregate]
-    ) -> (usd: Double, unpricedModelCount: Int) {
+    ) -> (usd: Double, unpricedModelCount: Int, referencePricedModelCount: Int) {
         var estimatedCostUSD = 0.0
         var unpricedModelCount = 0
+        var referencePricedModelCount = 0
         for (model, aggregate) in modelTotals {
             guard let rule = ModelPricingCatalog.rule(for: model) else {
                 unpricedModelCount += 1
@@ -958,8 +978,45 @@ final class DashboardQueryService: @unchecked Sendable {
                 visibleOutputTokens: aggregate.visibleOutput,
                 reasoningTokens: aggregate.reasoning
             )
+            if ModelPricingCatalog.usesReferencePricing(for: model) {
+                referencePricedModelCount += 1
+            }
         }
-        return (estimatedCostUSD, unpricedModelCount)
+        return (estimatedCostUSD, unpricedModelCount, referencePricedModelCount)
+    }
+
+    private func replyCostEstimate(
+        from modelTotals: [String: UsageAggregate]
+    ) -> (
+        breakdown: ModelCostBreakdown?,
+        unpricedModelCount: Int,
+        referencePricedModelCount: Int
+    ) {
+        var breakdown = ModelCostBreakdown()
+        var pricedModelCount = 0
+        var unpricedModelCount = 0
+        var referencePricedModelCount = 0
+        for (model, aggregate) in modelTotals {
+            guard let rule = ModelPricingCatalog.rule(for: model) else {
+                unpricedModelCount += 1
+                continue
+            }
+            pricedModelCount += 1
+            breakdown.add(rule.estimateBreakdown(
+                uncachedInputTokens: aggregate.uncachedInput,
+                cachedInputTokens: aggregate.cachedInput,
+                visibleOutputTokens: aggregate.visibleOutput,
+                reasoningTokens: aggregate.reasoning
+            ))
+            if ModelPricingCatalog.usesReferencePricing(for: model) {
+                referencePricedModelCount += 1
+            }
+        }
+        return (
+            pricedModelCount > 0 ? breakdown : nil,
+            unpricedModelCount,
+            referencePricedModelCount
+        )
     }
 
     private func subscriptionCycleID(for date: Date, calendar: Calendar) -> String {
@@ -1238,6 +1295,7 @@ private struct ProjectConversationUsageAccumulator {
 
 private struct ProjectReplyUsageAccumulator {
     var modelCalls: Set<ProjectReplyModelCallKey>
+    var modelUsage: [String: UsageAggregate]
     var uncachedInputTokens: Int64
     var cachedInputTokens: Int64
     var visibleOutputTokens: Int64

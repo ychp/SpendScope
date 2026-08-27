@@ -570,7 +570,10 @@ struct DailyUsageHoverCard: View {
 
                     Spacer(minLength: 8)
 
-                    Text(ModelCostFormatter.usd(estimatedCostUSD))
+                    Text(ModelCostFormatter.usd(
+                        estimatedCostUSD,
+                        approximate: usage.referencePricedModelCount > 0
+                    ))
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundStyle(SpendScopeTheme.dashboardAccent)
                         .monospacedDigit()
@@ -578,6 +581,10 @@ struct DailyUsageHoverCard: View {
 
                 if usage.unpricedModelCount > 0 {
                     Text("部分估算 · \(usage.unpricedModelCount) 个模型未定价")
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                } else if usage.referencePricedModelCount > 0 {
+                    Text("参考估算 · \(usage.referencePricedModelCount) 个模型按 GPT-5.5 参考价")
                         .font(.system(size: 8.5, weight: .medium))
                         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
                 }
@@ -606,7 +613,14 @@ struct DailyUsageHoverCard: View {
         let unpricedDescription = usage.unpricedModelCount > 0
             ? "，\(usage.unpricedModelCount) 个模型未定价"
             : ""
-        return "，API 等值预计花费 \(ModelCostFormatter.usd(estimatedCostUSD))\(unpricedDescription)"
+        let referenceDescription = usage.referencePricedModelCount > 0
+            ? "，\(usage.referencePricedModelCount) 个模型采用 GPT-5.5 参考价"
+            : ""
+        let cost = ModelCostFormatter.usd(
+            estimatedCostUSD,
+            approximate: usage.referencePricedModelCount > 0
+        )
+        return "，API 等值预计花费 \(cost)\(unpricedDescription)\(referenceDescription)"
     }
 
     private func metric(_ title: String, value: Int, color: Color) -> some View {
