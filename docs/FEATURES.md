@@ -2,6 +2,8 @@
 
 本文档记录 SpendScope 当前已经实现的用户功能、数据口径、刷新机制与产品边界。项目首页和快速开始见 [README](../README.md)，底层实现与维护约束见 [技术档案](TECHNICAL_ARCHIVE.md)。
 
+本文中的主界面截图基于 SpendScope v1.3.0；Token、额度、任务状态和耗时会随本机数据变化。
+
 ## 功能总览
 
 | 区域 | 能力 |
@@ -12,6 +14,31 @@
 | 项目详情 | 下钻目录、任务、回复、状态、耗时、模型与 Skills / Tools 调用 |
 | 设置 | 管理色系、看板、状态栏、提醒、刷新、数据重建、套餐说明和软件更新 |
 | 本地数据层 | 增量读取、事件去重、SQLite 聚合、来源健康检查和安全降级 |
+
+## 弹窗与悬浮窗覆盖清单
+
+下表覆盖当前版本全部业务弹窗、悬浮明细和系统提示。普通 macOS Help 提示内容直接列在表中；其余交互均在对应章节提供截图。
+
+| 触发入口 | 交互类型 | 展示内容 | 截图 |
+| --- | --- | --- | --- |
+| 点击菜单栏项目 | 状态栏弹窗 | 套餐、7 天额度、今日 Token 构成、刷新、更新、看板、设置与退出 | [截图](images/spendscope-popover.png) |
+| 悬浮周期卡模型数量；点击后固定 | 模型排行弹窗 | 当前卡片时间范围内的模型、Token、占比和 API 等值费用 | [截图](images/spendscope-model-hover-details.png) |
+| 悬浮模型 Token 数值 | 模型 Token 明细 | 未缓存输入、缓存输入、可见输出、推理输出和总量 | [同组截图](images/spendscope-model-cost-hover-details.png) |
+| 悬浮模型费用 | 模型费用明细 | 四类 Token、对应单价、分项估算、总额和参考价标记 | [截图](images/spendscope-model-cost-hover-details.png) |
+| 悬浮看板趋势节点 | 图表内悬浮卡 | 日期或周期、总 Token、四类 Token 和 API 等值费用 | [截图](images/spendscope-trend-hover.png) |
+| 悬浮日历日期 | 日历弹窗 | 当日总 Token 与四类 Token 构成 | [截图](images/spendscope-calendar-day-hover.png) |
+| 悬浮热力图例 | 图例弹窗 | 颜色等级对应的 Token 区间和当月峰值 | [截图](images/spendscope-calendar-legend-hover.png) |
+| 悬浮命名空间 Skill | Skill 细分弹窗 | 细分 Skill、直接使用次数和总调用次数 | [截图](images/spendscope-skill-breakdown-hover.png) |
+| 点击今日任务 | 独立详情窗口 | 今日 Token、耗时、项目目录和回复明细 | [截图](images/spendscope-today-task-detail.png) |
+| 点击项目排行 | 独立详情窗口 | 项目概览、任务、回复、趋势和目录用量 | [截图](images/spendscope-project-overview.png) |
+| 悬浮项目趋势节点 | 图表内提示卡 | 日期、Token 和 7 日占比 | [截图](images/spendscope-project-trend-hover.png) |
+| 悬浮项目任务行 | 窗口外侧悬浮面板 | 任务模型、Token、完整 Skills / Tools 和 API 等值费用 | [截图](images/spendscope-task-activity-detail.png) |
+| 悬浮项目回复行 | 窗口外侧悬浮面板 | 单次回复状态、耗时、模型、Token、Skills / Tools 和费用 | [截图](images/spendscope-reply-activity-detail.png) |
+| 悬浮今日任务回复行 | 窗口外侧悬浮面板 | 今日任务内单次回复的模型、Token 和调用明细 | [截图](images/spendscope-today-task-reply-hover.png) |
+| 点击“模型费用说明” | 计费说明弹窗 | 已收录模型单价、参考价规则、估算边界和官方价格链接 | [截图](images/spendscope-model-pricing-popover.png) |
+| 点击“清空并重抓” | 破坏性操作确认框 | 明确清理范围，并说明不会删除 Codex 原始数据 | [截图](images/spendscope-rebuild-confirmation.png) |
+| 悬浮刷新、设置、置顶、关闭、排序、筛选等控件 | macOS Help 提示 | 控件用途；刷新提示还包含结果说明与 `⌘R` 快捷键 | 系统标准样式 |
+| 额度达到预警阈值 | macOS 系统通知 | 剩余额度、阈值和本地时区重置时间 | 系统通知中心 |
 
 ## 状态栏与弹窗
 
@@ -52,8 +79,6 @@
 
 ![SpendScope 详细看板，展示 7 天额度、当前订阅周期、周期汇总和用量趋势](images/spendscope-dashboard.png)
 
-![SpendScope 首次载入时与真实布局一致的启动骨架](images/spendscope-loading.png)
-
 ### 今日任务
 
 - 汇总今天产生 Token 用量的任务，展示任务名、所属项目、状态、最后更新时间、回复数和今日 Token。
@@ -65,8 +90,6 @@
 
 ![SpendScope 今日任务详情](images/spendscope-today-task-detail.png)
 
-![今日任务回复与窗口外调用悬浮面板](images/spendscope-today-task-reply-hover.png)
-
 ### 用量趋势与日历
 
 - 趋势图支持 7 天、30 天和订阅周期范围；设置第一次订阅时间后，可按逐月锚定的每个订阅周期查看 Token 总量。
@@ -76,11 +99,11 @@
 - 悬浮日历日期可查看当日 Token 明细；悬浮热力图例可查看各颜色对应的用量区间。
 - 每日统计按 UTC 日期归属，以尽量接近 Codex 服务端的每日统计口径。
 
-![趋势节点悬浮明细](images/spendscope-trend-hover.png)
+![看板趋势节点悬浮明细](images/spendscope-trend-hover.png)
 
 ![日历日期悬浮明细](images/spendscope-calendar-day-hover.png)
 
-![日历热力图例悬浮说明](images/spendscope-calendar-legend-hover.png)
+![热力图例悬浮说明](images/spendscope-calendar-legend-hover.png)
 
 ### Skills / Tools 排行
 
@@ -92,7 +115,7 @@
 
 ![SpendScope Skills 与 Tools 排行](images/spendscope-activity-usage.png)
 
-![汇总 Skill 的细分调用悬浮窗](images/spendscope-skill-breakdown-hover.png)
+![命名空间 Skill 的细分调用悬浮窗](images/spendscope-skill-breakdown-hover.png)
 
 ### 项目用量排行
 
@@ -123,15 +146,17 @@
 
 ![SpendScope 项目详情概览](images/spendscope-project-overview.png)
 
-![项目近 7 日趋势悬浮明细](images/spendscope-project-trend-hover.png)
-
 ![SpendScope 任务明细](images/spendscope-task-details.png)
-
-![项目任务与窗口外汇总调用悬浮面板](images/spendscope-task-activity-detail.png)
 
 ![SpendScope 回复明细](images/spendscope-reply-details.png)
 
-![SpendScope 回复明细与窗口外调用悬浮窗](images/spendscope-reply-activity-detail.png)
+![项目近 7 日趋势节点提示](images/spendscope-project-trend-hover.png)
+
+![项目任务的窗口外侧调用悬浮面板](images/spendscope-task-activity-detail.png)
+
+![项目回复的窗口外侧调用悬浮面板](images/spendscope-reply-activity-detail.png)
+
+![今日任务回复的窗口外侧调用悬浮面板](images/spendscope-today-task-reply-hover.png)
 
 ### 模型用量与费用
 
@@ -146,11 +171,11 @@
 
 API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费的大致规模，不代表 Codex 订阅的实际账单。
 
-![模型 Token 构成悬浮明细](images/spendscope-model-hover-details.png)
+![周期用量卡中固定展开的模型用量与 API 等值费用排行](images/spendscope-model-hover-details.png)
 
-![模型 API 等值费用分项悬浮明细](images/spendscope-model-cost-hover-details.png)
+![模型 API 等值费用悬浮明细](images/spendscope-model-cost-hover-details.png)
 
-![模型公开 API 定价规则弹窗](images/spendscope-model-pricing-popover.png)
+![模型标准 API 价格与估算边界说明](images/spendscope-model-pricing-popover.png)
 
 ## 刷新、额度与数据修复
 
@@ -187,9 +212,7 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 
 ## 提醒与个性化设置
 
-下图为完整设置页长截图，覆盖外观、看板行为、状态栏、额度提醒、数据源、刷新与重建、软件更新、订阅周期、Codex 套餐和其他计费方式。
-
-![SpendScope 完整设置页](images/spendscope-settings.png)
+以下截图均来自当前运行的 SpendScope v1.3.0。先按功能分区展示便于阅读的裁剪图，最后提供从顶部到隐私提示的完整设置页长截图。
 
 ### 额度提醒
 
@@ -230,6 +253,12 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 - 自动下载会读取随发布包提供的 SHA-256 校验信息，并在打开前验证安装包完整性。
 - 支持手动检查、前往 Releases 下载、下载更新和打开已下载的安装包。
 - 安装仍由用户确认完成；当前 DMG 未签名、未公证。
+
+### 完整设置页长截图
+
+下图覆盖外观、看板、状态栏、额度提醒、数据与刷新、软件更新、订阅周期、Codex 套餐、其他计费方式和底部隐私提示。
+
+![SpendScope v1.3.0 完整设置页长截图](images/spendscope-settings.png)
 
 ## 数据口径
 

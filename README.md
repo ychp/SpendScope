@@ -32,11 +32,13 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ## 软件界面
 
+以下界面截图基于 SpendScope v1.3.0，数据会随本机 Codex 使用记录变化。
+
 ### 菜单栏与弹窗
 
 ![SpendScope 状态栏实时预览，显示 Codex 额度和重置倒计时](docs/images/spendscope-status-bar.png)
 
-![SpendScope 状态栏弹窗，展示今日 Token、额度和 Token 构成](docs/images/spendscope-popover.png)
+![SpendScope 状态栏弹窗，展示额度、今日 Token 构成、刷新和更新入口](docs/images/spendscope-popover.png)
 
 状态栏设置中的实时预览与实际菜单栏使用同一套绘制样式。无需打开主窗口即可查看额度和今日用量；弹窗还提供刷新、打开看板、进入设置、检查更新和退出入口。
 
@@ -48,7 +50,9 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ![SpendScope Skills 与 Tools 排行](docs/images/spendscope-activity-usage.png)
 
-![SpendScope 项目用量排行](docs/images/spendscope-project-usage.png)
+![SpendScope 项目用量排行，展示项目、目录、任务、回复和 AI 耗时](docs/images/spendscope-project-usage.png)
+
+![SpendScope 周期用量卡中的模型用量与 API 等值费用排行](docs/images/spendscope-model-hover-details.png)
 
 详细看板在概览区同时展示 7 天额度、今日、7 日、30 日、累计和可选的当前订阅周期用量；每张用量卡都可悬浮预览或点击固定对应时间范围的模型用量与费用排行。下方包含今日任务、用量趋势、Skills / Tools 和项目用量四个分析页。今日任务按状态和最后更新时间排序，可继续查看任务的 Token 构成、项目目录与回复明细。
 
@@ -58,13 +62,11 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ![SpendScope 今日任务详情，展示 Token 构成、相关目录和回复明细](docs/images/spendscope-today-task-detail.png)
 
-![SpendScope 项目详情概览，展示目录用量、Token 构成和近 7 日趋势](docs/images/spendscope-project-overview.png)
+![SpendScope 项目详情概览，展示目录用量、AI 耗时、Token 构成和近 7 日趋势](docs/images/spendscope-project-overview.png)
 
 ![SpendScope 项目任务明细](docs/images/spendscope-task-details.png)
 
 ![SpendScope 项目回复明细](docs/images/spendscope-reply-details.png)
-
-![SpendScope 回复明细与窗口外调用详情，展示完整 Skills、Tools 和 Token 构成](docs/images/spendscope-reply-activity-detail.png)
 
 今日任务和项目排行都可以打开独立详情窗口，继续查看任务和回复级用量；子 agent 的用量会并入对应主任务，以及实际创建它的主回复，但子 agent 自己的完成事件不会提前结束仍在运行的主任务。回复中的模型会同时展示去重后的调用次数；将鼠标停在任务或回复上，还能在详情窗口外查看包含子 agent 调用在内的完整模型、Token、Skills / Tools 明细，以及按各模型实际 Token 归属计算的四类 Token API 等值费用明细与总额。
 
@@ -73,6 +75,8 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 ![SpendScope 完整设置页，包含外观、看板、状态栏、提醒、数据刷新、软件更新、订阅周期和套餐说明](docs/images/spendscope-settings.png)
 
 设置页覆盖外观、看板行为、状态栏、提醒、数据源、刷新与重建、软件更新、订阅周期、套餐说明和隐私提示。所有悬浮明细与确认弹窗截图见[完整功能说明](docs/FEATURES.md)。
+
+这张设置页长图由当前运行的 v1.3.0 分段截图后无缝拼接，包含从“外观”到“模型费用说明”的全部设置项。
 
 ## 系统要求
 
