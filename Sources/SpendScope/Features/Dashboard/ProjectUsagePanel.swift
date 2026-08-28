@@ -229,6 +229,7 @@ struct ProjectUsagePanel: View {
             systemImage: "square.grid.3x3.topleft.filled",
             description: Text("使用 Codex 后会按每次回复的项目目录集合统计 Token。")
         )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
     }
 
