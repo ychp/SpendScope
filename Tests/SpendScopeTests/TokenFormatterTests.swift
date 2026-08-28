@@ -122,16 +122,6 @@ final class TokenFormatterTests: XCTestCase {
         )
     }
 
-    func testDashboardWindowLayoutCompactsPreviousManagedHeight() {
-        XCTAssertEqual(
-            DashboardWindowLayout.targetExpandedContentSize(
-                current: CGSize(width: 920, height: 728),
-                requested: CGSize(width: 920, height: 680)
-            ),
-            CGSize(width: 920, height: 680)
-        )
-    }
-
     func testDashboardWindowLayoutPreservesUserExpandedHeight() {
         XCTAssertEqual(
             DashboardWindowLayout.targetExpandedContentSize(

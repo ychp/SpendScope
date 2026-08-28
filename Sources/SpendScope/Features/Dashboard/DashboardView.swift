@@ -48,9 +48,7 @@ enum DashboardRefreshStatus: Equatable {
 
 struct DashboardView: View {
     let store: DashboardStore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
-    @State private var isCollapsed = false
 
     var body: some View {
         Group {
@@ -59,8 +57,7 @@ struct DashboardView: View {
                 DashboardLoadingView()
             case .loaded(let snapshot, _):
                 DashboardContentView(
-                    snapshot: snapshot,
-                    isCollapsed: isCollapsed
+                    snapshot: snapshot
                 )
             case .empty:
                 unavailableView(
@@ -70,8 +67,7 @@ struct DashboardView: View {
                 )
             case .stale(let snapshot, _, _):
                 DashboardContentView(
-                    snapshot: snapshot,
-                    isCollapsed: isCollapsed
+                    snapshot: snapshot
                 )
             case .failed(let message):
                 unavailableView(
@@ -93,7 +89,6 @@ struct DashboardView: View {
                 .ignoresSafeArea()
         }
         .background(DashboardWindowSizingBridge(
-            isCollapsed: isCollapsed,
             expandedContentSize: DashboardWindowLayout.expandedContentSize(
                 hasSubscriptionCycle: store.snapshot?.subscriptionCycle != nil
             )
@@ -118,23 +113,6 @@ struct DashboardView: View {
     @ToolbarContentBuilder
     private var dashboardToolbarItems: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                    isCollapsed.toggle()
-                }
-            } label: {
-                Image(
-                    systemName: isCollapsed
-                        ? "arrow.up.left.and.arrow.down.right"
-                        : "arrow.down.right.and.arrow.up.left"
-                )
-                .frame(width: 16, height: 16)
-            }
-            .disabled(store.snapshot == nil)
-            .keyboardShortcut("b", modifiers: [.command, .shift])
-            .accessibilityLabel(isCollapsed ? "展开看板" : "收起看板")
-            .help(isCollapsed ? "展开看板" : "收起看板，仅展示额度")
-
             Button {
                 Task { await store.refresh() }
             } label: {
@@ -618,13 +596,6 @@ enum DashboardWindowLayout {
     static let standardOverviewHeight: CGFloat = 238
     static let subscriptionOverviewHeight: CGFloat = 300
     static let baseExpandedContentSize = CGSize(width: 920, height: 618)
-    static let collapsedQuotaWidth: CGFloat = 280
-    static let collapsedQuotaHeight: CGFloat = 210
-    static let collapsedPadding: CGFloat = 20
-    static let collapsedContentSize = CGSize(
-        width: collapsedQuotaWidth + collapsedPadding * 2 + 28,
-        height: collapsedQuotaHeight + collapsedPadding * 2 + 28
-    )
 
     static func overviewHeight(hasSubscriptionCycle: Bool) -> CGFloat {
         hasSubscriptionCycle ? subscriptionOverviewHeight : standardOverviewHeight
@@ -657,17 +628,16 @@ enum DashboardWindowLayout {
 }
 
 private struct DashboardWindowSizingBridge: NSViewRepresentable {
-    let isCollapsed: Bool
     let expandedContentSize: CGSize
 
     func makeNSView(context: Context) -> DashboardWindowSizingView {
         let view = DashboardWindowSizingView()
-        view.setLayout(isCollapsed: isCollapsed, expandedContentSize: expandedContentSize)
+        view.setLayout(expandedContentSize: expandedContentSize)
         return view
     }
 
     func updateNSView(_ nsView: DashboardWindowSizingView, context: Context) {
-        nsView.setLayout(isCollapsed: isCollapsed, expandedContentSize: expandedContentSize)
+        nsView.setLayout(expandedContentSize: expandedContentSize)
     }
 }
 
@@ -695,31 +665,22 @@ private final class DashboardWindowChromeView: NSView {
 
 @MainActor
 private final class DashboardWindowSizingView: NSView {
-    private var requestedCollapsedState: Bool?
     private var requestedExpandedContentSize = DashboardWindowLayout.baseExpandedContentSize
     private weak var managedWindow: NSWindow?
-    private var expandedFrame: NSRect?
-    private var expandedMinimumContentSize: CGSize?
-    private var expandedMaximumContentSize: CGSize?
     private var hasAppliedInitialExpandedSize = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window, managedWindow !== window else { return }
         managedWindow = window
-        expandedFrame = nil
-        expandedMinimumContentSize = nil
-        expandedMaximumContentSize = nil
         hasAppliedInitialExpandedSize = false
         scheduleSizingUpdate()
     }
 
-    func setLayout(isCollapsed: Bool, expandedContentSize: CGSize) {
-        guard requestedCollapsedState != isCollapsed
-                || requestedExpandedContentSize != expandedContentSize else {
+    func setLayout(expandedContentSize: CGSize) {
+        guard requestedExpandedContentSize != expandedContentSize else {
             return
         }
-        requestedCollapsedState = isCollapsed
         requestedExpandedContentSize = expandedContentSize
         scheduleSizingUpdate()
     }
@@ -731,53 +692,8 @@ private final class DashboardWindowSizingView: NSView {
     }
 
     private func applyRequestedState() {
-        guard let window, let requestedCollapsedState else { return }
-        if requestedCollapsedState {
-            collapse(window)
-        } else if expandedFrame == nil {
-            enforceExpandedMinimumSize(window)
-        } else {
-            expand(window)
-        }
-    }
-
-    private func collapse(_ window: NSWindow) {
-        guard expandedFrame == nil else { return }
-        expandedFrame = window.frame
-        expandedMinimumContentSize = window.contentMinSize
-        expandedMaximumContentSize = window.contentMaxSize
-
-        let collapsedSize = DashboardWindowLayout.collapsedContentSize
-        window.contentMinSize = collapsedSize
-        resize(window, toContentSize: collapsedSize)
-        window.contentMaxSize = collapsedSize
-    }
-
-    private func expand(_ window: NSWindow) {
-        guard let expandedFrame else { return }
-
-        if let expandedMaximumContentSize {
-            window.contentMaxSize = expandedMaximumContentSize
-        }
-        if let expandedMinimumContentSize {
-            window.contentMinSize = CGSize(
-                width: max(
-                    expandedMinimumContentSize.width,
-                    requestedExpandedContentSize.width
-                ),
-                height: max(
-                    expandedMinimumContentSize.height,
-                    requestedExpandedContentSize.height
-                )
-            )
-        } else {
-            window.contentMinSize = requestedExpandedContentSize
-        }
-
-        window.setFrame(expandedFrame, display: true, animate: true)
-        self.expandedFrame = nil
-        expandedMinimumContentSize = nil
-        expandedMaximumContentSize = nil
+        guard let window else { return }
+        enforceExpandedMinimumSize(window)
     }
 
     private func enforceExpandedMinimumSize(_ window: NSWindow) {
@@ -806,7 +722,6 @@ private final class DashboardWindowSizingView: NSView {
 
 private struct DashboardContentView: View {
     let snapshot: DashboardSnapshot
-    let isCollapsed: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedRange = TrendRange.defaultRange
     @State private var selectedAnalyticsTab = DashboardAnalyticsTab.defaultTab
@@ -830,35 +745,19 @@ private struct DashboardContentView: View {
         ZStack {
             DashboardBackdrop()
 
-            if isCollapsed {
-                currentQuotaSection
-                    .frame(
-                        width: DashboardWindowLayout.collapsedQuotaWidth,
-                        height: DashboardWindowLayout.collapsedQuotaHeight
-                    )
-                    .dashboardPanel(padding: 14, strong: true)
-                    .padding(DashboardWindowLayout.collapsedPadding)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
-            } else {
-                SpendScopeGlassGroup(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        overviewPanel.frame(height: overviewHeight)
-                        analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+            SpendScopeGlassGroup(spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
+                    overviewPanel.frame(height: overviewHeight)
+                    analyticsPanel.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-                .padding(.top, 10)
-                .transition(.opacity)
             }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+            .padding(.top, 10)
         }
         .frame(
-            minWidth: isCollapsed
-                ? DashboardWindowLayout.collapsedContentSize.width
-                : expandedContentSize.width,
-            minHeight: isCollapsed
-                ? DashboardWindowLayout.collapsedContentSize.height
-                : expandedContentSize.height
+            minWidth: expandedContentSize.width,
+            minHeight: expandedContentSize.height
         )
         .foregroundStyle(SpendScopeTheme.dashboardPrimaryText)
     }
