@@ -43,6 +43,14 @@ struct StoredUsageEvent: Sendable {
     }
 }
 
+struct StoredWorkspaceBindingUsage: Sendable {
+    let workspaceID: String
+    let threadID: String
+    let turnID: String
+    let sourceFileID: String
+    let sourceOffset: Int64
+}
+
 struct StoredQuotaEvent: Sendable {
     let fingerprint: String
     let threadID: String
@@ -517,6 +525,111 @@ final class UsageStore: @unchecked Sendable {
         })
     }
 
+    func upsertWorkspaceConfiguration(
+        _ configuration: StoredWorkspaceConfiguration,
+        matchingWorkspaceIDs: Set<String>,
+        isCurrent: Bool
+    ) throws {
+        let directoriesJSON = String(decoding: try JSONEncoder().encode(configuration.directories), as: UTF8.self)
+        try database.inTransaction {
+            try database.execute(
+                sql: """
+                    INSERT INTO workspace_configurations(configuration_id, name, directories_json, updated_at_ms)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(configuration_id) DO UPDATE SET
+                      name = excluded.name,
+                      directories_json = excluded.directories_json,
+                      updated_at_ms = excluded.updated_at_ms
+                    WHERE ? = 1 OR excluded.updated_at_ms >= workspace_configurations.updated_at_ms
+                    """,
+                bindings: [
+                    .text(configuration.id), .text(configuration.name), .text(directoriesJSON),
+                    .integer(configuration.updatedAtMilliseconds), .integer(isCurrent ? 1 : 0)
+                ]
+            )
+            for workspaceID in matchingWorkspaceIDs.sorted() {
+                try database.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO workspace_configuration_bindings(workspace_id, configuration_id)
+                        VALUES (?, ?)
+                        """,
+                    bindings: [.text(workspaceID), .text(configuration.id)]
+                )
+            }
+        }
+    }
+
+    func workspaceConfigurations() throws -> [String: StoredWorkspaceConfiguration] {
+        let rows = try database.query(sql: """
+            SELECT configuration_id, name, directories_json, updated_at_ms FROM workspace_configurations
+            """)
+        return try Dictionary(uniqueKeysWithValues: rows.map { values in
+            let row = SQLiteRow(table: "workspace_configurations", values: values)
+            let configuration = StoredWorkspaceConfiguration(
+                id: try row.requiredString("configuration_id"),
+                name: try row.requiredString("name"),
+                directories: try JSONDecoder().decode(
+                    [WorkspaceDirectory].self,
+                    from: Data(try row.requiredString("directories_json").utf8)
+                ),
+                updatedAtMilliseconds: try row.requiredInt64("updated_at_ms")
+            )
+            return (configuration.id, configuration)
+        })
+    }
+
+    func unboundWorkspaceUsage() throws -> [StoredWorkspaceBindingUsage] {
+        let rows = try database.query(sql: """
+            SELECT DISTINCT workspace_id, thread_id, turn_id, source_file_id, source_offset
+            FROM usage_events AS usage
+            WHERE workspace_id <> 'unknown' AND workspace_is_inferred = 0 AND turn_id IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM workspace_configuration_bindings AS binding
+                WHERE binding.workspace_id = usage.workspace_id
+              )
+            """)
+        return try rows.map { values in
+            let row = SQLiteRow(table: "usage_events", values: values)
+            return StoredWorkspaceBindingUsage(
+                workspaceID: try row.requiredString("workspace_id"),
+                threadID: try row.requiredString("thread_id"),
+                turnID: try row.requiredString("turn_id"),
+                sourceFileID: try row.requiredString("source_file_id"),
+                sourceOffset: try row.requiredInt64("source_offset")
+            )
+        }
+    }
+
+    func addWorkspaceConfigurationBindings(_ workspaceIDs: Set<String>, configurationID: String) throws {
+        try database.inTransaction {
+            for workspaceID in workspaceIDs.sorted() {
+                try database.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO workspace_configuration_bindings(workspace_id, configuration_id)
+                        VALUES (?, ?)
+                        """,
+                    bindings: [.text(workspaceID), .text(configurationID)]
+                )
+            }
+        }
+    }
+
+    func workspaceConfigurationBindings() throws -> [String: String] {
+        // Rollouts do not include the Codex project ID. Ambiguous root sets stay independent.
+        let rows = try database.query(sql: """
+            SELECT workspace_id, MIN(configuration_id) AS configuration_id
+            FROM workspace_configuration_bindings
+            GROUP BY workspace_id HAVING COUNT(*) = 1
+            """)
+        return try Dictionary(uniqueKeysWithValues: rows.map { values in
+            let row = SQLiteRow(table: "workspace_configuration_bindings", values: values)
+            return (
+                try row.requiredString("workspace_id"),
+                try row.requiredString("configuration_id")
+            )
+        })
+    }
+
     func setWorkspaceAlias(sourceWorkspaceID: String, targetWorkspaceID: String) throws {
         guard !sourceWorkspaceID.isEmpty,
               !targetWorkspaceID.isEmpty,
@@ -982,10 +1095,10 @@ final class UsageStore: @unchecked Sendable {
             let versions = try database.query(sql: "SELECT version FROM schema_migrations ORDER BY version")
                 .map { try SQLiteRow(table: "schema_migrations", values: $0).requiredInt64("version") }
 
-            guard versions.last ?? 0 <= 16 else {
+            guard versions.last ?? 0 <= 17 else {
                 throw UsageStoreError.unsupportedSchemaVersion(versions.last ?? 0)
             }
-            if versions.contains(16) {
+            if versions.contains(17) {
                 try validateVersionTwoSchema()
                 try validateVersionThreeSchema()
                 try validateVersionFiveSchema()
@@ -995,6 +1108,7 @@ final class UsageStore: @unchecked Sendable {
                 try validateVersionTwelveSchema()
                 try validateVersionThirteenSchema()
                 try validateVersionFifteenSchema()
+                try validateVersionSeventeenSchema()
                 return
             }
 
@@ -1113,6 +1227,12 @@ final class UsageStore: @unchecked Sendable {
                 try database.execute(sql: "DROP TABLE IF EXISTS account_rate_limit_cache")
                 try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (16)")
             }
+            if !versions.contains(17) {
+                for statement in Self.versionSeventeenStatements {
+                    try database.execute(sql: statement)
+                }
+                try database.execute(sql: "INSERT INTO schema_migrations(version) VALUES (17)")
+            }
             try validateVersionTwoSchema()
             try validateVersionThreeSchema()
             try validateVersionFiveSchema()
@@ -1122,6 +1242,7 @@ final class UsageStore: @unchecked Sendable {
             try validateVersionTwelveSchema()
             try validateVersionThirteenSchema()
             try validateVersionFifteenSchema()
+            try validateVersionSeventeenSchema()
         }
     }
 
@@ -1673,6 +1794,24 @@ final class UsageStore: @unchecked Sendable {
         """
     ]
 
+    private static let versionSeventeenStatements = [
+        """
+        CREATE TABLE IF NOT EXISTS workspace_configurations(
+          configuration_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          directories_json TEXT NOT NULL,
+          updated_at_ms INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS workspace_configuration_bindings(
+          workspace_id TEXT NOT NULL,
+          configuration_id TEXT NOT NULL,
+          PRIMARY KEY(workspace_id, configuration_id)
+        )
+        """
+    ]
+
     private static let versionFifteenStatements = [
         """
         CREATE TABLE IF NOT EXISTS workspace_aliases(
@@ -1905,6 +2044,19 @@ final class UsageStore: @unchecked Sendable {
                 table: "workspace_catalog",
                 missingColumns: missing
             )
+        }
+    }
+
+    private func validateVersionSeventeenSchema() throws {
+        for (table, columns) in [
+            ("workspace_configurations", ["configuration_id", "name", "directories_json", "updated_at_ms"]),
+            ("workspace_configuration_bindings", ["workspace_id", "configuration_id"])
+        ] {
+            let existing = Set(try schemaColumns(table: table))
+            let missing = Set(columns).subtracting(existing).sorted()
+            if !missing.isEmpty {
+                throw UsageStoreError.rebuildRequired(table: table, missingColumns: missing)
+            }
         }
     }
 

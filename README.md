@@ -62,11 +62,13 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ![SpendScope 今日任务详情，展示 Token 构成、相关目录和回复明细](docs/images/spendscope-today-task-detail.png)
 
-![SpendScope 项目详情概览，展示目录用量、AI 耗时、Token 构成和近 7 日趋势](docs/images/spendscope-project-overview.png)
+![SpendScope 项目详情概览，展示项目目录、AI 耗时、Token 构成和近 7 日趋势](docs/images/spendscope-project-overview.png)
 
 ![SpendScope 项目任务明细](docs/images/spendscope-task-details.png)
 
 ![SpendScope 项目回复明细](docs/images/spendscope-reply-details.png)
+
+项目排行和详情随刷新同步 Codex 中最新的项目名称与关联目录；项目详情的“关联目录”和今日任务详情的“项目相关目录”只展示目录名称，缺少项目配置时回退到会话记录中的工作目录。Token 用量保留在项目、任务和回复层级：Codex 的用量记录无法精确拆分到各个目录，因此目录旁不展示 Token、占比或独立用量状态。
 
 今日任务和项目排行都可以打开独立详情窗口，继续查看任务和回复级用量；子 agent 的用量会并入对应主任务，以及实际创建它的主回复，但子 agent 自己的完成事件不会提前结束仍在运行的主任务。回复中的模型会同时展示去重后的调用次数；将鼠标停在任务或回复上，还能在详情窗口外查看包含子 agent 调用在内的完整模型、Token、Skills / Tools 明细，以及按各模型实际 Token 归属计算的四类 Token API 等值费用明细与总额。
 

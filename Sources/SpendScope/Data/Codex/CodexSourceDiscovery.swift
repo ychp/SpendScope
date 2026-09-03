@@ -75,8 +75,12 @@ struct CodexSourceInventory: Equatable, Sendable {
 }
 
 struct CodexWorkspaceMetadata: Equatable, Sendable {
+    let configurationID: String
     let name: String
     let rootPaths: [String]
+    let historicalRootPaths: [[String]]
+    let updatedAtMilliseconds: Int64
+    let isCurrent: Bool
 }
 
 struct CodexSourceDiscovery {
@@ -344,35 +348,51 @@ struct CodexWorkspaceMetadataReader {
 
     func read(rootURL: URL) -> [CodexWorkspaceMetadata] {
         let candidates = stateFiles(rootURL: rootURL).sorted { left, right in
+            let leftIsCurrent = left.lastPathComponent == ".codex-global-state.json"
+            let rightIsCurrent = right.lastPathComponent == ".codex-global-state.json"
+            if leftIsCurrent != rightIsCurrent { return !leftIsCurrent }
             let leftDate = modificationDate(left)
             let rightDate = modificationDate(right)
             if leftDate != rightDate { return leftDate < rightDate }
             return left.lastPathComponent < right.lastPathComponent
         }
-        var metadataByPathIdentity: [String: CodexWorkspaceMetadata] = [:]
+        var metadataByProjectID: [String: CodexWorkspaceMetadata] = [:]
         for url in candidates {
             guard let data = try? Data(contentsOf: url),
                   let state = try? JSONDecoder().decode(CodexGlobalState.self, from: data) else {
                 continue
             }
-            for project in state.localProjects.values {
-                guard let identity = WorkspaceIdentity.resolve(rootPaths: project.rootPaths) else {
-                    continue
-                }
+            for (projectID, project) in state.localProjects.sorted(by: { $0.key < $1.key }) {
+                guard !projectID.isEmpty else { continue }
                 let normalizedName = project.name
                     .split(whereSeparator: \.isWhitespace)
                     .joined(separator: " ")
                 guard !normalizedName.isEmpty else { continue }
-                metadataByPathIdentity[identity.id] = CodexWorkspaceMetadata(
-                    name: String(normalizedName.prefix(120)),
-                    rootPaths: project.rootPaths
+                let previous = metadataByProjectID[projectID]
+                var historicalRoots = previous?.historicalRootPaths ?? []
+                if !historicalRoots.contains(project.rootPaths) {
+                    historicalRoots.append(project.rootPaths)
+                }
+                let updatedAt = project.updatedAt
+                    ?? Int64((modificationDate(url).timeIntervalSince1970 * 1_000).rounded())
+                let isCurrent = url.lastPathComponent == ".codex-global-state.json"
+                let preferredPrevious = previous.flatMap {
+                    !isCurrent && $0.updatedAtMilliseconds > updatedAt ? $0 : nil
+                }
+                let configurationID = SHA256.hash(data: Data("codex-local-project-v1|\(projectID)".utf8))
+                    .map { String(format: "%02x", $0) }.joined()
+                metadataByProjectID[projectID] = CodexWorkspaceMetadata(
+                    configurationID: configurationID,
+                    name: preferredPrevious?.name ?? String(normalizedName.prefix(120)),
+                    rootPaths: preferredPrevious?.rootPaths ?? project.rootPaths,
+                    historicalRootPaths: historicalRoots,
+                    updatedAtMilliseconds: preferredPrevious?.updatedAtMilliseconds ?? updatedAt,
+                    isCurrent: isCurrent
                 )
             }
         }
-        return metadataByPathIdentity.values.sorted { left, right in
-            let leftIdentity = WorkspaceIdentity.resolve(rootPaths: left.rootPaths)?.id ?? ""
-            let rightIdentity = WorkspaceIdentity.resolve(rootPaths: right.rootPaths)?.id ?? ""
-            return leftIdentity < rightIdentity
+        return metadataByProjectID.values.sorted { left, right in
+            left.configurationID < right.configurationID
         }
     }
 
@@ -419,6 +439,7 @@ private struct CodexGlobalState: Decodable {
 private struct CodexLocalProject: Decodable {
     let name: String
     let rootPaths: [String]
+    let updatedAt: Int64?
 }
 
 enum CodexSourceDiscoveryError: Error {

@@ -495,7 +495,7 @@ struct TodayTaskDetailView: View {
             )
             metricCard(
                 "相关目录",
-                value: "\(task.workspace.projects.count)",
+                value: "\(task.workspace.directories.count)",
                 icon: "folder.fill",
                 tint: SpendScopeTheme.dashboardAccentSecondary
             )
@@ -582,32 +582,29 @@ struct TodayTaskDetailView: View {
 
     private var workspaceDirectoryCard: some View {
         detailCard(title: "项目相关目录", icon: "folder.fill") {
-            if task.workspace.projects.isEmpty {
+            if task.workspace.directories.isEmpty {
                 Text("未识别到相关目录")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(SpendScopeTheme.dashboardMutedText)
                     .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(task.workspace.projects) { project in
+                    ForEach(task.workspace.directories) { directory in
                         HStack(spacing: 9) {
                             Image(systemName: "folder")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(SpendScopeTheme.dashboardAccentSecondary)
                                 .frame(width: 18)
-                            Text(project.name)
+                            Text(directory.name)
                                 .font(.system(size: 10.5, weight: .semibold))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
+                                .help(directory.name)
                             Spacer()
-                            Text("今日 \(TokenFormatter.compact(project.tokens)) Token")
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                                .monospacedDigit()
                         }
                         .frame(minHeight: 38)
 
-                        if project.id != task.workspace.projects.last?.id {
+                        if directory.id != task.workspace.directories.last?.id {
                             Rectangle()
                                 .fill(SpendScopeTheme.dashboardBorder.opacity(0.62))
                                 .frame(height: 1)

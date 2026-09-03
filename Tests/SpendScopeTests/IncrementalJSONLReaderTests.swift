@@ -97,6 +97,32 @@ final class IncrementalJSONLReaderTests: XCTestCase {
         XCTAssertEqual(inventory.threadIndex, [])
     }
 
+    func testDiscoveryUsesCurrentRootSetWhenBackupHasLaterFileModificationDate() throws {
+        let root = try temporaryDirectory()
+        let backup = root.appending(path: ".codex-global-state.json.bak")
+        let current = root.appending(path: ".codex-global-state.json")
+        try write(
+            #"{"local-projects":{"project-a":{"name":"Old","rootPaths":["/repo/first"],"updatedAt":1000}}}"#,
+            to: backup
+        )
+        try write(
+            #"{"local-projects":{"project-a":{"name":"Current","rootPaths":["/repo/first","/repo/second"],"updatedAt":2000}}}"#,
+            to: current
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 10)], ofItemAtPath: backup.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: current.path
+        )
+
+        let metadata = CodexWorkspaceMetadataReader().read(rootURL: root)
+
+        XCTAssertEqual(metadata.count, 1)
+        XCTAssertEqual(metadata.first?.name, "Current")
+        XCTAssertEqual(metadata.first?.rootPaths, ["/repo/first", "/repo/second"])
+    }
+
     func testDiscoveryRecoversArchivedWorkspaceNamesAndPrefersNewestMetadata() throws {
         let root = try temporaryDirectory()
         let historicalState = root.appending(path: "..codex-global-state.json.tmp-older")

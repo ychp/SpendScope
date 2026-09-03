@@ -141,6 +141,22 @@ struct WorkspaceIdentity: Equatable, Sendable {
     }
 }
 
+struct WorkspaceDirectory: Codable, Equatable, Sendable, Identifiable {
+    let id: String
+    let name: String
+}
+
+struct StoredWorkspaceConfiguration: Equatable, Sendable {
+    let id: String
+    let name: String
+    let directories: [WorkspaceDirectory]
+    let updatedAtMilliseconds: Int64
+
+    var identity: WorkspaceIdentity {
+        WorkspaceIdentity(id: id, name: name, rootCount: directories.count)
+    }
+}
+
 struct SessionMetadata: Equatable, Sendable {
     let threadID: String
     let source: CodexSourceKind

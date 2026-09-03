@@ -54,9 +54,13 @@ final class DashboardQueryService: @unchecked Sendable {
         )
         let allRows = try store.usageEvents()
         let historicalRows = allRows.filter { $0.observedAtMilliseconds < end }
+        let workspaceConfigurations = try store.workspaceConfigurations()
         let workspaceAliases = makeWorkspaceUsageAliases(
             from: historicalRows,
-            explicitAliases: try store.workspaceAliases()
+            explicitAliases: try store.workspaceAliases(),
+            catalog: try store.workspaceCatalog(),
+            configurations: workspaceConfigurations,
+            configurationBindings: try store.workspaceConfigurationBindings()
         )
         let trendRows = try store.usageEvents(toMilliseconds: end)
         let allActivityRows = try store.activityEvents(toMilliseconds: end)
@@ -162,6 +166,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 worktimeFromMilliseconds: milliseconds(for: todayStart),
                 worktimeToMilliseconds: nowMilliseconds,
                 workspaceAliases: workspaceAliases,
+                workspaceConfigurations: workspaceConfigurations,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: todayStart)
                 }
@@ -178,6 +183,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 worktimeFromMilliseconds: milliseconds(for: sevenDayStart),
                 worktimeToMilliseconds: nowMilliseconds,
                 workspaceAliases: workspaceAliases,
+                workspaceConfigurations: workspaceConfigurations,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: sevenDayStart)
                 }
@@ -194,6 +200,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 worktimeFromMilliseconds: milliseconds(for: thirtyDayStart),
                 worktimeToMilliseconds: nowMilliseconds,
                 workspaceAliases: workspaceAliases,
+                workspaceConfigurations: workspaceConfigurations,
                 activityRows: allActivityRows.filter {
                     $0.observedAtMilliseconds >= milliseconds(for: thirtyDayStart)
                 }
@@ -210,6 +217,7 @@ final class DashboardQueryService: @unchecked Sendable {
                 worktimeFromMilliseconds: nil,
                 worktimeToMilliseconds: nowMilliseconds,
                 workspaceAliases: workspaceAliases,
+                workspaceConfigurations: workspaceConfigurations,
                 activityRows: allActivityRows
             )
         )
@@ -314,6 +322,7 @@ final class DashboardQueryService: @unchecked Sendable {
         worktimeFromMilliseconds: Int64?,
         worktimeToMilliseconds: Int64,
         workspaceAliases: [WorkspaceUsageKey: WorkspaceUsageKey],
+        workspaceConfigurations: [String: StoredWorkspaceConfiguration],
         activityRows: [StoredActivityEvent]
     ) throws -> WorkspaceUsageRanking {
         let turnActivityFacts = makeTurnActivityFacts(
@@ -630,36 +639,48 @@ final class DashboardQueryService: @unchecked Sendable {
                         dayStartMilliseconds: dayStart,
                         tokens: Int(clamping: dailyTotals[entry.key]?[dayStart] ?? 0)
                     )
-                }
+                },
+                configuredDirectories: workspaceConfigurations[entry.key.id]?.directories ?? []
             )
         }
         return WorkspaceUsageRanking(
             entries: entries,
             totalTokens: Int(clamping: overall),
             workspaceCount: entries.count,
-            projectCount: entries.reduce(0) { $0 + $1.projects.count }
+            projectCount: entries.reduce(0) { $0 + $1.directories.count }
         )
     }
 
     private func makeWorkspaceUsageAliases(
         from rows: [StoredUsageQueryRow],
-        explicitAliases: [String: String]
+        explicitAliases: [String: String],
+        catalog: [String: WorkspaceIdentity],
+        configurations: [String: StoredWorkspaceConfiguration],
+        configurationBindings: [String: String]
     ) -> [WorkspaceUsageKey: WorkspaceUsageKey] {
         var graph = WorkspaceUsageIdentityGraph()
+        var resolvedKeys: [WorkspaceUsageKey: WorkspaceUsageKey] = [:]
         for row in rows {
-            graph.add(row)
+            let configurationID = configurationBindings[row.workspace.id] ?? row.workspace.id
+            let configuration = configurations[configurationID]
+            let workspace = configuration?.identity ?? catalog[row.workspace.id] ?? row.workspace
+            resolvedKeys[WorkspaceUsageKey(identity: row.workspace)] = WorkspaceUsageKey(identity: workspace)
+            graph.add(row, workspace: workspace, mergeByDirectory: configuration == nil)
         }
         for sourceWorkspaceID in explicitAliases.keys.sorted() {
             guard let targetWorkspaceID = resolvedWorkspaceAliasTarget(
                 for: sourceWorkspaceID,
                 aliases: explicitAliases
             ) else { continue }
-            graph.merge(
-                sourceWorkspaceID: sourceWorkspaceID,
-                into: targetWorkspaceID
-            )
+            let sourceID = configurationBindings[sourceWorkspaceID] ?? sourceWorkspaceID
+            let targetID = configurationBindings[targetWorkspaceID] ?? targetWorkspaceID
+            if let target = configurations[targetID]?.identity ?? catalog[targetID] {
+                graph.add(identity: target)
+            }
+            graph.merge(sourceWorkspaceID: sourceID, into: targetID)
         }
-        return graph.canonicalAliases()
+        let aliases = graph.canonicalAliases()
+        return resolvedKeys.mapValues { aliases[$0] ?? $0 }
     }
 
     private func resolvedWorkspaceAliasTarget(
@@ -1255,15 +1276,24 @@ private struct WorkspaceUsageIdentityGraph {
     private var repositoryBackedWorkspaces: Set<WorkspaceUsageKey> = []
     private var explicitTargets: Set<WorkspaceUsageKey> = []
 
-    mutating func add(_ row: StoredUsageQueryRow) {
-        let workspace = WorkspaceUsageKey(identity: row.workspace)
+    mutating func add(identity: WorkspaceIdentity) {
+        let workspace = WorkspaceUsageKey(identity: identity)
         add(workspace)
+        for existing in workspacesByID[workspace.id] ?? [] {
+            union(existing, workspace)
+        }
         workspacesByID[workspace.id, default: []].insert(workspace)
+    }
+
+    mutating func add(_ row: StoredUsageQueryRow, workspace identity: WorkspaceIdentity, mergeByDirectory: Bool) {
+        let workspace = WorkspaceUsageKey(identity: identity)
+        add(identity: identity)
 
         if let repositoryID = row.project.repositoryID, !repositoryID.isEmpty {
             repositoryBackedWorkspaces.insert(workspace)
         }
-        guard workspace.id != WorkspaceIdentity.unknown.id,
+        guard mergeByDirectory,
+              workspace.id != WorkspaceIdentity.unknown.id,
               workspace.name != WorkspaceIdentity.unknown.name,
               workspace.rootCount == 1,
               !workspace.isInferred else { return }

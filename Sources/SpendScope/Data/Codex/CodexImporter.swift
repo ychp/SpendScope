@@ -93,6 +93,7 @@ actor CodexImporter {
     private var workspaceCatalogByID: [String: WorkspaceIdentity] = [:]
     private var workspaceRootRepositoryIDs: [String: String] = [:]
     private var attemptedWorkspaceRootRepositories: Set<String> = []
+    private var workspaceBindingRepairSignatures: [String: String] = [:]
 
     init(
         rootURL: URL,
@@ -119,6 +120,7 @@ actor CodexImporter {
         resolvedProjects = [:]
         workspaceRootRepositoryIDs = [:]
         attemptedWorkspaceRootRepositories = []
+        workspaceBindingRepairSignatures = [:]
         do {
             try store.resetImportedData()
         } catch {
@@ -154,15 +156,43 @@ actor CodexImporter {
         }
 
         do {
-            let discoveredWorkspaces = inventory.workspaceMetadata.compactMap { metadata in
-                resolvedWorkspace(
-                    rootPaths: metadata.rootPaths,
-                    project: nil,
-                    preferredName: metadata.name
+            var discoveredWorkspaces: [WorkspaceIdentity] = []
+            for metadata in inventory.workspaceMetadata {
+                var matchingWorkspaceIDs: Set<String> = []
+                for roots in metadata.historicalRootPaths {
+                    if let identity = resolvedWorkspace(
+                        rootPaths: roots, project: nil, preferredName: metadata.name
+                    ) {
+                        discoveredWorkspaces.append(identity)
+                        matchingWorkspaceIDs.insert(identity.id)
+                    }
+                    if let pathIdentity = WorkspaceIdentity.resolve(rootPaths: roots) {
+                        matchingWorkspaceIDs.insert(pathIdentity.id)
+                    }
+                }
+                let paths = Set(metadata.rootPaths.compactMap { path -> String? in
+                    let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return nil }
+                    return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+                })
+                let directories = paths.sorted().compactMap { path -> WorkspaceDirectory? in
+                    guard let project = ProjectIdentity.resolve(cwd: path) else { return nil }
+                    return WorkspaceDirectory(id: project.id, name: project.name)
+                }
+                try store.upsertWorkspaceConfiguration(
+                    StoredWorkspaceConfiguration(
+                        id: metadata.configurationID,
+                        name: metadata.name,
+                        directories: directories,
+                        updatedAtMilliseconds: metadata.updatedAtMilliseconds
+                    ),
+                    matchingWorkspaceIDs: matchingWorkspaceIDs,
+                    isCurrent: metadata.isCurrent
                 )
             }
             try store.upsertWorkspaceCatalog(discoveredWorkspaces)
             workspaceCatalogByID = try store.workspaceCatalog()
+            try repairHistoricalWorkspaceBindings(inventory: inventory)
         } catch {
             return ImportResult(
                 scope: scope,
@@ -1001,6 +1031,64 @@ actor CodexImporter {
         )
     }
 
+    private func repairHistoricalWorkspaceBindings(inventory: CodexSourceInventory) throws {
+        var configurationIDsByPathIdentity: [String: Set<String>] = [:]
+        for metadata in inventory.workspaceMetadata {
+            for roots in metadata.historicalRootPaths {
+                guard let identity = WorkspaceIdentity.resolve(rootPaths: roots) else { continue }
+                configurationIDsByPathIdentity[identity.id, default: []].insert(metadata.configurationID)
+            }
+        }
+        guard !configurationIDsByPathIdentity.isEmpty else { return }
+        let metadataSignature = fingerprint(configurationIDsByPathIdentity.map { key, values in
+            key + ":" + values.sorted().joined(separator: ",")
+        }.sorted().joined(separator: "|"))
+        let usageByFile = Dictionary(grouping: try store.unboundWorkspaceUsage(), by: \.sourceFileID)
+        for rollout in inventory.rollouts.sorted(by: { $0.fileSize < $1.fileSize }) {
+            guard let pending = usageByFile[rollout.fileID], !pending.isEmpty else { continue }
+            let pendingIDs = Set(pending.map(\.workspaceID)).sorted().joined(separator: ",")
+            let signature = "\(metadataSignature)|\(rollout.fileSize)|\(rollout.modificationTimeMilliseconds)|\(pendingIDs)"
+            guard workspaceBindingRepairSignatures[rollout.fileID] != signature else { continue }
+            guard let batch = try? reader.read(file: rollout.url, fromOffset: 0) else { continue }
+            let usageByOffset = Dictionary(grouping: pending, by: \.sourceOffset)
+            var threadID: String?
+            var turnID: String?
+            var pathIdentity: String?
+            var recoveredByConfiguration: [String: Set<String>] = [:]
+            for line in batch.lines {
+                guard let envelope = try? JSONDecoder().decode(WorkspaceBindingEnvelope.self, from: line.data) else {
+                    continue
+                }
+                switch envelope.type {
+                case "session_meta":
+                    threadID = envelope.payload.id
+                    turnID = nil
+                    pathIdentity = nil
+                case "turn_context":
+                    turnID = envelope.payload.turnID
+                    pathIdentity = WorkspaceIdentity.resolve(rootPaths: envelope.payload.workspaceRoots)?.id
+                case "event_msg" where envelope.payload.type == "token_count":
+                    guard let pathIdentity,
+                          let configurationIDs = configurationIDsByPathIdentity[pathIdentity],
+                          configurationIDs.count == 1,
+                          let configurationID = configurationIDs.first else { continue }
+                    for usage in usageByOffset[line.endOffset] ?? []
+                    where usage.threadID == threadID && usage.turnID == turnID {
+                        recoveredByConfiguration[configurationID, default: []].insert(usage.workspaceID)
+                    }
+                default:
+                    break
+                }
+            }
+            // Bind only with the original token offset, thread, turn and root-set evidence.
+            // This repairs old Git fingerprints without changing usage or import checkpoints.
+            for (configurationID, workspaceIDs) in recoveredByConfiguration {
+                try store.addWorkspaceConfigurationBindings(workspaceIDs, configurationID: configurationID)
+            }
+            workspaceBindingRepairSignatures[rollout.fileID] = signature
+        }
+    }
+
     private func workspaceRepositoryID(for rootPath: String) -> String? {
         if let cached = workspaceRootRepositoryIDs[rootPath] { return cached }
         guard attemptedWorkspaceRootRepositories.insert(rootPath).inserted else { return nil }
@@ -1062,6 +1150,24 @@ private struct ImportContext {
     var state: SessionStateSnapshot?
     var createdAtMilliseconds: Int64?
     var updatedAtMilliseconds: Int64?
+}
+
+private struct WorkspaceBindingEnvelope: Decodable {
+    let type: String
+    let payload: Payload
+
+    struct Payload: Decodable {
+        let type: String?
+        let id: String?
+        let turnID: String?
+        let workspaceRoots: [String]?
+
+        enum CodingKeys: String, CodingKey {
+            case type, id
+            case turnID = "turn_id"
+            case workspaceRoots = "workspace_roots"
+        }
+    }
 }
 
 private struct ActivityImportContext {

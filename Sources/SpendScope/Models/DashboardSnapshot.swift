@@ -186,6 +186,12 @@ struct WorkspaceUsageEntry: Identifiable, Equatable, Sendable {
     let projects: [WorkspaceProjectUsageEntry]
     let conversations: [ProjectConversationUsage]
     let dailyUsage: [ProjectDailyUsage]
+    var configuredDirectories: [WorkspaceDirectory] = []
+
+    var directories: [WorkspaceDirectory] {
+        if !configuredDirectories.isEmpty { return configuredDirectories }
+        return projects.map { WorkspaceDirectory(id: $0.id, name: $0.name) }
+    }
 
     var visibleConversations: [ProjectConversationUsage] {
         conversations.filter(\.isIncludedInTaskMetrics)

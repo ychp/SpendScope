@@ -1516,6 +1516,105 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(entry.projects.first { $0.name == "ShopCopy" }?.tokens, 20)
     }
 
+    func testDirectoryListIncludesAllConfiguredRootsRegardlessOfUsage() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage("public-usage", at: now.addingTimeInterval(-1), total: 120,
+                  project: ProjectIdentity(id: "public-path", name: "public-project"),
+                  workspace: WorkspaceIdentity(id: "two-roots", name: "Project", rootCount: 2))
+        ], quotas: []))
+        try store.upsertWorkspaceConfiguration(
+            StoredWorkspaceConfiguration(
+                id: "configured-project", name: "Project",
+                directories: [
+                    WorkspaceDirectory(id: "public-path", name: "public-project"),
+                    WorkspaceDirectory(id: "private-path", name: "private-project")
+                ], updatedAtMilliseconds: 2000
+            ), matchingWorkspaceIDs: ["two-roots"], isCurrent: true
+        )
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
+        for ranking in [snapshot.workspaceUsage.today, snapshot.workspaceUsage.sevenDays,
+                        snapshot.workspaceUsage.thirtyDays, snapshot.workspaceUsage.allTime] {
+            let entry = try XCTUnwrap(ranking.entries.first)
+            XCTAssertEqual(entry.directories.map(\.name), ["public-project", "private-project"])
+            XCTAssertEqual(entry.directories.map(\.id), ["public-path", "private-path"])
+            XCTAssertEqual(ranking.projectCount, 2)
+            XCTAssertEqual(entry.projects.count, 1)
+            XCTAssertEqual(entry.tokens, 120)
+        }
+    }
+
+    func testConfiguredWorkspacesWithSameNameRemainSeparateAcrossAllRanges() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let store = try makeStore()
+        let project = ProjectIdentity(id: "shared-cwd", name: "shared")
+        try store.commit(batch(events: [
+            usage("old-a", at: now.addingTimeInterval(-3), total: 40, project: project,
+                  workspace: WorkspaceIdentity(id: "old-roots-a", name: "Same name", rootCount: 1)),
+            usage("new-a", at: now.addingTimeInterval(-2), total: 20, project: project,
+                  workspace: WorkspaceIdentity(id: "new-roots-a", name: "Same name", rootCount: 2)),
+            usage("b", at: now.addingTimeInterval(-1), total: 30, project: project,
+                  workspace: WorkspaceIdentity(id: "roots-b", name: "Same name", rootCount: 1))
+        ], quotas: []))
+        try store.upsertWorkspaceConfiguration(
+            StoredWorkspaceConfiguration(
+                id: "configuration-a", name: "Same name",
+                directories: [WorkspaceDirectory(id: "a", name: "Latest A")], updatedAtMilliseconds: 2000
+            ),
+            matchingWorkspaceIDs: ["old-roots-a", "new-roots-a"], isCurrent: true
+        )
+        try store.upsertWorkspaceConfiguration(
+            StoredWorkspaceConfiguration(
+                id: "configuration-b", name: "Same name",
+                directories: [WorkspaceDirectory(id: "b", name: "Latest B")], updatedAtMilliseconds: 2000
+            ),
+            matchingWorkspaceIDs: ["roots-b"], isCurrent: true
+        )
+
+        let snapshot = try DashboardQueryService(store: store).snapshot(now: now, calendar: .current)
+
+        for ranking in [snapshot.workspaceUsage.today, snapshot.workspaceUsage.sevenDays,
+                        snapshot.workspaceUsage.thirtyDays, snapshot.workspaceUsage.allTime] {
+            XCTAssertEqual(ranking.workspaceCount, 2)
+            XCTAssertEqual(ranking.entries.map(\.id), ["configuration-a", "configuration-b"])
+            XCTAssertEqual(ranking.entries.map(\.tokens), [60, 30])
+            XCTAssertEqual(ranking.entries.map(\.rootCount), [1, 1])
+            XCTAssertEqual(ranking.entries.map { $0.configuredDirectories.map(\.name) }, [["Latest A"], ["Latest B"]])
+            XCTAssertEqual(ranking.entries.map { $0.directories.map(\.name) }, [["Latest A"], ["Latest B"]])
+            XCTAssertEqual(ranking.projectCount, 2)
+        }
+        XCTAssertEqual(try store.totalUsage(), 90)
+        XCTAssertEqual(try store.usageEventCount(), 3)
+    }
+
+    func testExplicitAliasCanTargetLatestConfigurationWithoutNewUsage() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let store = try makeStore()
+        try store.commit(batch(events: [
+            usage("temporary", at: now.addingTimeInterval(-1), total: 40,
+                  workspace: WorkspaceIdentity(id: "temporary", name: "Temporary", rootCount: 1))
+        ], quotas: []))
+        try store.upsertWorkspaceConfiguration(
+            StoredWorkspaceConfiguration(
+                id: "configured-project", name: "Target",
+                directories: [WorkspaceDirectory(id: "target-directory", name: "Current root")],
+                updatedAtMilliseconds: 2000
+            ),
+            matchingWorkspaceIDs: ["old-target-roots"], isCurrent: true
+        )
+        try store.setWorkspaceAlias(sourceWorkspaceID: "temporary", targetWorkspaceID: "old-target-roots")
+
+        let entry = try XCTUnwrap(DashboardQueryService(store: store)
+            .snapshot(now: now, calendar: .current).workspaceUsage.allTime.entries.first)
+
+        XCTAssertEqual(entry.id, "configured-project")
+        XCTAssertEqual(entry.name, "Target")
+        XCTAssertEqual(entry.configuredDirectories.map(\.name), ["Current root"])
+        XCTAssertEqual(entry.tokens, 40)
+    }
+
     func testSameDirectoryUsageIsSeparatedByWorkspaceIdentity() throws {
         let now = Date(timeIntervalSince1970: 20_000)
         let retailSales = ProjectIdentity(id: "retail-path", name: "retail-sales")
@@ -1550,6 +1649,7 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(ranking.entries.map(\.id), ["workspace-open-api", "workspace-retail-only"])
         XCTAssertEqual(ranking.entries.map(\.tokens), [90, 10])
         XCTAssertTrue(ranking.entries.allSatisfy { $0.projects.map(\.name) == ["retail-sales"] })
+        XCTAssertTrue(ranking.entries.allSatisfy { $0.directories.map(\.name) == ["retail-sales"] })
         XCTAssertEqual(ranking.entries.map { $0.conversations.count }, [1, 1])
     }
 

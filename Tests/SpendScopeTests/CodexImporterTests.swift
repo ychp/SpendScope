@@ -3,6 +3,157 @@ import XCTest
 @testable import SpendScope
 
 final class CodexImporterTests: XCTestCase {
+    func testRefreshBindsHistoricalUsageAfterRepositoryIdentityChanges() async throws {
+        let roots = ["/synthetic/public-project", "/synthetic/private-project"]
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turnInWorkspace(model: "gpt-synthetic", roots: roots),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let originalImporter = CodexImporter(
+            rootURL: fixture.codexRoot, store: store,
+            repositoryResolver: MappingRepositoryIdentityResolver(repositoryIDs: [
+                roots[0]: "old-public-repository", roots[1]: "old-private-repository"
+            ])
+        )
+        let imported = await originalImporter.refresh(scope: .history)
+        XCTAssertTrue(imported.isSuccessful)
+        let originalUsage = try XCTUnwrap(store.usageEvents().first)
+        let fileID = try XCTUnwrap(imported.discoveredFileIDs?.first)
+        let originalOffset = try store.fileCheckpoint(fileID: fileID)?.committedOffset
+        try Data(#"{"local-projects":{"project-a":{"name":"Two directories","rootPaths":["/synthetic/public-project","/synthetic/private-project"],"updatedAt":2000}}}"#.utf8)
+            .write(to: fixture.codexRoot.appending(path: ".codex-global-state.json"))
+        let restartedImporter = CodexImporter(
+            rootURL: fixture.codexRoot, store: store,
+            repositoryResolver: MappingRepositoryIdentityResolver(repositoryIDs: [
+                roots[0]: "new-public-repository", roots[1]: "new-private-repository"
+            ])
+        )
+
+        let refreshed = await restartedImporter.refresh(scope: .foreground)
+        let entry = try XCTUnwrap(DashboardQueryService(store: store)
+            .snapshot(now: Date(timeIntervalSince1970: 2_000_000_000), calendar: .current)
+            .workspaceUsage.allTime.entries.first)
+
+        XCTAssertTrue(refreshed.isSuccessful)
+        XCTAssertEqual(refreshed.processedFileCount, 0)
+        XCTAssertEqual(entry.name, "Two directories")
+        XCTAssertEqual(entry.configuredDirectories.map(\.name), ["private-project", "public-project"])
+        XCTAssertEqual(entry.tokens, 120)
+        XCTAssertEqual(try store.usageEventCount(), 1)
+        XCTAssertEqual(try store.usageEvents().first?.workspace, originalUsage.workspace)
+        XCTAssertEqual(try store.fileCheckpoint(fileID: fileID)?.committedOffset, originalOffset)
+    }
+
+    func testHistoricalBindingRepairKeepsReusedTurnIDsInDifferentRootSetsSeparate() async throws {
+        let firstRoots = ["/synthetic/first", "/synthetic/first-private"]
+        let secondRoots = ["/synthetic/second", "/synthetic/second-private"]
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turnInWorkspace(model: "gpt-synthetic", roots: firstRoots),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus"),
+            .turnInWorkspace(model: "gpt-synthetic", roots: secondRoots),
+            .token(input: 200, cached: 80, output: 40, reasoning: 10, plan: "plus", second: 6)
+        ])
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let roots = firstRoots + secondRoots
+        let oldImporter = CodexImporter(
+            rootURL: fixture.codexRoot, store: store,
+            repositoryResolver: MappingRepositoryIdentityResolver(
+                repositoryIDs: Dictionary(uniqueKeysWithValues: roots.map { ($0, "old-\($0)") })
+            )
+        )
+        let initial = await oldImporter.refresh(scope: .history)
+        XCTAssertTrue(initial.isSuccessful)
+        let state: [String: Any] = ["local-projects": [
+            "a": ["name": "First", "rootPaths": firstRoots],
+            "b": ["name": "Second", "rootPaths": secondRoots]
+        ]]
+        try JSONSerialization.data(withJSONObject: state)
+            .write(to: fixture.codexRoot.appending(path: ".codex-global-state.json"))
+        let newImporter = CodexImporter(
+            rootURL: fixture.codexRoot, store: store,
+            repositoryResolver: MappingRepositoryIdentityResolver(
+                repositoryIDs: Dictionary(uniqueKeysWithValues: roots.map { ($0, "new-\($0)") })
+            )
+        )
+
+        let refreshed = await newImporter.refresh(scope: .foreground)
+        let ranking = try DashboardQueryService(store: store)
+            .snapshot(now: Date(timeIntervalSince1970: 2_000_000_000), calendar: .current)
+            .workspaceUsage.allTime
+
+        XCTAssertTrue(refreshed.isSuccessful)
+        XCTAssertEqual(ranking.entries.map(\.name), ["First", "Second"])
+        XCTAssertEqual(ranking.entries.map(\.tokens), [120, 120])
+        XCTAssertEqual(ranking.entries.map { $0.configuredDirectories.map(\.name) },
+                       [["first", "first-private"], ["second", "second-private"]])
+        XCTAssertEqual(try store.usageEventCount(), 2)
+    }
+
+    func testWorkspaceDirectoryChangesRefreshWithoutNewUsageAndSurviveRestart() async throws {
+        let fixture = try CodexFixture.make(events: [
+            .sessionCLI,
+            .turnInWorkspace(model: "gpt-synthetic", roots: ["/synthetic/first", "/synthetic/second"]),
+            .token(input: 100, cached: 40, output: 20, reasoning: 5, plan: "plus")
+        ])
+        let stateURL = fixture.codexRoot.appending(path: ".codex-global-state.json")
+        try Data(#"{"local-projects":{"project-a":{"name":"Project A","rootPaths":["/synthetic/first","/synthetic/second"],"updatedAt":1000}}}"#.utf8).write(to: stateURL)
+        let store = try UsageStore(databaseURL: fixture.databaseURL)
+        let importer = CodexImporter(rootURL: fixture.codexRoot, store: store)
+        let first = await importer.refresh(scope: .history)
+        XCTAssertTrue(first.isSuccessful)
+        let query = DashboardQueryService(store: store)
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let original = try XCTUnwrap(query.snapshot(now: now, calendar: .current).workspaceUsage.allTime.entries.first)
+        XCTAssertEqual(original.rootCount, 2)
+
+        try Data(#"{"local-projects":{"project-a":{"name":"Renamed Project","rootPaths":["/synthetic/first","/synthetic/second","/synthetic/third"],"updatedAt":2000}}}"#.utf8).write(to: stateURL)
+        let refreshed = await importer.refresh(scope: .foreground)
+        XCTAssertTrue(refreshed.isSuccessful)
+        XCTAssertEqual(refreshed.processedFileCount, 0)
+        let updated = try XCTUnwrap(query.snapshot(now: now, calendar: .current).workspaceUsage.allTime.entries.first)
+        XCTAssertEqual(updated.id, original.id)
+        XCTAssertEqual(updated.name, "Renamed Project")
+        XCTAssertEqual(updated.rootCount, 3)
+        XCTAssertEqual(updated.configuredDirectories.map(\.name), ["first", "second", "third"])
+        XCTAssertEqual(updated.tokens, 120)
+
+        // A replacement removes both original roots; matching by overlap cannot repair this.
+        try Data(#"{"local-projects":{"project-a":{"name":"Renamed Project","rootPaths":["/synthetic/replacement"],"updatedAt":3000}}}"#.utf8).write(to: stateURL)
+        let reopenedStore = try UsageStore(databaseURL: fixture.databaseURL)
+        let restarted = CodexImporter(rootURL: fixture.codexRoot, store: reopenedStore)
+        let result = await restarted.refresh(scope: .foreground)
+        XCTAssertTrue(result.isSuccessful)
+        let final = try XCTUnwrap(DashboardQueryService(store: reopenedStore)
+            .snapshot(now: now, calendar: .current).workspaceUsage.allTime.entries.first)
+        XCTAssertEqual(final.id, original.id)
+        XCTAssertEqual(final.rootCount, 1)
+        XCTAssertEqual(final.configuredDirectories.map(\.name), ["replacement"])
+        XCTAssertEqual(final.tokens, 120)
+        XCTAssertEqual(try reopenedStore.usageEventCount(), 1)
+
+        try fixture.append(.turnInWorkspace(model: "gpt-synthetic", roots: ["/synthetic/replacement"]))
+        try fixture.append(.token(input: 200, cached: 80, output: 40, reasoning: 10, plan: "plus", second: 6))
+        let appended = await restarted.refresh(scope: .history)
+        XCTAssertTrue(appended.isSuccessful)
+        let ranking = try DashboardQueryService(store: reopenedStore)
+            .snapshot(now: now, calendar: .current).workspaceUsage.allTime
+        XCTAssertEqual(ranking.workspaceCount, 1)
+        XCTAssertEqual(ranking.totalTokens, 240)
+        XCTAssertEqual(ranking.entries.first?.id, original.id)
+
+        try FileManager.default.removeItem(at: stateURL)
+        let rebuilt = await restarted.rebuildFromLocalData()
+        XCTAssertTrue(rebuilt.isSuccessful)
+        let restored = try XCTUnwrap(DashboardQueryService(store: reopenedStore)
+            .snapshot(now: now, calendar: .current).workspaceUsage.allTime.entries.first)
+        XCTAssertEqual(restored.id, original.id)
+        XCTAssertEqual(restored.configuredDirectories.map(\.name), ["replacement"])
+        XCTAssertEqual(restored.tokens, 240)
+    }
+
     func testImportsUsageQuotaAndSessionOnceAcrossRefreshes() async throws {
         let fixture = try CodexFixture.make(events: [
             .sessionDesktop,

@@ -301,42 +301,32 @@ struct ProjectDetailView: View {
     }
 
     private var workspaceProjectCard: some View {
-        detailCard(title: "本期涉及目录用量", icon: "folder.fill") {
+        detailCard(title: "关联目录", icon: "folder.fill") {
             VStack(spacing: 0) {
-                ForEach(entry.projects) { project in
+                if entry.directories.isEmpty {
+                    Text("未识别到关联目录")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+                }
+                ForEach(entry.directories) { directory in
                     HStack(spacing: 10) {
                         Image(systemName: "folder")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(SpendScopeTheme.dashboardAccentSecondary)
                             .frame(width: 18)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(project.name)
-                                .font(.system(size: 10.5, weight: .semibold))
-                                .lineLimit(1)
-                            Text("\(project.conversationCount) 个任务 · \(project.replyCount) 次回复 · \(ProjectUsageDateFormatter.relative(project.lastActivityAtMilliseconds))")
-                                .font(.system(size: 8.5, weight: .medium))
-                                .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                                .lineLimit(1)
-                        }
-
-                        Spacer(minLength: 12)
-
-                        Text(TokenFormatter.percentage(project.share))
-                            .font(.system(size: 9, weight: .medium, design: .rounded))
-                            .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-                            .monospacedDigit()
-                            .frame(width: 48, alignment: .trailing)
-
-                        Text(TokenFormatter.compact(project.tokens))
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                            .frame(width: 76, alignment: .trailing)
+                        Text(directory.name)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(directory.name)
+                        Spacer()
                     }
                     .padding(.horizontal, 12)
                     .frame(minHeight: 42)
 
-                    if project.id != entry.projects.last?.id {
+                    if directory.id != entry.directories.last?.id {
                         Rectangle()
                             .fill(SpendScopeTheme.dashboardBorder.opacity(0.62))
                             .frame(height: 1)

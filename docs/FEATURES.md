@@ -30,7 +30,7 @@
 | 悬浮热力图例 | 图例弹窗 | 颜色等级对应的 Token 区间和当月峰值 | [截图](images/spendscope-calendar-legend-hover.png) |
 | 悬浮命名空间 Skill | Skill 细分弹窗 | 细分 Skill、直接使用次数和总调用次数 | [截图](images/spendscope-skill-breakdown-hover.png) |
 | 点击今日任务 | 独立详情窗口 | 今日 Token、耗时、项目目录和回复明细 | [截图](images/spendscope-today-task-detail.png) |
-| 点击项目排行 | 独立详情窗口 | 项目概览、任务、回复、趋势和目录用量 | [截图](images/spendscope-project-overview.png) |
+| 点击项目排行 | 独立详情窗口 | 项目概览、任务、回复、趋势和关联目录 | [截图](images/spendscope-project-overview.png) |
 | 悬浮项目趋势节点 | 图表内提示卡 | 日期、Token 和 7 日占比 | [截图](images/spendscope-project-trend-hover.png) |
 | 悬浮项目任务行 | 窗口外侧悬浮面板 | 任务模型、Token、完整 Skills / Tools 和 API 等值费用 | [截图](images/spendscope-task-activity-detail.png) |
 | 悬浮项目回复行 | 窗口外侧悬浮面板 | 单次回复状态、耗时、模型、Token、Skills / Tools 和费用 | [截图](images/spendscope-reply-activity-detail.png) |
@@ -135,7 +135,7 @@
 从项目排行打开独立详情窗口后，可以查看：
 
 - **顶部摘要**：项目排名、Token、全局占比、根目录数量、任务数、回复数和最近活动时间。
-- **概览**：本期涉及目录及其用量、任务和回复数量、四类 Token 构成与近 7 日趋势；任务列表集中在“任务明细”中展示。
+- **概览**：当前关联目录、任务和回复数量、四类 Token 构成与近 7 日趋势；目录只展示名称，不展示目录 Token 或占比；任务列表集中在“任务明细”中展示。
 - **任务明细**：任务名称、最后活动时间、回复数、项目内占比和 Token；子 agent 自动并入对应主任务；支持搜索，并可按“最近消息”或“用量”排序；悬浮任务行可查看该任务汇总后的模型、Skill、Tool 和四类 Token，点击任务行可快速进入该任务的回复明细。
 - **回复明细**：每次回复的时间、状态、耗时、模型及调用次数、Token、Skill 调用数和 Tool 调用数；子 agent 的 Token、模型及调用活动并入实际创建它的主回复，但生命周期状态仍由主回复自身事件决定，避免子 agent 完成时提前结束仍在运行的主任务；默认按时间倒序展示；从任务明细进入时仅显示所选任务，并可通过标题旁的筛选标签恢复显示全部回复。
 - **调用悬浮详情**：悬浮任务或回复行时，在详情窗口外侧分别展示任务汇总或单次回复的模型调用、完整 Skills / Tools 名称和各自调用次数；任务与回复悬浮窗都会按各模型实际 Token 归属展示未缓存输入、缓存输入、可见输出、推理输出的 Token 数量、API 等值费用明细与总额，参考价模型会明确标记为参考估算，任务中未归属到回复的 Token 会提示未计入估算；两类明细共用同一面板，面板会根据屏幕空间选择右、左、下或上方。

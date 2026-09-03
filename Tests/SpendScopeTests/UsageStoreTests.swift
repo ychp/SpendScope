@@ -167,7 +167,7 @@ final class UsageStoreTests: XCTestCase {
 
         XCTAssertEqual(
             try store.schemaVersions(),
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
         )
         XCTAssertEqual(
             Set(try store.schemaColumns(table: "source_files")),
@@ -221,7 +221,8 @@ final class UsageStoreTests: XCTestCase {
             Set([
                 "schema_migrations", "source_files", "thread_checkpoints", "usage_events",
                 "hourly_usage", "quota_snapshots", "session_state_events", "sessions",
-                "source_status", "activity_events", "workspace_catalog", "workspace_aliases"
+                "source_status", "activity_events", "workspace_catalog", "workspace_aliases",
+                "workspace_configurations", "workspace_configuration_bindings"
             ])
         )
         XCTAssertEqual(
@@ -234,11 +235,61 @@ final class UsageStoreTests: XCTestCase {
         )
     }
 
+    func testVersionSixteenMigrationPreservesUsageAndWorkspaceCatalog() throws {
+        let url = temporaryDatabaseURL()
+        let store = try UsageStore(databaseURL: url)
+        let workspace = WorkspaceIdentity(id: "historical-workspace", name: "Project", rootCount: 2)
+        try store.commit(ImportBatch(
+            file: .fixture(committedOffset: 80),
+            usageEvents: [.fixture(fingerprint: "before-directory-sync", total: 120, workspace: workspace)],
+            quotaEvents: [], stateEvents: [], sessions: [], threadCheckpoints: []
+        ))
+        try store.upsertWorkspaceCatalog([workspace])
+        try store.setWorkspaceAlias(sourceWorkspaceID: "old", targetWorkspaceID: workspace.id)
+        let database = try SQLiteDatabase(url: url)
+        try database.execute(sql: "DROP TABLE workspace_configurations")
+        try database.execute(sql: "DROP TABLE workspace_configuration_bindings")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version = 17")
+
+        let migrated = try UsageStore(databaseURL: url)
+
+        XCTAssertEqual(try migrated.schemaVersions().last, 17)
+        XCTAssertEqual(try migrated.workspaceCatalog()[workspace.id], workspace)
+        XCTAssertEqual(try migrated.totalUsage(), 120)
+        XCTAssertEqual(try migrated.usageEventCount(), 1)
+        XCTAssertEqual(try migrated.fileCheckpoint(fileID: "file-1")?.committedOffset, 80)
+        XCTAssertEqual(try migrated.workspaceAliases(), ["old": workspace.id])
+        XCTAssertTrue(try migrated.workspaceConfigurations().isEmpty)
+        XCTAssertTrue(try migrated.workspaceConfigurationBindings().isEmpty)
+    }
+
+    func testWorkspaceConfigurationRejectsStaleBackupAndAmbiguousRootBindings() throws {
+        let store = try UsageStore(databaseURL: temporaryDatabaseURL())
+        let current = StoredWorkspaceConfiguration(
+            id: "project-a", name: "Current",
+            directories: [WorkspaceDirectory(id: "hashed-directory", name: "new-root")],
+            updatedAtMilliseconds: 2000
+        )
+        try store.upsertWorkspaceConfiguration(current, matchingWorkspaceIDs: ["shared-roots"], isCurrent: true)
+        try store.upsertWorkspaceConfiguration(
+            StoredWorkspaceConfiguration(id: "project-a", name: "Stale", directories: [], updatedAtMilliseconds: 1000),
+            matchingWorkspaceIDs: ["old-roots"], isCurrent: false
+        )
+        XCTAssertEqual(try store.workspaceConfigurations()["project-a"], current)
+        try store.upsertWorkspaceConfiguration(
+            StoredWorkspaceConfiguration(id: "project-b", name: "Current", directories: [], updatedAtMilliseconds: 3000),
+            matchingWorkspaceIDs: ["shared-roots"], isCurrent: true
+        )
+        try store.resetImportedData()
+        XCTAssertEqual(try store.workspaceConfigurations()["project-a"], current)
+        XCTAssertEqual(try store.workspaceConfigurationBindings(), ["old-roots": "project-a"])
+    }
+
     func testVersionFifteenToSixteenMigrationDropsOfficialQuotaCache() throws {
         let url = temporaryDatabaseURL()
         _ = try UsageStore(databaseURL: url)
         let database = try SQLiteDatabase(url: url)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version = 16")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (16, 17)")
         try database.execute(sql: """
             CREATE TABLE account_rate_limit_cache(
                 window_minutes INTEGER PRIMARY KEY,
@@ -256,7 +307,7 @@ final class UsageStoreTests: XCTestCase {
 
         let migratedStore = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migratedStore.schemaVersions().last, 16)
+        XCTAssertEqual(try migratedStore.schemaVersions().last, 17)
         XCTAssertFalse(try migratedStore.schemaTables().contains("account_rate_limit_cache"))
     }
 
@@ -517,7 +568,7 @@ final class UsageStoreTests: XCTestCase {
 
         let store = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        XCTAssertEqual(try store.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
         XCTAssertNil(try store.fileCheckpoint(fileID: "legacy"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("input_tokens"))
         XCTAssertTrue(try store.schemaColumns(table: "source_files").contains("activity_committed_offset"))
@@ -545,11 +596,11 @@ final class UsageStoreTests: XCTestCase {
         try database.execute(sql: "DROP TABLE activity_events")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN activity_committed_offset")
         try removeVersionTenColumns(database)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
@@ -576,11 +627,11 @@ final class UsageStoreTests: XCTestCase {
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_id")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN project_name")
         try removeVersionTenColumns(database)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertEqual(try migrated.quotaEventCount(), 0)
@@ -602,11 +653,11 @@ final class UsageStoreTests: XCTestCase {
         try database.execute(sql: "ALTER TABLE usage_events DROP COLUMN repository_id")
         try database.execute(sql: "ALTER TABLE source_files DROP COLUMN repository_id")
         try removeVersionTenColumns(database)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertEqual(try migrated.usageEventCount(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
@@ -625,11 +676,11 @@ final class UsageStoreTests: XCTestCase {
         let database = try SQLiteDatabase(url: url)
         try removeVersionElevenColumns(database)
         try removeVersionTenColumns(database)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (8, 9, 10, 11, 12, 13, 14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (8, 9, 10, 11, 12, 13, 14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
     }
@@ -650,11 +701,11 @@ final class UsageStoreTests: XCTestCase {
         let database = try SQLiteDatabase(url: url)
         try removeVersionElevenColumns(database)
         try removeVersionTenColumns(database)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (10, 11, 12, 13, 14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (10, 11, 12, 13, 14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
         XCTAssertTrue(try migrated.schemaColumns(table: "usage_events").contains("turn_id"))
@@ -678,11 +729,11 @@ final class UsageStoreTests: XCTestCase {
         }
         let database = try SQLiteDatabase(url: url)
         try removeVersionElevenColumns(database)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (11, 12, 13, 14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (11, 12, 13, 14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
-        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
+        XCTAssertEqual(try migrated.schemaVersions(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
         XCTAssertTrue(try migrated.schemaColumns(table: "usage_events").contains("workspace_id"))
@@ -711,13 +762,13 @@ final class UsageStoreTests: XCTestCase {
         }
         let database = try SQLiteDatabase(url: url)
         try removeVersionTwelveColumns(database)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (12, 13, 14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (12, 13, 14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
         XCTAssertEqual(
             try migrated.schemaVersions(),
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
         )
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
@@ -746,13 +797,13 @@ final class UsageStoreTests: XCTestCase {
         }
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "DROP TABLE workspace_catalog")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (13, 14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (13, 14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
         XCTAssertEqual(
             try migrated.schemaVersions(),
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
         )
         XCTAssertEqual(try migrated.totalUsage(), 0)
         XCTAssertNil(try migrated.fileCheckpoint(fileID: "file-1"))
@@ -787,7 +838,7 @@ final class UsageStoreTests: XCTestCase {
             ))
         }
         let database = try SQLiteDatabase(url: url)
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (14, 15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (14, 15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 
@@ -808,7 +859,7 @@ final class UsageStoreTests: XCTestCase {
         }
         let database = try SQLiteDatabase(url: url)
         try database.execute(sql: "DROP TABLE workspace_aliases")
-        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (15, 16)")
+        try database.execute(sql: "DELETE FROM schema_migrations WHERE version IN (15, 16, 17)")
 
         let migrated = try UsageStore(databaseURL: url)
 

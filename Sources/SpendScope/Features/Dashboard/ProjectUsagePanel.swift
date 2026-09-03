@@ -227,7 +227,7 @@ struct ProjectUsagePanel: View {
         ContentUnavailableView(
             "暂无项目用量",
             systemImage: "square.grid.3x3.topleft.filled",
-            description: Text("使用 Codex 后会按每次回复的项目目录集合统计 Token。")
+            description: Text("使用 Codex 后会按项目汇总任务与回复的 Token 用量。")
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
@@ -405,8 +405,8 @@ struct ProjectUsagePanel: View {
 
     private var filteredEntries: [RankedProjectUsageEntry] {
         ranking.entries.enumerated().compactMap { index, entry in
-            let matchesProject = entry.projects.contains { project in
-                project.name.localizedCaseInsensitiveContains(searchText)
+            let matchesProject = entry.directories.contains { directory in
+                directory.name.localizedCaseInsensitiveContains(searchText)
             }
             guard searchText.isEmpty
                     || projectDisplayName(entry).localizedCaseInsensitiveContains(searchText)
@@ -451,12 +451,17 @@ struct ProjectUsagePanel: View {
     }
 
     private func projectSummary(_ entry: WorkspaceUsageEntry) -> String {
-        let names = entry.projects.prefix(3).map(\.name).joined(separator: " · ")
-        let suffix = entry.projects.count > 3 ? " 等 \(entry.projects.count) 个目录" : ""
+        if !entry.configuredDirectories.isEmpty {
+            let names = entry.configuredDirectories.prefix(3).map(\.name).joined(separator: " · ")
+            let suffix = entry.configuredDirectories.count > 3 ? " 等" : ""
+            return "\(entry.rootCount) 个根目录 · \(names)\(suffix)"
+        }
+        let names = entry.directories.prefix(3).map(\.name).joined(separator: " · ")
+        let suffix = entry.directories.count > 3 ? " 等 \(entry.directories.count) 个目录" : ""
         let usageSummary = names.isEmpty ? "未识别目录" : names + suffix
         let inference = entry.isInferred ? "工作目录推测 · " : ""
         guard entry.rootCount > 0 else { return inference + usageSummary }
-        return "\(inference)\(entry.rootCount) 个根目录 · 用量涉及 \(usageSummary)"
+        return "\(inference)\(entry.rootCount) 个根目录 · 工作目录 \(usageSummary)"
     }
 
     private func lastActivityText(for entry: WorkspaceUsageEntry) -> String {
@@ -470,7 +475,7 @@ struct ProjectUsagePanel: View {
             + "\(TokenFormatter.worktime(entry.aiWorktimeMilliseconds))，"
             + "占比 \(TokenFormatter.percentage(entry.share))，"
             + (entry.isInferred ? "由工作目录推测，" : "")
-            + "\(entry.projects.count) 个目录，\(entry.visibleConversations.count) 个任务，"
+            + "\(entry.directories.count) 个目录，\(entry.visibleConversations.count) 个任务，"
             + "\(entry.visibleReplyCount) 次回复"
     }
 
