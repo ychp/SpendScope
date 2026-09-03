@@ -1,6 +1,6 @@
 # SpendScope 项目文件结构
 
-更新日期：2026-08-28
+更新日期：2026-09-03
 
 本文档说明仓库中每个目录的职责、重要程度和清理边界。重要程度分为三类：
 
@@ -87,7 +87,7 @@ Features：菜单栏、看板和设置
 - `CodexEventDecoderTests`：事件白名单、字段兼容和隐私边界。
 - `IncrementalJSONLReaderTests`：追加、半行、分块、截断、替换、只读索引兼容和任务名安全回退。
 - `UsageAccumulatorTests`：累计值转增量、回退分段和 Token 分类。
-- `CodexImporterTests`、`UsageStoreTests`：导入幂等、事务、检查点、重建进度和迁移。
+- `CodexImporterTests`、`UsageStoreTests`：导入幂等、事务、检查点、重建进度、数据库迁移、项目配置同步及历史根集合绑定修复。
 - `DashboardQueryServiceTests`、`SessionQueryServiceTests`：周期统计、额度、活动/工作区/模型排行、同目录跨工作区归属、归档工作区名称、Git worktree 合并、推测工作区回退、Guardian 指标过滤、任务排序、回复 Token 与 Skill / 工具归属、费用估算和会话查询。
 - `DashboardStoreTests`：加载、本地增量刷新、自动调度、错误和全局状态协调。
 - `UsageReminderTests`、`AppUpdateServiceTests`：提醒阈值和软件更新校验。
@@ -139,7 +139,7 @@ Features：菜单栏、看板和设置
 - `FEATURES.md`：完整记录用户功能、设置、数据口径、刷新机制与产品限制。
 - `TECHNICAL_ARCHIVE.md`：架构、统计口径、迁移、兼容和演进决策。
 - `PROJECT_STRUCTURE.md`：本文档，说明文件分级和清理边界。
-- `images/`：README 与功能说明使用的产品截图，包括状态栏、弹窗、看板、项目详情和设置界面。
+- `images/`：README 与功能说明使用的产品截图及设计参考图，包括状态栏、弹窗、看板、项目详情和设置界面；截图版本在引用文档中标注。
 
 截图不参与 App 构建；移除前必须同步删除 README 与功能说明中的引用。
 

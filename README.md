@@ -32,7 +32,7 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ## 软件界面
 
-以下界面截图基于 SpendScope v1.3.0，数据会随本机 Codex 使用记录变化。
+以下界面截图基于 SpendScope v1.3.0，数据会随本机 Codex 使用记录变化；关联目录展示已进一步调整，以本文功能说明为准。
 
 ### 菜单栏与弹窗
 
@@ -70,6 +70,8 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 项目排行和详情随刷新同步 Codex 中最新的项目名称与关联目录；项目详情的“关联目录”和今日任务详情的“项目相关目录”只展示目录名称，缺少项目配置时回退到会话记录中的工作目录。Token 用量保留在项目、任务和回复层级：Codex 的用量记录无法精确拆分到各个目录，因此目录旁不展示 Token、占比或独立用量状态。
 
+有明确 Codex 项目身份时，改名或调整关联目录后仍保留历史用量归属，即使没有新增 Token 也会随刷新更新；已确认的历史关联在重启和全量重建后保留，归属不明确的项目不会仅因同名或目录重叠而被合并。
+
 今日任务和项目排行都可以打开独立详情窗口，继续查看任务和回复级用量；子 agent 的用量会并入对应主任务，以及实际创建它的主回复，但子 agent 自己的完成事件不会提前结束仍在运行的主任务。回复中的模型会同时展示去重后的调用次数；将鼠标停在任务或回复上，还能在详情窗口外查看包含子 agent 调用在内的完整模型、Token、Skills / Tools 明细，以及按各模型实际 Token 归属计算的四类 Token API 等值费用明细与总额。
 
 ### 设置
@@ -78,7 +80,7 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 设置页覆盖外观、看板行为、状态栏、提醒、数据源、刷新与重建、软件更新、订阅周期、套餐说明和隐私提示。所有悬浮明细与确认弹窗截图见[完整功能说明](docs/FEATURES.md)。
 
-这张设置页长图由当前运行的 v1.3.0 分段截图后无缝拼接，包含从“外观”到“模型费用说明”的全部设置项。
+这张设置页长图由 v1.3.0 分段截图后无缝拼接，包含从“外观”到“模型费用说明”的全部设置项。
 
 ## 系统要求
 
@@ -89,7 +91,7 @@ SpendScope 依赖本机 Codex 产生的使用记录。如果尚未使用 Codex�
 
 ## 安装
 
-1. 前往 [SpendScope Releases](https://github.com/ychp/SpendScope/releases)。
+1. 前往 [SpendScope Releases](https://github.com/ychp-ai/SpendScope/releases)。
 2. 下载 `SpendScope-macOS-unsigned.dmg`。
 3. 打开 DMG，将 SpendScope 拖入“应用程序”文件夹。
 
@@ -174,4 +176,4 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ## 反馈问题
 
-如遇到数据异常、无法启动或有功能建议，请在 [GitHub Issues](https://github.com/ychp/SpendScope/issues) 中反馈。为了保护隐私，请不要上传包含提示词、回复内容、认证信息或项目代码的原始 Codex 记录。
+如遇到数据异常、无法启动或有功能建议，请在 [GitHub Issues](https://github.com/ychp-ai/SpendScope/issues) 中反馈。为了保护隐私，请不要上传包含提示词、回复内容、认证信息或项目代码的原始 Codex 记录。
