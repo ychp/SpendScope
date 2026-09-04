@@ -66,12 +66,21 @@ struct ModelPricingRule: Equatable, Sendable {
 }
 
 enum ModelPricingCatalog {
+    // Standard API text-token rates verified on 2026-09-04 against each model page:
+    // https://developers.openai.com/api/docs/models/<modelID>
+    static let lastVerifiedDate = "2026-09-04"
+    // Spark has no published API price; keep it out of publishedRules.
+    static let referencePricedModelIDs = ["gpt-5.3-codex-spark"]
+    static var listedModelIDs: [String] {
+        publishedRules.map(\.modelID) + referencePricedModelIDs
+    }
+
     static let publishedRules: [ModelPricingRule] = [
         ModelPricingRule(
             modelID: "gpt-5.6-sol",
-            inputPerMillionUSD: 5,
-            cachedInputPerMillionUSD: 0.5,
-            outputPerMillionUSD: 30,
+            inputPerMillionUSD: 4,
+            cachedInputPerMillionUSD: 0.4,
+            outputPerMillionUSD: 20,
             longContextThresholdTokens: 272_000,
             longContextInputMultiplier: 2,
             longContextOutputMultiplier: 1.5,
@@ -79,9 +88,19 @@ enum ModelPricingCatalog {
         ),
         ModelPricingRule(
             modelID: "gpt-5.6-terra",
-            inputPerMillionUSD: 2.5,
-            cachedInputPerMillionUSD: 0.25,
-            outputPerMillionUSD: 15,
+            inputPerMillionUSD: 2,
+            cachedInputPerMillionUSD: 0.2,
+            outputPerMillionUSD: 12,
+            longContextThresholdTokens: 272_000,
+            longContextInputMultiplier: 2,
+            longContextOutputMultiplier: 1.5,
+            cacheWriteMultiplier: 1.25
+        ),
+        ModelPricingRule(
+            modelID: "gpt-5.6-luna",
+            inputPerMillionUSD: 0.2,
+            cachedInputPerMillionUSD: 0.02,
+            outputPerMillionUSD: 1.2,
             longContextThresholdTokens: 272_000,
             longContextInputMultiplier: 2,
             longContextOutputMultiplier: 1.5,
@@ -95,6 +114,26 @@ enum ModelPricingCatalog {
             longContextThresholdTokens: 272_000,
             longContextInputMultiplier: 2,
             longContextOutputMultiplier: 1.5,
+            cacheWriteMultiplier: nil
+        ),
+        ModelPricingRule(
+            modelID: "gpt-5.4",
+            inputPerMillionUSD: 2.5,
+            cachedInputPerMillionUSD: 0.25,
+            outputPerMillionUSD: 15,
+            longContextThresholdTokens: 272_000,
+            longContextInputMultiplier: 2,
+            longContextOutputMultiplier: 1.5,
+            cacheWriteMultiplier: nil
+        ),
+        ModelPricingRule(
+            modelID: "gpt-5.4-mini",
+            inputPerMillionUSD: 0.75,
+            cachedInputPerMillionUSD: 0.075,
+            outputPerMillionUSD: 4.5,
+            longContextThresholdTokens: nil,
+            longContextInputMultiplier: nil,
+            longContextOutputMultiplier: nil,
             cacheWriteMultiplier: nil
         )
     ]
@@ -132,6 +171,7 @@ enum ModelCostFormatter {
     }
 
     static func rate(_ value: Double) -> String {
-        String(format: "$%.2f", value)
+        let formatted = String(format: "$%.3f", value)
+        return formatted.hasSuffix("0") ? String(formatted.dropLast()) : formatted
     }
 }

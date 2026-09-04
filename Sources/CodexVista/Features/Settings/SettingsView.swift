@@ -1248,24 +1248,34 @@ private struct ModelPricingExplanationView: View {
                 Text("标准 API 价格 · 每 100 万 Token")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Text("价格核对：\(ModelPricingCatalog.lastVerifiedDate)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
 
             VStack(spacing: 0) {
                 pricingHeader
                 Divider()
-                ForEach(Array(ModelPricingCatalog.publishedRules.enumerated()), id: \.element.modelID) {
-                    index, rule in
-                    pricingRow(rule)
-                    if index < ModelPricingCatalog.publishedRules.count - 1 {
-                        Divider()
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(ModelPricingCatalog.listedModelIDs, id: \.self) { modelID in
+                            if let rule = ModelPricingCatalog.rule(for: modelID) {
+                                pricingRow(modelID, rule: rule)
+                            }
+                            if modelID != ModelPricingCatalog.listedModelIDs.last {
+                                Divider()
+                            }
+                        }
                     }
                 }
+                .frame(height: min(CGFloat(ModelPricingCatalog.listedModelIDs.count * 33), 264))
             }
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("费用按未缓存输入、缓存输入、可见输出和推理输出分别估算，推理 Token 按输出价格计算。")
-                Text("未收录独立价格的模型（包括 codex-auto-review）按 GPT-5.5 参考价估算，并以 ≈ 标记。")
+                Text("Spark 暂无公开 API 定价，表中 ≈ 为 GPT-5.5 参考价；codex-auto-review 等未收录独立价格的模型也按此估算。")
+                Text("gpt-5.6 是 gpt-5.6-sol 的别名，使用相同价格。")
                 Text("未计入长上下文、缓存写入和工具调用等无法从聚合数据可靠还原的附加费用。")
                 Text("该结果仅用于理解 API 等值规模，不代表 Codex 订阅的实际账单。")
             }
@@ -1275,12 +1285,12 @@ private struct ModelPricingExplanationView: View {
 
             Link(
                 "查看 OpenAI 官方价格",
-                destination: URL(string: "https://openai.com/api/pricing/")!
+                destination: URL(string: "https://developers.openai.com/api/docs/pricing")!
             )
             .font(.caption.weight(.medium))
         }
         .padding(14)
-        .frame(width: 440, alignment: .leading)
+        .frame(width: 500, alignment: .leading)
         .background(CodexVistaVisualEffect(style: .popover))
     }
 
@@ -1301,22 +1311,23 @@ private struct ModelPricingExplanationView: View {
         .frame(height: 28)
     }
 
-    private func pricingRow(_ rule: ModelPricingRule) -> some View {
-        HStack(spacing: 8) {
-            Text(rule.modelID)
+    private func pricingRow(_ modelID: String, rule: ModelPricingRule) -> some View {
+        let isReference = ModelPricingCatalog.usesReferencePricing(for: modelID)
+        return HStack(spacing: 8) {
+            Text(modelID)
                 .fontWeight(.medium)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            pricingValue(rule.inputPerMillionUSD, width: 62)
-            pricingValue(rule.cachedInputPerMillionUSD, width: 68)
-            pricingValue(rule.outputPerMillionUSD, width: 78)
+            pricingValue(rule.inputPerMillionUSD, width: 62, approximate: isReference)
+            pricingValue(rule.cachedInputPerMillionUSD, width: 68, approximate: isReference)
+            pricingValue(rule.outputPerMillionUSD, width: 78, approximate: isReference)
         }
         .font(.caption.monospacedDigit())
         .padding(.horizontal, 10)
         .frame(height: 32)
     }
 
-    private func pricingValue(_ value: Double, width: CGFloat) -> some View {
-        Text(ModelCostFormatter.rate(value))
+    private func pricingValue(_ value: Double, width: CGFloat, approximate: Bool) -> some View {
+        Text((approximate ? "≈" : "") + ModelCostFormatter.rate(value))
             .frame(width: width, alignment: .trailing)
     }
 }

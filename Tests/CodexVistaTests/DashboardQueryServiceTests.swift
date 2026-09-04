@@ -419,7 +419,7 @@ final class DashboardQueryServiceTests: XCTestCase {
             ).subscriptionCycleUsage.first
         )
 
-        XCTAssertEqual(try XCTUnwrap(cycle.estimatedCostUSD), 248.7505, accuracy: 0.000_001)
+        XCTAssertEqual(try XCTUnwrap(cycle.estimatedCostUSD), 171.0005, accuracy: 0.000_001)
         XCTAssertEqual(cycle.unpricedModelCount, 0)
         XCTAssertEqual(cycle.referencePricedModelCount, 1)
     }
@@ -1308,12 +1308,12 @@ final class DashboardQueryServiceTests: XCTestCase {
         XCTAssertEqual(ranking.entries.first?.reasoningTokens, 4_000_000)
         XCTAssertEqual(
             try XCTUnwrap(ranking.entries.first?.estimatedCostUSD),
-            216,
+            144.8,
             accuracy: 0.000_001
         )
         XCTAssertEqual(
             try XCTUnwrap(ranking.entries[1].estimatedCostUSD),
-            32.75,
+            26.2,
             accuracy: 0.000_001
         )
         XCTAssertEqual(
@@ -1321,30 +1321,42 @@ final class DashboardQueryServiceTests: XCTestCase {
             0.0005,
             accuracy: 0.000_001
         )
-        XCTAssertEqual(ranking.estimatedCostUSD, 248.7505, accuracy: 0.000_001)
+        XCTAssertEqual(ranking.estimatedCostUSD, 171.0005, accuracy: 0.000_001)
         XCTAssertEqual(ranking.unpricedModelCount, 0)
         XCTAssertEqual(ranking.referencePricedModelCount, 1)
     }
 
     func testModelPricingCatalogUsesPublishedRatesAndGPT55ReferenceFallback() throws {
         let sol = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.6-sol"))
-        let terra = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.6-terra"))
-        let gpt55 = try XCTUnwrap(ModelPricingCatalog.rule(for: "gpt-5.5"))
-
-        XCTAssertEqual(sol.inputPerMillionUSD, 5)
-        XCTAssertEqual(sol.cachedInputPerMillionUSD, 0.5)
-        XCTAssertEqual(sol.outputPerMillionUSD, 30)
-        XCTAssertEqual(terra.inputPerMillionUSD, 2.5)
-        XCTAssertEqual(terra.cachedInputPerMillionUSD, 0.25)
-        XCTAssertEqual(terra.outputPerMillionUSD, 15)
-        XCTAssertEqual(gpt55.inputPerMillionUSD, 5)
-        XCTAssertEqual(gpt55.cachedInputPerMillionUSD, 0.5)
-        XCTAssertEqual(gpt55.outputPerMillionUSD, 30)
-        XCTAssertEqual(ModelPricingCatalog.rule(for: "gpt-5.6"), sol)
+        let expectedRates: [(String, Double, Double, Double)] = [
+            ("gpt-5.6-sol", 4, 0.4, 20),
+            ("gpt-5.6-terra", 2, 0.2, 12),
+            ("gpt-5.6-luna", 0.2, 0.02, 1.2),
+            ("gpt-5.5", 5, 0.5, 30),
+            ("gpt-5.4", 2.5, 0.25, 15),
+            ("gpt-5.4-mini", 0.75, 0.075, 4.5)
+        ]
+        XCTAssertEqual(ModelPricingCatalog.publishedRules.map(\.modelID), expectedRates.map { $0.0 })
         XCTAssertEqual(
-            ModelPricingCatalog.publishedRules.map(\.modelID),
-            ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"]
+            ModelPricingCatalog.listedModelIDs,
+            expectedRates.map { $0.0 } + ["gpt-5.3-codex-spark"]
         )
+        for (modelID, input, cached, output) in expectedRates {
+            let rule = try XCTUnwrap(ModelPricingCatalog.rule(for: modelID))
+            XCTAssertEqual(rule.inputPerMillionUSD, input, modelID)
+            XCTAssertEqual(rule.cachedInputPerMillionUSD, cached, modelID)
+            XCTAssertEqual(rule.outputPerMillionUSD, output, modelID)
+            XCTAssertFalse(ModelPricingCatalog.usesReferencePricing(for: modelID), modelID)
+        }
+        XCTAssertEqual(ModelPricingCatalog.rule(for: "gpt-5.6"), sol)
+        XCTAssertEqual(ModelPricingCatalog.rule(for: "  GPT-5.6-LUNA\n")?.modelID, "gpt-5.6-luna")
+        for modelID in ["gpt-5.3-codex-spark", "Unknown Model", "gpt-reserve", "gpt-5.6-unknown"] {
+            XCTAssertTrue(ModelPricingCatalog.usesReferencePricing(for: modelID), modelID)
+            XCTAssertEqual(ModelPricingCatalog.rule(for: modelID)?.modelID, "gpt-5.5", modelID)
+        }
+        XCTAssertEqual(ModelCostFormatter.rate(0.075), "$0.075")
+        XCTAssertEqual(ModelCostFormatter.rate(0.02), "$0.02")
+        XCTAssertEqual(ModelCostFormatter.rate(4.5), "$4.50")
         let autoReview = try XCTUnwrap(ModelPricingCatalog.rule(for: "codex-auto-review"))
         XCTAssertEqual(autoReview.modelID, "gpt-5.5")
         XCTAssertFalse(ModelPricingCatalog.usesReferencePricing(for: "gpt-5.5"))
@@ -1361,6 +1373,23 @@ final class DashboardQueryServiceTests: XCTestCase {
             65.5,
             accuracy: 0.000_001
         )
+    }
+
+    func testModelRankingUsesMiniPublishedPriceWithoutReferenceMarker() throws {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let store = try makeStore()
+        try store.commit(batch(events: [usage(
+            "mini-cached-input",
+            at: now.addingTimeInterval(-1),
+            total: 1_000_000,
+            usage: .init(uncachedInput: 0, cachedInput: 1_000_000, visibleOutput: 0, reasoning: 0),
+            model: "gpt-5.4-mini"
+        )], quotas: []))
+
+        let ranking = try DashboardQueryService(store: store)
+            .snapshot(now: now, calendar: .current).modelUsage.ranking(for: .allTime)
+        XCTAssertEqual(ranking.estimatedCostUSD, 0.075, accuracy: 0.000_001)
+        XCTAssertEqual(ranking.referencePricedModelCount, 0)
     }
 
     func testReplyCostEstimateUsesTokenAttributionForEachModel() throws {
@@ -1416,20 +1445,20 @@ final class DashboardQueryServiceTests: XCTestCase {
 
         XCTAssertEqual(reply.totalTokens, 14_000_100)
         let cost = try XCTUnwrap(reply.estimatedCostBreakdown)
-        XCTAssertEqual(cost.cachedInputUSD, 1.25, accuracy: 0.000_001)
-        XCTAssertEqual(cost.visibleOutputUSD, 105, accuracy: 0.000_001)
-        XCTAssertEqual(cost.reasoningUSD, 135, accuracy: 0.000_001)
-        XCTAssertEqual(cost.uncachedInputUSD, 7.5005, accuracy: 0.000_001)
-        XCTAssertEqual(cost.totalUSD, 248.7505, accuracy: 0.000_001)
+        XCTAssertEqual(cost.cachedInputUSD, 1, accuracy: 0.000_001)
+        XCTAssertEqual(cost.visibleOutputUSD, 72, accuracy: 0.000_001)
+        XCTAssertEqual(cost.reasoningUSD, 92, accuracy: 0.000_001)
+        XCTAssertEqual(cost.uncachedInputUSD, 6.0005, accuracy: 0.000_001)
+        XCTAssertEqual(cost.totalUSD, 171.0005, accuracy: 0.000_001)
         XCTAssertEqual(reply.unpricedModelCount, 0)
         XCTAssertEqual(reply.referencePricedModelCount, 1)
 
         let taskCost = try XCTUnwrap(conversation.estimatedCostBreakdown)
-        XCTAssertEqual(taskCost.cachedInputUSD, 1.25, accuracy: 0.000_001)
-        XCTAssertEqual(taskCost.visibleOutputUSD, 105, accuracy: 0.000_001)
-        XCTAssertEqual(taskCost.reasoningUSD, 135, accuracy: 0.000_001)
-        XCTAssertEqual(taskCost.uncachedInputUSD, 7.5005, accuracy: 0.000_001)
-        XCTAssertEqual(taskCost.totalUSD, 248.7505, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.cachedInputUSD, 1, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.visibleOutputUSD, 72, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.reasoningUSD, 92, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.uncachedInputUSD, 6.0005, accuracy: 0.000_001)
+        XCTAssertEqual(taskCost.totalUSD, 171.0005, accuracy: 0.000_001)
         XCTAssertEqual(conversation.unpricedModelCount, 0)
         XCTAssertEqual(conversation.referencePricedModelCount, 1)
     }
