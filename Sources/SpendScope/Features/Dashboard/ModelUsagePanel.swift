@@ -177,7 +177,9 @@ private struct PeriodModelRankingPopover: View {
 
     private var contentHeight: CGFloat {
         let visibleCount = max(visibleRanking.entries.count, 1)
-        return min(420, 72 + CGFloat(visibleCount) * 33)
+        let headerHeight: CGFloat = periodSubtitle == nil ? 30 : 40
+        let moreHeight: CGFloat = omittedModelCount > 0 ? 32 : 0
+        return min(420, headerHeight + 1 + CGFloat(visibleCount) * 33 + moreHeight + 8)
     }
 
     var body: some View {
@@ -185,13 +187,11 @@ private struct PeriodModelRankingPopover: View {
             ModelUsagePanel(
                 ranking: visibleRanking,
                 title: "\(periodTitle) · 模型用量",
-                subtitle: periodSubtitle
+                subtitle: periodSubtitle,
+                omittedModelCount: omittedModelCount,
+                onExpand: onTogglePin
             )
             .frame(height: contentHeight)
-
-            if omittedModelCount > 0 {
-                omittedModelsIndicator
-            }
 
             HStack(spacing: 10) {
                 Text("排行范围继承当前卡片")
@@ -225,69 +225,27 @@ private struct PeriodModelRankingPopover: View {
         .frame(width: 560)
         .background(SpendScopeVisualEffect(style: .popover))
     }
-
-    private var omittedModelsIndicator: some View {
-        Button(action: onTogglePin) {
-            HStack(spacing: 8) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
-                    .frame(width: 22, height: 22)
-                    .background(
-                        SpendScopeTheme.dashboardAccent.opacity(0.10),
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
-
-                Text("仅显示 Token 用量前 5 名")
-                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
-
-                Spacer(minLength: 12)
-
-                Text("另有 \(omittedModelCount) 个模型 · 固定后展开")
-                    .foregroundStyle(SpendScopeTheme.dashboardPrimaryText.opacity(0.82))
-
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .font(.system(size: 9.5, weight: .semibold))
-        .padding(.horizontal, 10)
-        .frame(height: 36)
-        .background(
-            SpendScopeTheme.dashboardControlBackground.opacity(0.72),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(
-                    SpendScopeTheme.dashboardBorder,
-                    style: StrokeStyle(lineWidth: 0.8, dash: [3, 3])
-                )
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "仅显示 Token 用量前 5 名，另有 \(omittedModelCount) 个模型，点击固定并展开全部"
-        )
-        .help("固定排行榜并展开全部模型")
-    }
 }
 
 struct ModelUsagePanel: View {
     let ranking: ModelUsageRanking
     let title: String
     let subtitle: String?
+    let omittedModelCount: Int
+    let onExpand: () -> Void
 
     init(
         ranking: ModelUsageRanking,
         title: String = "模型用量排行",
-        subtitle: String? = nil
+        subtitle: String? = nil,
+        omittedModelCount: Int = 0,
+        onExpand: @escaping () -> Void = {}
     ) {
         self.ranking = ranking
         self.title = title
         self.subtitle = subtitle
+        self.omittedModelCount = omittedModelCount
+        self.onExpand = onExpand
     }
 
     var body: some View {
@@ -317,6 +275,9 @@ struct ModelUsagePanel: View {
                                     .padding(.leading, 42)
                             }
                         }
+                        if omittedModelCount > 0 {
+                            omittedModelsIndicator
+                        }
                     }
                     .padding(.horizontal, 12)
                 }
@@ -333,6 +294,29 @@ struct ModelUsagePanel: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(SpendScopeTheme.dashboardBorder, lineWidth: 1)
         }
+    }
+
+    private var omittedModelsIndicator: some View {
+        Button(action: onExpand) {
+            HStack(spacing: 4) {
+                Text("仅显示 Token 用量前 5 名 · 另有 \(omittedModelCount) 个模型 · 固定后展开")
+                    .foregroundStyle(SpendScopeTheme.dashboardMutedText)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(SpendScopeTheme.dashboardAccent)
+            }
+            .font(.system(size: 9.5, weight: .medium))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .frame(height: 32)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "仅显示 Token 用量前 5 名，另有 \(omittedModelCount) 个模型，点击固定并展开全部"
+        )
+        .help("固定排行榜并展开全部模型")
     }
 
     private var header: some View {
