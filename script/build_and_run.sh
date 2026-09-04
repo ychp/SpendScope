@@ -2,18 +2,18 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-APP_NAME="SpendScope"
-BUNDLE_ID="com.ychp.SpendScope"
+APP_NAME="CodexVista"
+BUNDLE_ID="com.ychp.CodexVista"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT="$ROOT_DIR/SpendScope.xcodeproj"
-SCHEME="SpendScope"
+PROJECT="$ROOT_DIR/CodexVista.xcodeproj"
+SCHEME="CodexVista"
 # Never share incremental build state between separate checkouts or worktrees.
 WORKSPACE_KEY="$(printf '%s' "$ROOT_DIR" | shasum -a 256 | awk '{print substr($1, 1, 12)}')"
-DERIVED_DATA="${SPENDSCOPE_DERIVED_DATA:-/private/tmp/SpendScope-DerivedData-$WORKSPACE_KEY}"
+DERIVED_DATA="${CODEXVISTA_DERIVED_DATA:-/private/tmp/CodexVista-DerivedData-$WORKSPACE_KEY}"
 APP_BUNDLE="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-BUILD_INPUT_FINGERPRINT_FILE="$DERIVED_DATA/.spendscope-build-inputs.sha256"
+BUILD_INPUT_FINGERPRINT_FILE="$DERIVED_DATA/.codexvista-build-inputs.sha256"
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
@@ -23,7 +23,7 @@ build_input_fingerprint() {
     cd "$ROOT_DIR"
     {
       find Sources Config -type f -print
-      find SpendScope.xcodeproj -type f ! -path "*/xcuserdata/*" -print
+      find CodexVista.xcodeproj -type f ! -path "*/xcuserdata/*" -print
       printf '%s\n' "script/build_and_run.sh"
     } | LC_ALL=C sort | while IFS= read -r path; do
       shasum -a 256 "$path"

@@ -1,4 +1,4 @@
-# SpendScope 技术档案
+# CodexVista 技术档案
 
 更新日期：2026-09-04
 
@@ -6,7 +6,7 @@
 
 ## 1. 产品定位
 
-SpendScope 是一款仅在本机运行的原生 macOS 菜单栏应用，用于观察 Codex CLI 与 Codex Desktop 产生的 Token 用量、额度窗口和使用活动。
+CodexVista 是一款仅在本机运行的原生 macOS 菜单栏应用，用于观察 Codex CLI 与 Codex Desktop 产生的 Token 用量、额度窗口和使用活动。
 
 核心目标：
 
@@ -33,17 +33,17 @@ SpendScope 是一款仅在本机运行的原生 macOS 菜单栏应用，用于�
 | 项目 | 当前约束 |
 | --- | --- |
 | 平台 | macOS 14.0 及以上 |
-| 工程 | 原生 Xcode macOS App，`SpendScope.xcodeproj` |
+| 工程 | 原生 Xcode macOS App，`CodexVista.xcodeproj` |
 | 语言 | Swift 6 |
 | UI | SwiftUI、AppKit、Swift Charts |
 | 状态 | Observation、Swift Concurrency |
 | 存储 | 系统 SQLite3，无第三方依赖 |
-| Bundle ID | `com.ychp.SpendScope` |
+| Bundle ID | `com.ychp.CodexVista` |
 | 版本来源 | `Config/Version.xcconfig` |
 | 发布架构 | Universal Binary：`arm64` + `x86_64` |
 | 发布渠道 | GitHub Releases，当前为未签名、未公证 DMG |
 
-工程使用共享 Scheme `SpendScope`。本地运行脚本根据工作区路径将 DerivedData 隔离到 `/private/tmp/SpendScope-DerivedData-<工作区指纹>`，避免文稿目录的文件提供程序扩展属性影响本地构建和签名，也避免不同 worktree 复用旧产物。源码、资源、工程配置或脚本输入发生变化时，脚本会先 clean 当前工作区的构建目录，再构建并验证实际运行的是本次生成的精确二进制。
+工程使用共享 Scheme `CodexVista`。本地运行脚本根据工作区路径将 DerivedData 隔离到 `/private/tmp/CodexVista-DerivedData-<工作区指纹>`，避免文稿目录的文件提供程序扩展属性影响本地构建和签名，也避免不同 worktree 复用旧产物。源码、资源、工程配置或脚本输入发生变化时，脚本会先 clean 当前工作区的构建目录，再构建并验证实际运行的是本次生成的精确二进制。
 
 ## 3. 总体架构
 
@@ -54,7 +54,7 @@ flowchart LR
     C --> D["最小事件解码"]
     D --> E["Token / 额度 / 套餐标准化"]
     D --> F["会话与活动归约"]
-    E --> G["SpendScope SQLite"]
+    E --> G["CodexVista SQLite"]
     F --> G
     G --> H["DashboardQueryService"]
     G --> I["SessionQueryService"]
@@ -67,13 +67,13 @@ flowchart LR
 - rollout JSONL 是 Token 分类、额度和生命周期事件的统计事实来源。
 - Codex SQLite 仅用于发现线程、补充归档状态、模型和子代理关系，不是精细统计的唯一来源。
 - Codex SQLite 缺失、被锁或格式暂时不兼容时，文件系统发现仍应继续工作。
-- 所有 Codex 文件和数据库始终只读；SpendScope 只写自己的 SQLite。
+- 所有 Codex 文件和数据库始终只读；CodexVista 只写自己的 SQLite。
 - 数据导入、查询和 UI 状态解耦，生产界面不使用预览数字兜底。
 
 ## 4. 工程目录与职责
 
 ```text
-Sources/SpendScope/
+Sources/CodexVista/
 ├── App/                 应用入口、生命周期、共享状态、额度提醒
 ├── Data/
 │   ├── Codex/           来源发现、JSONL 解码、增量导入、状态归约
@@ -92,7 +92,7 @@ Sources/SpendScope/
 
 | 组件 | 职责 |
 | --- | --- |
-| `SpendScopeApp` | 组合菜单栏、看板与设置 Scene，注入共享服务 |
+| `CodexVistaApp` | 组合菜单栏、看板与设置 Scene，注入共享服务 |
 | `DashboardStore` | Main Actor 上发布加载、正常、空、过期、失败和不兼容状态 |
 | `CodexSourceDiscovery` | 合并文件系统与线程索引，生成 rollout 清单和来源健康状态 |
 | `IncrementalJSONLReader` | 按字节偏移分块读取完整 JSONL 行，不加载整文件 |
@@ -127,7 +127,7 @@ Sources/SpendScope/
 - 子代理来源可能是结构化对象；按明确的 originator 归入 CLI 或 Desktop。
 - 无法确认时保存为 `unknown`，不猜测。
 
-索引读取使用 SQLite 只读模式和短 busy timeout，只提取线程 ID、rollout 路径、来源、模型、时间、归档状态、工作目录及子代理关系等安全字段。工作区名称从 Codex 全局状态的 `local-projects` 读取；同时读取原子写入留下的历史状态快照以恢复已归档工作区，并将名称与根集合派生哈希写入安全目录表。工作区任务列表优先读取 `threads.name` / `threads.title` 作为页面展示名称；任务名称会规范为空白折叠后的单行文本、最多 120 个字符，只在内存中参与看板组装，不进入 SpendScope 数据库或日志。以 `The following is the Codex` 开头的系统上下文模板不会作为名称透传：子任务可由 `agent_nickname`、`agent_role` 或 `source.subagent.thread_spawn` 中的安全代理元数据生成 `Codex 子任务 · <名称>`，Guardian 回退为 `命令权限检查`，其余继续使用匿名任务标识。父子关系优先读取 `thread_spawn_edges.parent_thread_id`；索引未保留历史边时，只白名单解码子线程首条 `session_meta` 中的线程 ID、父线程 ID 和创建时间。看板按根线程聚合主任务与所有层级的子代理，并用子线程创建时间匹配父线程的 `spawn_agent` 调用所在回复；缺少该活动事件时，回退到创建时最近启动的父回复。匹配会递归到根主回复，Token、模型以及 Skill / Tool 调用一起汇总；生命周期只使用原线程与原回复的事件，不把子代理完成、中断或回滚状态映射给父回复。多模型按稳定名称顺序展示。关系缺失或成环时保留原线程，Guardian 仍按内部任务口径隔离。不得读取第一条用户消息生成名称。索引异常会降级文件发现，而不是阻断全部导入。
+索引读取使用 SQLite 只读模式和短 busy timeout，只提取线程 ID、rollout 路径、来源、模型、时间、归档状态、工作目录及子代理关系等安全字段。工作区名称从 Codex 全局状态的 `local-projects` 读取；同时读取原子写入留下的历史状态快照以恢复已归档工作区，并将名称与根集合派生哈希写入安全目录表。工作区任务列表优先读取 `threads.name` / `threads.title` 作为页面展示名称；任务名称会规范为空白折叠后的单行文本、最多 120 个字符，只在内存中参与看板组装，不进入 CodexVista 数据库或日志。以 `The following is the Codex` 开头的系统上下文模板不会作为名称透传：子任务可由 `agent_nickname`、`agent_role` 或 `source.subagent.thread_spawn` 中的安全代理元数据生成 `Codex 子任务 · <名称>`，Guardian 回退为 `命令权限检查`，其余继续使用匿名任务标识。父子关系优先读取 `thread_spawn_edges.parent_thread_id`；索引未保留历史边时，只白名单解码子线程首条 `session_meta` 中的线程 ID、父线程 ID 和创建时间。看板按根线程聚合主任务与所有层级的子代理，并用子线程创建时间匹配父线程的 `spawn_agent` 调用所在回复；缺少该活动事件时，回退到创建时最近启动的父回复。匹配会递归到根主回复，Token、模型以及 Skill / Tool 调用一起汇总；生命周期只使用原线程与原回复的事件，不把子代理完成、中断或回滚状态映射给父回复。多模型按稳定名称顺序展示。关系缺失或成环时保留原线程，Guardian 仍按内部任务口径隔离。不得读取第一条用户消息生成名称。索引异常会降级文件发现，而不是阻断全部导入。
 
 ## 6. 事件白名单与隐私边界
 
@@ -150,10 +150,10 @@ Sources/SpendScope/
 应用自有数据库位于：
 
 ```text
-~/Library/Application Support/SpendScope/SpendScope.sqlite
+~/Library/Application Support/CodexVista/CodexVista.sqlite
 ```
 
-额度读取不会访问网络、认证文件或系统代理配置。软件更新功能会访问本项目 GitHub Releases，但不携带 SpendScope 保存的 Token、会话或项目统计。
+额度读取不会访问网络、认证文件或系统代理配置。软件更新功能会访问本项目 GitHub Releases，但不携带 CodexVista 保存的 Token、会话或项目统计。
 
 ## 7. Token 统计口径
 
@@ -331,7 +331,7 @@ Guardian 的“命令权限检查”属于内部任务：其 Token 保留在工�
 
 结构 v17 不支持直接降级到仅支持 v16 的旧版应用；发布说明应明确升级后的数据库兼容边界。
 
-迁移需要改变历史统计语义时，允许清空 SpendScope 派生数据并从未修改的 Codex rollout 重建；绝不删除 Codex 原始数据。
+迁移需要改变历史统计语义时，允许清空 CodexVista 派生数据并从未修改的 Codex rollout 重建；绝不删除 Codex 原始数据。
 
 ## 13. 查询与时间边界
 
@@ -398,7 +398,7 @@ Guardian 的“命令权限检查”属于内部任务：其 Token 保留在工�
 - 看板置顶。
 - 状态栏或刘海下方的摘要展示位置、实时预览、额度口径与倒计时。
 - 自动刷新和手动刷新。
-- 清空 SpendScope 派生数据并从 Codex 重抓。
+- 清空 CodexVista 派生数据并从 Codex 重抓。
 - 20%、10%、5% 提醒开关；提醒额度固定为 7 天窗口。
 - 来源健康状态。
 - 第一次订阅时间；保存于本机偏好设置，用于逐月计算当前订阅周期 Token。
@@ -420,9 +420,9 @@ Guardian 的“命令权限检查”属于内部任务：其 Token 保留在工�
 
 更新规则：
 
-- 从 `https://github.com/ychp/SpendScope/releases/latest` 获取最新版本。
+- 从 `https://github.com/ychp-ai/CodexVista/releases/latest` 获取最新版本。
 - 比较语义化版本，包括预发布标识。
-- 下载 `SpendScope-macOS-unsigned.dmg`。
+- 下载 `CodexVista-macOS-unsigned.dmg`。
 - 使用 Release 提供的 SHA-256 校验信息验证下载文件。
 - 安装仍由用户确认，不在后台替换正在运行的应用。
 
@@ -443,7 +443,7 @@ Guardian 的“命令权限检查”属于内部任务：其 Token 保留在工�
 
 ## 17. 测试策略
 
-测试只使用手写或生成的匿名化最小数据，不复制真实对话。XCTest App Host 会注入不可用的测试 Store，并跳过刷新、提醒和更新启动逻辑，禁止连接或迁移用户正式的 SpendScope 数据库。
+测试只使用手写或生成的匿名化最小数据，不复制真实对话。XCTest App Host 会注入不可用的测试 Store，并跳过刷新、提醒和更新启动逻辑，禁止连接或迁移用户正式的 CodexVista 数据库。
 
 覆盖范围：
 
@@ -466,11 +466,11 @@ Guardian 的“命令权限检查”属于内部任务：其 Token 保留在工�
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild -project SpendScope.xcodeproj \
-  -scheme SpendScope \
+  xcodebuild -project CodexVista.xcodeproj \
+  -scheme CodexVista \
   -configuration Debug \
   -destination "platform=macOS,arch=arm64" \
-  -derivedDataPath /private/tmp/SpendScope-Tests \
+  -derivedDataPath /private/tmp/CodexVista-Tests \
   test
 
 ./script/build_and_run.sh --verify
@@ -480,7 +480,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ## 18. 构建与发布
 
-本地开发入口为 `script/build_and_run.sh`，支持运行、LLDB、日志、Telemetry 和启动验证。脚本会在构建前以及打开 App 前各停止一次旧进程，并通过 LaunchServices 的默认单实例语义启动，避免重叠的验证流程使用 `open -n` 留下多个 SpendScope 实例。
+本地开发入口为 `script/build_and_run.sh`，支持运行、LLDB、日志、Telemetry 和启动验证。脚本会在构建前以及打开 App 前各停止一次旧进程，并通过 LaunchServices 的默认单实例语义启动，避免重叠的验证流程使用 `open -n` 留下多个 CodexVista 实例。
 
 GitHub Actions 手动发布流程：
 
@@ -489,15 +489,15 @@ GitHub Actions 手动发布流程：
 3. 校验运行分支、语义化版本、正整数构建号以及 Xcode 的实际构建设置，并默认拒绝覆盖已有同版本 Release。
 4. 在 macOS 26 runner 上运行测试。
 5. 使用 `ARCHS='arm64 x86_64'` 和 `ONLY_ACTIVE_ARCH=NO` 构建 Release，并使用 `lipo` 校验两种架构。
-6. 创建包含 `SpendScope.app` 与 Applications 快捷方式的压缩 DMG。
+6. 创建包含 `CodexVista.app` 与 Applications 快捷方式的压缩 DMG。
 7. 为 DMG 生成独立 SHA-256 校验文件，文件内容只引用 DMG 文件名，便于下载后直接校验。
 8. 根据手动输入的版本亮点生成结构化中文版本说明，包含安装、芯片支持、未签名打开方式、附件、已知限制和完整变更链接。
-9. 创建 GitHub Release，正式标题固定为 `SpendScope v<版本号>`，Tag 指向工作流触发时的源码提交。
+9. 创建 GitHub Release，正式标题固定为 `CodexVista v<版本号>`，Tag 指向工作流触发时的源码提交。
 
 当前产物：
 
-- `SpendScope-macOS-unsigned.dmg`
-- `SpendScope-macOS-unsigned.dmg.sha256`
+- `CodexVista-macOS-unsigned.dmg`
+- `CodexVista-macOS-unsigned.dmg.sha256`
 - GitHub 自动生成的 `Source code (zip)`
 - GitHub 自动生成的 `Source code (tar.gz)`
 
@@ -506,7 +506,7 @@ GitHub 已为每个 Release 标签自动提供 ZIP 和 tar.gz 源码快照，因
 当前 DMG 未使用 Developer ID 签名或 Apple 公证。用户首次打开可能需要右键选择“打开”，或对可信下载执行：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/SpendScope.app
+xattr -dr com.apple.quarantine /Applications/CodexVista.app
 ```
 
 正式无警告分发需要 Apple Developer Program、Developer ID Application 签名和公证。
@@ -563,3 +563,7 @@ xattr -dr com.apple.quarantine /Applications/SpendScope.app
 - 所有刷新入口必须保持幂等，检查点必须与业务数据原子提交。
 - 调整模型价格目录时必须同步价格来源说明、参考价回退策略和查询测试；不能把 API 等值估算描述为 Codex 实际账单。
 - README 面向用户；本文档面向开发与维护，架构变化应同步更新本文档。
+
+## 应用更名与本地数据迁移
+
+应用、Target、Scheme、模块和 Bundle ID 已统一为 CodexVista（`com.ychp.CodexVista`），更新源为 `ychp-ai/CodexVista`。`AppIdentityMigration` 仅为升级兼容保留旧名 SpendScope：启动时将旧偏好域中明确支持的设置合并到新域，保留新域已有值并记录一次性标记；新版数据库不存在时，以 SQLite backup 从旧数据库读取完整快照（包含已提交的 WAL），关闭后原子移入 `~/Library/Application Support/CodexVista/CodexVista.sqlite`。旧数据库保留，不迁移下载缓存、不修改原始 Codex 记录、不改变数据库 schema；失败时不发布半成品，下次启动可重试。通知授权归属新的 Bundle ID，由 macOS 重新管理。

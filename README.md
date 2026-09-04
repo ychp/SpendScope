@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="Sources/SpendScope/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-128@2x.png" width="128" alt="SpendScope 图标">
+  <img src="Sources/CodexVista/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-128@2x.png" width="128" alt="CodexVista 图标">
 </p>
 
-<h1 align="center">SpendScope</h1>
+<h1 align="center">CodexVista</h1>
 
 <p align="center">在 macOS 菜单栏看清 Codex Token 用量、额度状态和使用趋势。</p>
 
 <p align="center">仅在本机运行 · 无需额外登录 · 不上传使用数据</p>
 
-SpendScope 是一款面向 Codex 用户的原生 macOS 菜单栏应用。它读取 Codex CLI 和 Codex macOS 应用保存在本机的使用记录，将分散的 Token、额度、项目和调用数据整理成随时可查的菜单栏摘要与详细看板。
+CodexVista 是一款面向 Codex 用户的原生 macOS 菜单栏应用。它读取 Codex CLI 和 Codex macOS 应用保存在本机的使用记录，将分散的 Token、额度、项目和调用数据整理成随时可查的菜单栏摘要与详细看板。
 
-SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
+CodexVista 是第三方本地工具，并非 OpenAI 官方产品。
 
 ## 核心功能
 
@@ -33,27 +33,27 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ## 软件界面
 
-以下界面截图基于 SpendScope v1.3.0，数据会随本机 Codex 使用记录变化；关联目录、刘海摘要设置和模型排行布局已进一步调整，以本文功能说明为准。
+以下界面截图保留更名前 v1.3.0 的界面，仅供布局参考；当前应用名称已统一为 CodexVista，数据会随本机 Codex 使用记录变化；关联目录、刘海摘要设置和模型排行布局已进一步调整，以本文功能说明为准。
 
 ### 菜单栏与弹窗
 
-![SpendScope 状态栏实时预览，显示 Codex 额度和重置倒计时](docs/images/spendscope-status-bar.png)
+![CodexVista 状态栏实时预览，显示 Codex 额度和重置倒计时](docs/images/codexvista-status-bar.png)
 
-![SpendScope 状态栏弹窗，展示额度、今日 Token 构成、刷新和更新入口](docs/images/spendscope-popover.png)
+![CodexVista 状态栏弹窗，展示额度、今日 Token 构成、刷新和更新入口](docs/images/codexvista-popover.png)
 
 “状态栏与刘海”设置中的实时预览与所选展示位置使用同一套绘制样式。默认在状态栏展示额度摘要，可通过设置选择“刘海下方”，此时在刘海下沿显示黑色摘要，菜单栏保留图标入口；合盖或断开刘海屏幕后自动回退状态栏。内容显示在摄像头遮挡区域下方，会占用顶部一小条工作区。无需打开主窗口即可查看额度和今日用量；弹窗还提供刷新、打开看板、进入设置、检查更新和退出入口。
 
 ### 详细看板
 
-![SpendScope 今日任务页，展示任务状态、项目、回复数和今日 Token](docs/images/spendscope-today-tasks.png)
+![CodexVista 今日任务页，展示任务状态、项目、回复数和今日 Token](docs/images/codexvista-today-tasks.png)
 
-![SpendScope 详细看板，展示 7 天额度、当前订阅周期、Token 汇总、用量日历和趋势图](docs/images/spendscope-dashboard.png)
+![CodexVista 详细看板，展示 7 天额度、当前订阅周期、Token 汇总、用量日历和趋势图](docs/images/codexvista-dashboard.png)
 
-![SpendScope Skills 与 Tools 排行](docs/images/spendscope-activity-usage.png)
+![CodexVista Skills 与 Tools 排行](docs/images/codexvista-activity-usage.png)
 
-![SpendScope 项目用量排行，展示项目、目录、任务、回复和 AI 耗时](docs/images/spendscope-project-usage.png)
+![CodexVista 项目用量排行，展示项目、目录、任务、回复和 AI 耗时](docs/images/codexvista-project-usage.png)
 
-![SpendScope 周期用量卡中的模型用量与 API 等值费用排行](docs/images/spendscope-model-hover-details.png)
+![CodexVista 周期用量卡中的模型用量与 API 等值费用排行](docs/images/codexvista-model-hover-details.png)
 
 详细看板在概览区同时展示 7 天额度、今日、7 日、30 日、累计和可选的当前订阅周期用量；每张用量卡都可悬浮预览或点击固定对应时间范围的模型用量与费用排行。下方包含今日任务、用量趋势、Skills / Tools 和项目用量四个分析页。今日任务按状态和最后更新时间排序，可继续查看任务的 Token 构成、项目目录与回复明细。
 
@@ -61,13 +61,13 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ### 项目与回复详情
 
-![SpendScope 今日任务详情，展示 Token 构成、相关目录和回复明细](docs/images/spendscope-today-task-detail.png)
+![CodexVista 今日任务详情，展示 Token 构成、相关目录和回复明细](docs/images/codexvista-today-task-detail.png)
 
-![SpendScope 项目详情概览，展示项目目录、AI 耗时、Token 构成和近 7 日趋势](docs/images/spendscope-project-overview.png)
+![CodexVista 项目详情概览，展示项目目录、AI 耗时、Token 构成和近 7 日趋势](docs/images/codexvista-project-overview.png)
 
-![SpendScope 项目任务明细](docs/images/spendscope-task-details.png)
+![CodexVista 项目任务明细](docs/images/codexvista-task-details.png)
 
-![SpendScope 项目回复明细](docs/images/spendscope-reply-details.png)
+![CodexVista 项目回复明细](docs/images/codexvista-reply-details.png)
 
 项目排行和详情随刷新同步 Codex 中最新的项目名称与关联目录；项目详情的“关联目录”和今日任务详情的“项目相关目录”只展示目录名称，缺少项目配置时回退到会话记录中的工作目录。Token 用量保留在项目、任务和回复层级：Codex 的用量记录无法精确拆分到各个目录，因此目录旁不展示 Token、占比或独立用量状态。
 
@@ -77,7 +77,7 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 
 ### 设置
 
-![SpendScope 完整设置页，包含外观、看板、状态栏、提醒、数据刷新、软件更新、订阅周期和套餐说明](docs/images/spendscope-settings.png)
+![CodexVista 完整设置页，包含外观、看板、状态栏、提醒、数据刷新、软件更新、订阅周期和套餐说明](docs/images/codexvista-settings.png)
 
 设置页覆盖外观、看板行为、状态栏、提醒、数据源、刷新与重建、软件更新、订阅周期、套餐说明和隐私提示。所有悬浮明细与确认弹窗截图见[完整功能说明](docs/FEATURES.md)。
 
@@ -88,31 +88,31 @@ SpendScope 是第三方本地工具，并非 OpenAI 官方产品。
 - macOS 14 或更高版本。
 - 已在这台 Mac 上使用过 Codex CLI 或 Codex macOS 应用。
 
-SpendScope 依赖本机 Codex 产生的使用记录。如果尚未使用 Codex，应用中暂时不会有可统计的数据。
+CodexVista 依赖本机 Codex 产生的使用记录。如果尚未使用 Codex，应用中暂时不会有可统计的数据。
 
 ## 安装
 
-1. 前往 [SpendScope Releases](https://github.com/ychp-ai/SpendScope/releases)。
-2. 下载 `SpendScope-macOS-unsigned.dmg`。
-3. 打开 DMG，将 SpendScope 拖入“应用程序”文件夹。
+1. 前往 [CodexVista Releases](https://github.com/ychp-ai/CodexVista/releases)。
+2. 下载 `CodexVista-macOS-unsigned.dmg`。
+3. 打开 DMG，将 CodexVista 拖入“应用程序”文件夹。
 
 发布包是同时支持 Apple 芯片（arm64）和 Intel 芯片（x86_64）的 Universal Binary。
 
 ### 首次打开
 
-当前安装包尚未使用 Apple Developer ID 签名和公证。首次启动时，请在 Finder 的“应用程序”中右键 SpendScope，选择“打开”，然后在系统提示中再次确认。无需关闭 macOS 的全局安全设置。
+当前安装包尚未使用 Apple Developer ID 签名和公证。首次启动时，请在 Finder 的“应用程序”中右键 CodexVista，选择“打开”，然后在系统提示中再次确认。无需关闭 macOS 的全局安全设置。
 
 如果系统提示“应用已损坏”，请先确认 DMG 来自本项目的 GitHub Releases，再执行：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/SpendScope.app
+xattr -dr com.apple.quarantine /Applications/CodexVista.app
 ```
 
-如果没有安装到“应用程序”文件夹，请将路径替换为 `SpendScope.app` 的实际位置。
+如果没有安装到“应用程序”文件夹，请将路径替换为 `CodexVista.app` 的实际位置。
 
 ## 开始使用
 
-1. 启动 SpendScope，默认在状态栏显示额度摘要；可在“设置 → 状态栏与刘海 → 展示位置”选择“刘海下方”。
+1. 启动 CodexVista，默认在状态栏显示额度摘要；可在“设置 → 状态栏与刘海 → 展示位置”选择“刘海下方”。
 2. 点击刘海摘要或菜单栏图标，查看今日 Token、额度状态和 Token 构成。
 3. 点击“打开看板”，查看趋势、日历和多维排行；从项目排行继续进入任务与回复详情。
 4. 打开“设置”，按需调整色系、状态栏、额度提醒、自动刷新、更新检查和看板置顶。
@@ -121,7 +121,7 @@ xattr -dr com.apple.quarantine /Applications/SpendScope.app
 
 ## 数据与隐私
 
-SpendScope 只读取统计所需的最小字段，包括 Token 计数、额度窗口、模型、套餐、会话状态、工作目录、项目根目录组合、Codex 项目名称，以及 Skills / Tools 调用标识。
+CodexVista 只读取统计所需的最小字段，包括 Token 计数、额度窗口、模型、套餐、会话状态、工作目录、项目根目录组合、Codex 项目名称，以及 Skills / Tools 调用标识。
 
 它不会读取、保存或上传：
 
@@ -133,10 +133,12 @@ SpendScope 只读取统计所需的最小字段，包括 Token 计数、额度�
 整理后的统计与导入进度只保存在：
 
 ```text
-~/Library/Application Support/SpendScope/SpendScope.sqlite
+~/Library/Application Support/CodexVista/CodexVista.sqlite
 ```
 
-SpendScope 不会修改或删除 Codex 原始记录。额度只从本机 Codex 记录读取；启用更新检查时会访问本项目的 GitHub Releases，并且不会上传 SpendScope 的统计数据库。详细说明见 [完整功能说明：数据与隐私](docs/FEATURES.md#数据与隐私边界)。
+首次启动新版时，会自动接续旧版 SpendScope 的本地统计数据和偏好设置。迁移保留旧数据库，且不会覆盖已经存在的 CodexVista 数据；通知权限由 macOS 按新应用标识重新管理。
+
+CodexVista 不会修改或删除 Codex 原始记录。额度只从本机 Codex 记录读取；启用更新检查时会访问本项目的 GitHub Releases，并且不会上传 CodexVista 的统计数据库。详细说明见 [完整功能说明：数据与隐私](docs/FEATURES.md#数据与隐私边界)。
 
 ## 当前限制
 
@@ -159,11 +161,11 @@ SpendScope 不会修改或删除 Codex 原始记录。额度只从本机 Codex �
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild -project SpendScope.xcodeproj \
-  -scheme SpendScope \
+  xcodebuild -project CodexVista.xcodeproj \
+  -scheme CodexVista \
   -configuration Debug \
   -destination "platform=macOS,arch=arm64" \
-  -derivedDataPath /private/tmp/SpendScope-Tests \
+  -derivedDataPath /private/tmp/CodexVista-Tests \
   test
 ```
 
@@ -177,4 +179,4 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ## 反馈问题
 
-如遇到数据异常、无法启动或有功能建议，请在 [GitHub Issues](https://github.com/ychp-ai/SpendScope/issues) 中反馈。为了保护隐私，请不要上传包含提示词、回复内容、认证信息或项目代码的原始 Codex 记录。
+如遇到数据异常、无法启动或有功能建议，请在 [GitHub Issues](https://github.com/ychp-ai/CodexVista/issues) 中反馈。为了保护隐私，请不要上传包含提示词、回复内容、认证信息或项目代码的原始 Codex 记录。

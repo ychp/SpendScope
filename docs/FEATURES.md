@@ -1,8 +1,8 @@
-# SpendScope 完整功能说明
+# CodexVista 完整功能说明
 
-本文档记录 SpendScope 当前已经实现的用户功能、数据口径、刷新机制与产品边界。项目首页和快速开始见 [README](../README.md)，底层实现与维护约束见 [技术档案](TECHNICAL_ARCHIVE.md)。
+本文档记录 CodexVista 当前已经实现的用户功能、数据口径、刷新机制与产品边界。项目首页和快速开始见 [README](../README.md)，底层实现与维护约束见 [技术档案](TECHNICAL_ARCHIVE.md)。
 
-本文中的主界面截图基于 SpendScope v1.3.0；Token、额度、任务状态和耗时会随本机数据变化，关联目录展示以当前文字说明为准。
+本文中的主界面截图保留更名前 v1.3.0 的界面，仅供布局参考；当前应用名称已统一为 CodexVista；Token、额度、任务状态和耗时会随本机数据变化，关联目录展示以当前文字说明为准。
 
 ## 功能总览
 
@@ -22,22 +22,22 @@
 
 | 触发入口 | 交互类型 | 展示内容 | 截图 |
 | --- | --- | --- | --- |
-| 点击菜单栏项目 | 状态栏弹窗 | 套餐、7 天额度、今日 Token 构成、刷新、更新、看板、设置与退出 | [截图](images/spendscope-popover.png) |
-| 悬浮周期卡模型数量；点击后固定 | 模型排行弹窗 | 当前卡片时间范围内的模型、Token、占比和 API 等值费用 | [截图](images/spendscope-model-hover-details.png) |
-| 悬浮模型 Token 数值 | 模型 Token 明细 | 未缓存输入、缓存输入、可见输出、推理输出和总量 | [同组截图](images/spendscope-model-cost-hover-details.png) |
-| 悬浮模型费用 | 模型费用明细 | 四类 Token、对应单价、分项估算、总额和参考价标记 | [截图](images/spendscope-model-cost-hover-details.png) |
-| 悬浮看板趋势节点 | 图表内悬浮卡 | 日期或周期、总 Token、四类 Token 和 API 等值费用 | [截图](images/spendscope-trend-hover.png) |
-| 悬浮日历日期 | 日历弹窗 | 当日总 Token 与四类 Token 构成 | [截图](images/spendscope-calendar-day-hover.png) |
-| 悬浮热力图例 | 图例弹窗 | 颜色等级对应的 Token 区间和当月峰值 | [截图](images/spendscope-calendar-legend-hover.png) |
-| 悬浮命名空间 Skill | Skill 细分弹窗 | 细分 Skill、直接使用次数和总调用次数 | [截图](images/spendscope-skill-breakdown-hover.png) |
-| 点击今日任务 | 独立详情窗口 | 今日 Token、耗时、项目目录和回复明细 | [截图](images/spendscope-today-task-detail.png) |
-| 点击项目排行 | 独立详情窗口 | 项目概览、任务、回复、趋势和关联目录 | [截图](images/spendscope-project-overview.png) |
-| 悬浮项目趋势节点 | 图表内提示卡 | 日期、Token 和 7 日占比 | [截图](images/spendscope-project-trend-hover.png) |
-| 悬浮项目任务行 | 窗口外侧悬浮面板 | 任务模型、Token、完整 Skills / Tools 和 API 等值费用 | [截图](images/spendscope-task-activity-detail.png) |
-| 悬浮项目回复行 | 窗口外侧悬浮面板 | 单次回复状态、耗时、模型、Token、Skills / Tools 和费用 | [截图](images/spendscope-reply-activity-detail.png) |
-| 悬浮今日任务回复行 | 窗口外侧悬浮面板 | 今日任务内单次回复的模型、Token 和调用明细 | [截图](images/spendscope-today-task-reply-hover.png) |
-| 点击“模型费用说明” | 计费说明弹窗 | 已收录模型单价、参考价规则、估算边界和官方价格链接 | [截图](images/spendscope-model-pricing-popover.png) |
-| 点击“清空并重抓” | 破坏性操作确认框 | 明确清理范围，并说明不会删除 Codex 原始数据 | [截图](images/spendscope-rebuild-confirmation.png) |
+| 点击菜单栏项目 | 状态栏弹窗 | 套餐、7 天额度、今日 Token 构成、刷新、更新、看板、设置与退出 | [截图](images/codexvista-popover.png) |
+| 悬浮周期卡模型数量；点击后固定 | 模型排行弹窗 | 当前卡片时间范围内的模型、Token、占比和 API 等值费用 | [截图](images/codexvista-model-hover-details.png) |
+| 悬浮模型 Token 数值 | 模型 Token 明细 | 未缓存输入、缓存输入、可见输出、推理输出和总量 | [同组截图](images/codexvista-model-cost-hover-details.png) |
+| 悬浮模型费用 | 模型费用明细 | 四类 Token、对应单价、分项估算、总额和参考价标记 | [截图](images/codexvista-model-cost-hover-details.png) |
+| 悬浮看板趋势节点 | 图表内悬浮卡 | 日期或周期、总 Token、四类 Token 和 API 等值费用 | [截图](images/codexvista-trend-hover.png) |
+| 悬浮日历日期 | 日历弹窗 | 当日总 Token 与四类 Token 构成 | [截图](images/codexvista-calendar-day-hover.png) |
+| 悬浮热力图例 | 图例弹窗 | 颜色等级对应的 Token 区间和当月峰值 | [截图](images/codexvista-calendar-legend-hover.png) |
+| 悬浮命名空间 Skill | Skill 细分弹窗 | 细分 Skill、直接使用次数和总调用次数 | [截图](images/codexvista-skill-breakdown-hover.png) |
+| 点击今日任务 | 独立详情窗口 | 今日 Token、耗时、项目目录和回复明细 | [截图](images/codexvista-today-task-detail.png) |
+| 点击项目排行 | 独立详情窗口 | 项目概览、任务、回复、趋势和关联目录 | [截图](images/codexvista-project-overview.png) |
+| 悬浮项目趋势节点 | 图表内提示卡 | 日期、Token 和 7 日占比 | [截图](images/codexvista-project-trend-hover.png) |
+| 悬浮项目任务行 | 窗口外侧悬浮面板 | 任务模型、Token、完整 Skills / Tools 和 API 等值费用 | [截图](images/codexvista-task-activity-detail.png) |
+| 悬浮项目回复行 | 窗口外侧悬浮面板 | 单次回复状态、耗时、模型、Token、Skills / Tools 和费用 | [截图](images/codexvista-reply-activity-detail.png) |
+| 悬浮今日任务回复行 | 窗口外侧悬浮面板 | 今日任务内单次回复的模型、Token 和调用明细 | [截图](images/codexvista-today-task-reply-hover.png) |
+| 点击“模型费用说明” | 计费说明弹窗 | 已收录模型单价、参考价规则、估算边界和官方价格链接 | [截图](images/codexvista-model-pricing-popover.png) |
+| 点击“清空并重抓” | 破坏性操作确认框 | 明确清理范围，并说明不会删除 Codex 原始数据 | [截图](images/codexvista-rebuild-confirmation.png) |
 | 悬浮刷新、设置、置顶、关闭、排序、筛选等控件 | macOS Help 提示 | 控件用途；刷新提示还包含结果说明与 `⌘R` 快捷键 | 系统标准样式 |
 | 额度达到预警阈值 | macOS 系统通知 | 剩余额度、阈值和本地时区重置时间 | 系统通知中心 |
 
@@ -48,11 +48,11 @@
 - 状态栏额度固定显示 7 天窗口。
 - 可在“已用比例”和“剩余比例”之间切换。
 - 可选择是否显示额度重置倒计时；状态栏按天显示 `xd`，不足一天按小时显示 `xh`。
-- 可关闭实时额度预览，仅保留 SpendScope 图标与名称。
+- 可关闭实时额度预览，仅保留 CodexVista 图标与名称。
 - 暂无有效额度时自动隐藏对应指标，避免将过期数据展示为满额。
 - 跟随 macOS 外观绘制状态栏内容。
 
-![SpendScope 状态栏实时预览](images/spendscope-status-bar.png)
+![CodexVista 状态栏实时预览](images/codexvista-status-bar.png)
 
 ### 状态栏弹窗
 
@@ -71,7 +71,7 @@
 - 支持打开详细看板、打开设置、检查或安装更新，以及退出应用。
 - 对加载中、无数据、数据过期、读取失败和格式不兼容状态分别给出提示与恢复入口。
 
-![SpendScope 状态栏弹窗](images/spendscope-popover.png)
+![CodexVista 状态栏弹窗](images/codexvista-popover.png)
 
 ## 详细看板
 
@@ -86,7 +86,7 @@
 - 刷新按钮集中展示刷新中、成功、部分更新和失败状态；悬浮提示包含结果说明与 `⌘R` 快捷键。
 - 支持加载、正常、空数据、过期、失败和格式不兼容等状态；首次读取本地统计时使用与真实看板布局一致的动画骨架反馈进度。
 
-![SpendScope 详细看板，展示 7 天额度、当前订阅周期、周期汇总和用量趋势](images/spendscope-dashboard.png)
+![CodexVista 详细看板，展示 7 天额度、当前订阅周期、周期汇总和用量趋势](images/codexvista-dashboard.png)
 
 ### 今日任务
 
@@ -95,9 +95,9 @@
 - 点击任务后打开独立详情窗口，展示四类 Token 构成、回复数、项目相关目录和回复明细。
 - 回复明细与项目详情共用同一套行内容和窗口外调用悬浮面板，可查看每次回复的状态、耗时、模型、Token 以及完整 Skills / Tools 调用。
 
-![SpendScope 今日任务页](images/spendscope-today-tasks.png)
+![CodexVista 今日任务页](images/codexvista-today-tasks.png)
 
-![SpendScope 今日任务详情](images/spendscope-today-task-detail.png)
+![CodexVista 今日任务详情](images/codexvista-today-task-detail.png)
 
 ### 用量趋势与日历
 
@@ -108,11 +108,11 @@
 - 悬浮日历日期可查看当日 Token 明细；悬浮热力图例可查看各颜色对应的用量区间。
 - 每日统计按 UTC 日期归属，以尽量接近 Codex 服务端的每日统计口径。
 
-![看板趋势节点悬浮明细](images/spendscope-trend-hover.png)
+![看板趋势节点悬浮明细](images/codexvista-trend-hover.png)
 
-![日历日期悬浮明细](images/spendscope-calendar-day-hover.png)
+![日历日期悬浮明细](images/codexvista-calendar-day-hover.png)
 
-![热力图例悬浮说明](images/spendscope-calendar-legend-hover.png)
+![热力图例悬浮说明](images/codexvista-calendar-legend-hover.png)
 
 ### Skills / Tools 排行
 
@@ -122,9 +122,9 @@
 - 悬浮汇总 Skill 可查看各细分 Skill 和“直接使用”的调用次数。
 - Tools 按完整名称独立排行。
 
-![SpendScope Skills 与 Tools 排行](images/spendscope-activity-usage.png)
+![CodexVista Skills 与 Tools 排行](images/codexvista-activity-usage.png)
 
-![命名空间 Skill 的细分调用悬浮窗](images/spendscope-skill-breakdown-hover.png)
+![命名空间 Skill 的细分调用悬浮窗](images/codexvista-skill-breakdown-hover.png)
 
 ### 项目用量排行
 
@@ -139,7 +139,7 @@
 - 缺少明确项目配置时，同名单目录仅在共享项目路径或 Git 仓库身份时合并；已明确属于不同 Codex 项目的记录不会因同名或共享工作目录而被合并。
 - 经确认的历史临时项目可通过本地派生 ID 别名并入目标项目，别名在全量重建后保留。
 
-![SpendScope 项目用量排行](images/spendscope-project-usage.png)
+![CodexVista 项目用量排行](images/codexvista-project-usage.png)
 
 ### 项目详情
 
@@ -155,19 +155,19 @@
 
 内部“命令权限检查”任务不会出现在任务列表中，也不计入任务数、回复数和最后活动时间；它产生的 Token 仍计入项目真实用量。无法明确归属到某次回复的历史 Token 仍计入任务和项目总量，但不会被错误分配给具体回复。
 
-![SpendScope 项目详情概览](images/spendscope-project-overview.png)
+![CodexVista 项目详情概览](images/codexvista-project-overview.png)
 
-![SpendScope 任务明细](images/spendscope-task-details.png)
+![CodexVista 任务明细](images/codexvista-task-details.png)
 
-![SpendScope 回复明细](images/spendscope-reply-details.png)
+![CodexVista 回复明细](images/codexvista-reply-details.png)
 
-![项目近 7 日趋势节点提示](images/spendscope-project-trend-hover.png)
+![项目近 7 日趋势节点提示](images/codexvista-project-trend-hover.png)
 
-![项目任务的窗口外侧调用悬浮面板](images/spendscope-task-activity-detail.png)
+![项目任务的窗口外侧调用悬浮面板](images/codexvista-task-activity-detail.png)
 
-![项目回复的窗口外侧调用悬浮面板](images/spendscope-reply-activity-detail.png)
+![项目回复的窗口外侧调用悬浮面板](images/codexvista-reply-activity-detail.png)
 
-![今日任务回复的窗口外侧调用悬浮面板](images/spendscope-today-task-reply-hover.png)
+![今日任务回复的窗口外侧调用悬浮面板](images/codexvista-today-task-reply-hover.png)
 
 ### 模型用量与费用
 
@@ -183,11 +183,11 @@
 
 API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费的大致规模，不代表 Codex 订阅的实际账单。
 
-![周期用量卡中固定展开的模型用量与 API 等值费用排行](images/spendscope-model-hover-details.png)
+![周期用量卡中固定展开的模型用量与 API 等值费用排行](images/codexvista-model-hover-details.png)
 
-![模型 API 等值费用悬浮明细](images/spendscope-model-cost-hover-details.png)
+![模型 API 等值费用悬浮明细](images/codexvista-model-cost-hover-details.png)
 
-![模型标准 API 价格与估算边界说明](images/spendscope-model-pricing-popover.png)
+![模型标准 API 价格与估算边界说明](images/codexvista-model-pricing-popover.png)
 
 ## 刷新、额度与数据修复
 
@@ -209,22 +209,22 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 ### 手动操作
 
 - **立即刷新**：增量读取上次刷新后新增或变化的本机记录，其中同时更新用量和 7 天额度。
-- **清空并重抓**：清空 SpendScope 自己保存的统计和导入检查点，从本机 Codex 数据重新计算；不会删除 Codex 原始数据。
+- **清空并重抓**：清空 CodexVista 自己保存的统计和导入检查点，从本机 Codex 数据重新计算；不会删除 Codex 原始数据。
 - 全量重建会显示清理、扫描、逐文件导入和生成统计结果等阶段；发现记录后展示已处理文件数、总文件数和进度。
 
-“清空并重抓”会先展示确认弹窗，明确说明只清空 SpendScope 自己保存的聚合统计与检查点，不删除 Codex 原始数据。
+“清空并重抓”会先展示确认弹窗，明确说明只清空 CodexVista 自己保存的聚合统计与检查点，不删除 Codex 原始数据。
 
-![清空并重新抓取所有数据的确认弹窗](images/spendscope-rebuild-confirmation.png)
+![清空并重新抓取所有数据的确认弹窗](images/codexvista-rebuild-confirmation.png)
 
 ### 数据源健康状态
 
 设置页会分别显示 Codex CLI、Codex macOS 和线程索引的检测结果，包括已连接、未检测到、部分不可用和格式不兼容。线程索引不可用时，应用会尽量降级到文件系统发现，不阻断全部导入。
 
-![数据源、刷新与软件更新设置](images/spendscope-settings-data.png)
+![数据源、刷新与软件更新设置](images/codexvista-settings-data.png)
 
 ## 提醒与个性化设置
 
-以下截图均来自 SpendScope v1.3.0。先按功能分区展示便于阅读的裁剪图，最后提供从顶部到隐私提示的完整设置页长截图。
+以下截图均来自 CodexVista v1.3.0。先按功能分区展示便于阅读的裁剪图，最后提供从顶部到隐私提示的完整设置页长截图。
 
 ### 额度提醒
 
@@ -234,19 +234,19 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 - 同一额度周期的同一档位只通知一次；进入新的重置周期后重新计算。
 - 开启时请求 macOS 通知权限；设置页会显示授权状态，并提供进入系统设置的入口。
 
-![额度提醒、预警等级和通知权限设置](images/spendscope-settings-reminders.png)
+![额度提醒、预警等级和通知权限设置](images/codexvista-settings-reminders.png)
 
 ### 界面设置
 
 - 可在跟随 macOS 系统、清爽浅色和科技深色之间切换；看板、状态栏弹窗、设置与项目详情同步生效。
 - 设置看板是否始终置顶。
-- 设置点击看板关闭按钮时是仅关闭看板，还是直接退出 SpendScope。
+- 设置点击看板关闭按钮时是仅关闭看板，还是直接退出 CodexVista。
 - 选择在状态栏或刘海下方展示摘要，并控制是否显示实时额度；无刘海屏幕自动回退状态栏。
 - 在已用比例与剩余比例之间切换。
 - 设置是否显示重置倒计时。
 - 状态栏设置区提供实时预览。
 
-![外观、看板和状态栏设置](images/spendscope-settings-appearance.png)
+![外观、看板和状态栏设置](images/codexvista-settings-appearance.png)
 
 ### 套餐与计费说明
 
@@ -256,7 +256,7 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 - “其他计费方式”集中展示模型 API 标准单价、费用估算边界和官方价格链接；看板周期用量卡中的模型排行只保留用量与费用明细。
 - 套餐说明不参与账单计算，API 等值费用也不代表 Codex 实际账单。
 
-![订阅周期、Codex 套餐与其他计费方式](images/spendscope-settings-plans.png)
+![订阅周期、Codex 套餐与其他计费方式](images/codexvista-settings-plans.png)
 
 ### 软件更新
 
@@ -270,7 +270,7 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 
 下图覆盖外观、看板、状态栏、额度提醒、数据与刷新、软件更新、订阅周期、Codex 套餐、其他计费方式和底部隐私提示。
 
-![SpendScope v1.3.0 完整设置页长截图](images/spendscope-settings.png)
+![CodexVista v1.3.0 完整设置页长截图](images/codexvista-settings.png)
 
 ## 数据口径
 
@@ -289,9 +289,9 @@ API 等值费用只用于理解同等 Token 若按公开 API 标准价格计费�
 | 模型用量 | 按模型汇总四类 Token，并生成今日、7 日、30 日、累计和可选当前订阅周期的排行 |
 | API 等值费用 | 已收录模型按公开 API 标准价格估算；其他模型按 GPT-5.5 参考价估算并标记 `≈` |
 
-Codex 的 `total_token_usage` 是线程内累计快照，SpendScope 只计算相邻快照的正增量；计数回退时开启新分段，不产生负 Token。重复刷新、文件移动、会话归档和应用重启不会重复累计已导入事件。
+Codex 的 `total_token_usage` 是线程内累计快照，CodexVista 只计算相邻快照的正增量；计数回退时开启新分段，不产生负 Token。重复刷新、文件移动、会话归档和应用重启不会重复累计已导入事件。
 
-SpendScope 根据本机文件计算，Codex 个人资料使用服务端汇总。日期归属、显示取整、跨设备使用、历史文件是否仍保留在本机等因素都可能造成两处数字不同。
+CodexVista 根据本机文件计算，Codex 个人资料使用服务端汇总。日期归属、显示取整、跨设备使用、历史文件是否仍保留在本机等因素都可能造成两处数字不同。
 
 ## 数据与隐私边界
 
@@ -303,13 +303,13 @@ SpendScope 根据本机文件计算，Codex 个人资料使用服务端汇总。
 - Skills / Tools 的类型、名称、时间与回复归属；
 - 为识别主目录与 worktree 而读取的 Git remote、根提交或公共 Git 目录。
 
-项目路径和 Git 信息只用于生成稳定身份与展示名称。SpendScope 数据库只保存派生 ID、哈希指纹、安全名称和根目录数量，不保存原始 Git remote、完整项目路径或完整项目根目录路径。
+项目路径和 Git 信息只用于生成稳定身份与展示名称。CodexVista 数据库只保存派生 ID、哈希指纹、安全名称和根目录数量，不保存原始 Git remote、完整项目路径或完整项目根目录路径。
 
 ### 任务名称
 
-项目详情中的任务名称优先从最新 `state_*.sqlite` 的 `threads.name` / `threads.title` 字段只读获取，并仅在内存中临时保留。名称不会写入 SpendScope 数据库、日志或网络请求。
+项目详情中的任务名称优先从最新 `state_*.sqlite` 的 `threads.name` / `threads.title` 字段只读获取，并仅在内存中临时保留。名称不会写入 CodexVista 数据库、日志或网络请求。
 
-系统上下文模板不会直接显示为名称。子任务可使用安全的代理昵称、角色或任务类型生成回退名称；其他不可用名称回退为匿名任务标识。SpendScope 不会读取第一条用户消息生成任务名称。
+系统上下文模板不会直接显示为名称。子任务可使用安全的代理昵称、角色或任务类型生成回退名称；其他不可用名称回退为匿名任务标识。CodexVista 不会读取第一条用户消息生成任务名称。
 
 ### 不会读取或保存的内容
 
@@ -323,10 +323,12 @@ SpendScope 根据本机文件计算，Codex 个人资料使用服务端汇总。
 聚合统计、本地额度观测、来源状态和导入检查点保存在：
 
 ```text
-~/Library/Application Support/SpendScope/SpendScope.sqlite
+~/Library/Application Support/CodexVista/CodexVista.sqlite
 ```
 
-SpendScope 不修改或删除 Codex 原始文件和数据库，也不会为额度展示启动 Codex 服务或发起账户额度请求。软件更新检查和下载会访问本项目的 GitHub Releases，但不会上传 SpendScope 保存的统计数据库、会话内容或项目数据。
+首次启动新版时，会自动接续旧版 SpendScope 的本地统计数据和偏好设置。迁移保留旧数据库，且不会覆盖已经存在的 CodexVista 数据；通知权限由 macOS 按新应用标识重新管理。
+
+CodexVista 不修改或删除 Codex 原始文件和数据库，也不会为额度展示启动 Codex 服务或发起账户额度请求。软件更新检查和下载会访问本项目的 GitHub Releases，但不会上传 CodexVista 保存的统计数据库、会话内容或项目数据。
 
 ## 可靠性与兼容策略
 

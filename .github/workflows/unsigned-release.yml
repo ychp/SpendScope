@@ -28,15 +28,15 @@ concurrency:
 jobs:
   publish:
     name: Test, package, and publish
-    # SpendScope is developed with Xcode 26 and uses Swift 6 language features.
+    # CodexVista is developed with Xcode 26 and uses Swift 6 language features.
     runs-on: macos-26
     env:
       DERIVED_DATA: ${{ github.workspace }}/DerivedData
-      ARTIFACT_NAME: SpendScope-macOS-unsigned.dmg
+      ARTIFACT_NAME: CodexVista-macOS-unsigned.dmg
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       VERSION_CONFIG: Config/Version.xcconfig
       RELEASE_HIGHLIGHTS: ${{ inputs.highlights }}
-      RELEASE_NOTES_FILE: ${{ github.workspace }}/SpendScope-release-notes.md
+      RELEASE_NOTES_FILE: ${{ github.workspace }}/CodexVista-release-notes.md
       PRERELEASE: ${{ inputs.prerelease }}
       REPLACE_EXISTING: ${{ inputs.replace_existing }}
       GH_TOKEN: ${{ github.token }}
@@ -94,15 +94,15 @@ jobs:
           fi
 
           xcodebuild \
-            -project SpendScope.xcodeproj \
-            -scheme SpendScope \
+            -project CodexVista.xcodeproj \
+            -scheme CodexVista \
             -configuration Release \
             -destination 'platform=macOS' \
             -derivedDataPath "$DERIVED_DATA" \
             -showBuildSettings \
-            > "$RUNNER_TEMP/SpendScope-build-settings.txt"
-          project_version="$(awk '/ MARKETING_VERSION = / { print $3; exit }' "$RUNNER_TEMP/SpendScope-build-settings.txt")"
-          project_build="$(awk '/ CURRENT_PROJECT_VERSION = / { print $3; exit }' "$RUNNER_TEMP/SpendScope-build-settings.txt")"
+            > "$RUNNER_TEMP/CodexVista-build-settings.txt"
+          project_version="$(awk '/ MARKETING_VERSION = / { print $3; exit }' "$RUNNER_TEMP/CodexVista-build-settings.txt")"
+          project_build="$(awk '/ CURRENT_PROJECT_VERSION = / { print $3; exit }' "$RUNNER_TEMP/CodexVista-build-settings.txt")"
           if [[ "$project_version" != "$MARKETING_VERSION" ]]; then
             echo "Xcode MARKETING_VERSION ${project_version:-<missing>} does not match $VERSION_CONFIG ($MARKETING_VERSION)."
             exit 1
@@ -115,8 +115,8 @@ jobs:
       - name: Run tests
         run: >-
           xcodebuild
-          -project SpendScope.xcodeproj
-          -scheme SpendScope
+          -project CodexVista.xcodeproj
+          -scheme CodexVista
           -configuration Debug
           -destination 'platform=macOS'
           -derivedDataPath "$DERIVED_DATA"
@@ -126,8 +126,8 @@ jobs:
       - name: Build Release app
         run: >-
           xcodebuild
-          -project SpendScope.xcodeproj
-          -scheme SpendScope
+          -project CodexVista.xcodeproj
+          -scheme CodexVista
           -configuration Release
           -destination 'platform=macOS'
           -derivedDataPath "$DERIVED_DATA"
@@ -138,15 +138,15 @@ jobs:
 
       - name: Create unsigned DMG
         run: |
-          APP_PATH="$DERIVED_DATA/Build/Products/Release/SpendScope.app"
+          APP_PATH="$DERIVED_DATA/Build/Products/Release/CodexVista.app"
           test -d "$APP_PATH"
-          ARCHITECTURES="$(lipo -archs "$APP_PATH/Contents/MacOS/SpendScope")"
+          ARCHITECTURES="$(lipo -archs "$APP_PATH/Contents/MacOS/CodexVista")"
           [[ " $ARCHITECTURES " == *" arm64 "* ]]
           [[ " $ARCHITECTURES " == *" x86_64 "* ]]
           mkdir -p dist dmg-root
-          ditto "$APP_PATH" "dmg-root/SpendScope.app"
+          ditto "$APP_PATH" "dmg-root/CodexVista.app"
           ln -s /Applications dmg-root/Applications
-          hdiutil create -volname "SpendScope" -srcfolder dmg-root -ov -format UDZO "dist/$ARTIFACT_NAME"
+          hdiutil create -volname "CodexVista" -srcfolder dmg-root -ov -format UDZO "dist/$ARTIFACT_NAME"
           (
             cd dist
             shasum -a 256 "$ARTIFACT_NAME" > "$ARTIFACT_NAME.sha256"
@@ -161,7 +161,7 @@ jobs:
 
       - name: Publish GitHub Release
         run: |
-          release_title="SpendScope $TAG"
+          release_title="CodexVista $TAG"
           assets=(
             "dist/$ARTIFACT_NAME"
             "dist/$ARTIFACT_NAME.sha256"
@@ -169,8 +169,8 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             legacy_assets=(
-              "SpendScope-$TAG-source.zip"
-              "SpendScope-$TAG-source.tar.gz"
+              "CodexVista-$TAG-source.zip"
+              "CodexVista-$TAG-source.tar.gz"
               "SHA256SUMS.txt"
             )
             for legacy_asset in "${legacy_assets[@]}"; do

@@ -1,10 +1,10 @@
-# SpendScope Agent 开发指南
+# CodexVista Agent 开发指南
 
-本文档用于约束在 SpendScope 仓库中工作的自动化开发 Agent。开始修改前先阅读本文件；涉及架构、统计口径、存储或发布流程时，同时阅读 `docs/TECHNICAL_ARCHIVE.md`。
+本文档用于约束在 CodexVista 仓库中工作的自动化开发 Agent。开始修改前先阅读本文件；涉及架构、统计口径、存储或发布流程时，同时阅读 `docs/TECHNICAL_ARCHIVE.md`。
 
 ## 1. 项目目标
 
-SpendScope 是一款原生 macOS 菜单栏应用，用于读取本机 Codex CLI 和 Codex Desktop 产生的记录，并展示 Token 用量、7 天额度、趋势、活动/项目/模型排行和 API 等值费用估算。
+CodexVista 是一款原生 macOS 菜单栏应用，用于读取本机 Codex CLI 和 Codex Desktop 产生的记录，并展示 Token 用量、7 天额度、趋势、活动/项目/模型排行和 API 等值费用估算。
 
 必须保持以下产品边界：
 
@@ -17,12 +17,12 @@ SpendScope 是一款原生 macOS 菜单栏应用，用于读取本机 Codex CLI 
 ## 2. 技术基线
 
 - 平台：macOS 14.0 及以上。
-- 工程：`SpendScope.xcodeproj`，共享 Scheme 为 `SpendScope`。
+- 工程：`CodexVista.xcodeproj`，共享 Scheme 为 `CodexVista`。
 - 语言：Swift 6。
 - UI：SwiftUI、AppKit、Swift Charts。
 - 并发与状态：Swift Concurrency、Observation。
 - 存储：系统 SQLite3，不依赖第三方包。
-- Bundle ID：`com.ychp.SpendScope`。
+- Bundle ID：`com.ychp.CodexVista`。
 - 发布架构：Universal Binary，必须同时包含 `arm64` 和 `x86_64`。
 - 发布渠道：GitHub Releases；当前 DMG 未签名、未公证。
 
@@ -32,7 +32,7 @@ SpendScope 是一款原生 macOS 菜单栏应用，用于读取本机 Codex CLI 
 
 ```text
 Config/Version.xcconfig    工程与发布版本的唯一来源
-Sources/SpendScope/
+Sources/CodexVista/
 ├── App/                  应用入口、生命周期、共享状态和额度提醒
 ├── Data/
 │   ├── Codex/            来源发现、事件解码、增量导入和会话归约
@@ -46,7 +46,7 @@ Sources/SpendScope/
 ├── Resources/            App、状态栏和 Codex 图标
 └── Support/              偏好、更新、提醒、模型价格、格式化和设计系统
 
-Tests/SpendScopeTests/    XCTest 单元与集成测试
+Tests/CodexVistaTests/    XCTest 单元与集成测试
 script/                   构建、运行、日志和版本说明脚本
 .github/workflows/        GitHub Actions 测试与发布流程
 docs/                     截图和技术档案
@@ -56,17 +56,17 @@ docs/                     截图和技术档案
 
 | 领域 | 入口文件 |
 | --- | --- |
-| 数据源发现 | `Sources/SpendScope/Data/Codex/CodexSourceDiscovery.swift` |
-| 增量 JSONL 读取 | `Sources/SpendScope/Data/Codex/IncrementalJSONLReader.swift` |
-| 事件白名单解码 | `Sources/SpendScope/Data/Codex/CodexEventDecoder.swift` |
-| Token 增量计算 | `Sources/SpendScope/Data/Codex/UsageAccumulator.swift` |
-| 幂等导入 | `Sources/SpendScope/Data/Codex/CodexImporter.swift` |
-| SQLite 存储 | `Sources/SpendScope/Data/Storage/UsageStore.swift` |
-| 看板查询 | `Sources/SpendScope/Data/Dashboard/DashboardQueryService.swift` |
-| 模型价格 | `Sources/SpendScope/Support/ModelPricing.swift` |
-| 模型排行界面 | `Sources/SpendScope/Features/Dashboard/ModelUsagePanel.swift` |
-| 全局界面状态 | `Sources/SpendScope/App/DashboardStore.swift` |
-| 软件更新 | `Sources/SpendScope/Support/AppUpdateService.swift` |
+| 数据源发现 | `Sources/CodexVista/Data/Codex/CodexSourceDiscovery.swift` |
+| 增量 JSONL 读取 | `Sources/CodexVista/Data/Codex/IncrementalJSONLReader.swift` |
+| 事件白名单解码 | `Sources/CodexVista/Data/Codex/CodexEventDecoder.swift` |
+| Token 增量计算 | `Sources/CodexVista/Data/Codex/UsageAccumulator.swift` |
+| 幂等导入 | `Sources/CodexVista/Data/Codex/CodexImporter.swift` |
+| SQLite 存储 | `Sources/CodexVista/Data/Storage/UsageStore.swift` |
+| 看板查询 | `Sources/CodexVista/Data/Dashboard/DashboardQueryService.swift` |
+| 模型价格 | `Sources/CodexVista/Support/ModelPricing.swift` |
+| 模型排行界面 | `Sources/CodexVista/Features/Dashboard/ModelUsagePanel.swift` |
+| 全局界面状态 | `Sources/CodexVista/App/DashboardStore.swift` |
+| 软件更新 | `Sources/CodexVista/Support/AppUpdateService.swift` |
 
 ## 4. 不可破坏的实现约束
 
@@ -74,7 +74,7 @@ docs/                     截图和技术档案
 
 - 只解码统计白名单中的最小字段；不要为调试方便把完整 JSON、消息正文或工具参数写入日志或数据库。
 - Codex SQLite 必须只读访问。索引不可用时应降级到文件系统发现，不能阻断全部导入。
-- Codex 页面展示名称优先从只读索引的 `threads.name` / `threads.title` 临时读取；系统模板不可透传，仅可使用 `agent_nickname`、`agent_role` 或 `source` 中的安全代理类型元数据生成回退名称。名称不得写入 SpendScope 数据库、日志或网络请求；不得用第一条用户消息生成回退标题。
+- Codex 页面展示名称优先从只读索引的 `threads.name` / `threads.title` 临时读取；系统模板不可透传，仅可使用 `agent_nickname`、`agent_role` 或 `source` 中的安全代理类型元数据生成回退名称。名称不得写入 CodexVista 数据库、日志或网络请求；不得用第一条用户消息生成回退标题。
 - 项目身份只保存派生 ID、展示名和哈希指纹，不保存原始 remote 和完整路径。
 - 测试只能使用匿名合成数据，不能提交真实 rollout、认证信息或对话内容。
 
@@ -154,11 +154,11 @@ docs/                     截图和技术档案
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild -project SpendScope.xcodeproj \
-  -scheme SpendScope \
+  xcodebuild -project CodexVista.xcodeproj \
+  -scheme CodexVista \
   -configuration Debug \
   -destination "platform=macOS,arch=arm64" \
-  -derivedDataPath /private/tmp/SpendScope-Tests \
+  -derivedDataPath /private/tmp/CodexVista-Tests \
   test
 ```
 
@@ -180,8 +180,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 - 正式标签使用 `v<语义化版本>`；预发布标签固定使用 `v<版本>-beta`。
 - 已存在的同版本 Release 默认不得覆盖；仅修复发布附件时可显式启用 `replace_existing`。
 - Release App 必须使用 `ARCHS='arm64 x86_64'`、`ONLY_ACTIVE_ARCH=NO` 构建，并通过 `lipo` 验证。
-- Release 标题固定为 `SpendScope v<版本号>`。
-- 工作流只上传 `SpendScope-macOS-unsigned.dmg` 和对应 `.sha256`。
+- Release 标题固定为 `CodexVista v<版本号>`。
+- 工作流只上传 `CodexVista-macOS-unsigned.dmg` 和对应 `.sha256`。
 - ZIP 与 tar.gz 源码包使用 GitHub 根据标签自动生成的附件，不重复上传自定义源码包。
 - DMG 校验文件必须只引用同目录下的 DMG 文件名，保证下载后可直接执行 `shasum -a 256 -c`。
 - 版本说明必须面向用户，包含版本亮点、安装方法、系统与芯片支持、未签名打开方式、附件说明、已知限制和完整变更链接。

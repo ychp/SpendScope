@@ -1,4 +1,4 @@
-# SpendScope 项目文件结构
+# CodexVista 项目文件结构
 
 更新日期：2026-09-04
 
@@ -13,8 +13,8 @@
 | 路径 | 级别 | 作用 | 是否进入 App |
 | --- | --- | --- | --- |
 | `Config/` | 核心 | 统一管理 App 的版本号和构建号 | 构建时使用 |
-| `Sources/` | 核心 | SpendScope 全部生产源码与资源 | 是 |
-| `SpendScope.xcodeproj/` | 核心 | Xcode 工程配置、Target、构建设置和共享 Scheme | 构建时使用 |
+| `Sources/` | 核心 | CodexVista 全部生产源码与资源 | 是 |
+| `CodexVista.xcodeproj/` | 核心 | Xcode 工程配置、Target、构建设置和共享 Scheme | 构建时使用 |
 | `Tests/` | 工程必备 | XCTest 单元与集成测试 | 否 |
 | `script/` | 工程必备 | 本地构建运行和版本说明生成脚本 | 否 |
 | `.github/` | 工程必备 | GitHub Actions 测试、Universal DMG 打包和 Release 发布 | 否 |
@@ -27,11 +27,11 @@
 | `.worktrees/` | 可选 / 可再生 | 本地 Git worktree 临时目录，目前为空 | 否 |
 | `.DS_Store` | 可选 / 可删除 | Finder 自动生成的目录显示元数据 | 否 |
 
-结论：真正决定 App 功能和版本的是 `Config/`、`Sources/` 与 `SpendScope.xcodeproj/`；测试、脚本、工作流和文档不进入安装包，但属于可维护、可发布项目的重要组成部分。
+结论：真正决定 App 功能和版本的是 `Config/`、`Sources/` 与 `CodexVista.xcodeproj/`；测试、脚本、工作流和文档不进入安装包，但属于可维护、可发布项目的重要组成部分。
 
-## 2. 生产源码 `Sources/SpendScope/`
+## 2. 生产源码 `Sources/CodexVista/`
 
-整个 `Sources/SpendScope/` 都属于核心代码。它按“应用组合、数据、功能界面、共享模型、资源、基础支持”分层。
+整个 `Sources/CodexVista/` 都属于核心代码。它按“应用组合、数据、功能界面、共享模型、资源、基础支持”分层。
 
 | 目录 | 级别 | 主要职责 | 修改注意事项 |
 | --- | --- | --- | --- |
@@ -64,21 +64,21 @@ Features：菜单栏、看板和设置
 
 | 领域 | 文件 |
 | --- | --- |
-| 数据源发现 | `Sources/SpendScope/Data/Codex/CodexSourceDiscovery.swift` |
-| 增量文件读取 | `Sources/SpendScope/Data/Codex/IncrementalJSONLReader.swift` |
-| 隐私白名单解码 | `Sources/SpendScope/Data/Codex/CodexEventDecoder.swift` |
-| Token 增量口径 | `Sources/SpendScope/Data/Codex/UsageAccumulator.swift` |
-| 幂等导入 | `Sources/SpendScope/Data/Codex/CodexImporter.swift` |
-| 数据库与迁移 | `Sources/SpendScope/Data/Storage/UsageStore.swift` |
-| 看板统计 | `Sources/SpendScope/Data/Dashboard/DashboardQueryService.swift` |
-| 模型价格规则 | `Sources/SpendScope/Support/ModelPricing.swift` |
-| 模型用量界面 | `Sources/SpendScope/Features/Dashboard/ModelUsagePanel.swift` |
-| 项目详情界面 | `Sources/SpendScope/Features/Dashboard/ProjectDetailView.swift` |
-| 项目详情与外置悬浮窗口 | `Sources/SpendScope/Features/Dashboard/ProjectDetailWindowController.swift` |
-| 今日任务列表与详情 | `Sources/SpendScope/Features/Dashboard/TodayTaskPanel.swift` |
-| 全局状态 | `Sources/SpendScope/App/DashboardStore.swift` |
+| 数据源发现 | `Sources/CodexVista/Data/Codex/CodexSourceDiscovery.swift` |
+| 增量文件读取 | `Sources/CodexVista/Data/Codex/IncrementalJSONLReader.swift` |
+| 隐私白名单解码 | `Sources/CodexVista/Data/Codex/CodexEventDecoder.swift` |
+| Token 增量口径 | `Sources/CodexVista/Data/Codex/UsageAccumulator.swift` |
+| 幂等导入 | `Sources/CodexVista/Data/Codex/CodexImporter.swift` |
+| 数据库与迁移 | `Sources/CodexVista/Data/Storage/UsageStore.swift` |
+| 看板统计 | `Sources/CodexVista/Data/Dashboard/DashboardQueryService.swift` |
+| 模型价格规则 | `Sources/CodexVista/Support/ModelPricing.swift` |
+| 模型用量界面 | `Sources/CodexVista/Features/Dashboard/ModelUsagePanel.swift` |
+| 项目详情界面 | `Sources/CodexVista/Features/Dashboard/ProjectDetailView.swift` |
+| 项目详情与外置悬浮窗口 | `Sources/CodexVista/Features/Dashboard/ProjectDetailWindowController.swift` |
+| 今日任务列表与详情 | `Sources/CodexVista/Features/Dashboard/TodayTaskPanel.swift` |
+| 全局状态 | `Sources/CodexVista/App/DashboardStore.swift` |
 
-## 3. 测试 `Tests/SpendScopeTests/`
+## 3. 测试 `Tests/CodexVistaTests/`
 
 `Tests/` 不会被打进 DMG，因此从“运行 App”的角度可以缺少；但它保护 Token 口径、隐私边界、数据库迁移和重复导入，属于工程必备内容，不建议删除。XCTest App Host 使用隔离 Store，不会读取或迁移用户正式数据库。
 
@@ -97,12 +97,12 @@ Features：菜单栏、看板和设置
 
 ## 4. 构建与发布目录
 
-### `SpendScope.xcodeproj/` — 核心
+### `CodexVista.xcodeproj/` — 核心
 
 需要提交的文件只有：
 
 - `project.pbxproj`：Target、源码引用、Bundle ID、部署版本和构建设置；Debug / Release 均引用 `Config/Version.xcconfig`。
-- `xcshareddata/xcschemes/SpendScope.xcscheme`：CI 与团队共享的 Scheme。
+- `xcshareddata/xcschemes/CodexVista.xcscheme`：CI 与团队共享的 Scheme。
 
 `project.xcworkspace/`、`xcuserdata/` 和 `*.xcuserstate` 是 Xcode 自动生成的用户工作区状态，可删除并重新生成，不应提交。
 
@@ -162,20 +162,22 @@ Features：菜单栏、看板和设置
 | `.build/` | Swift 构建工具 | 下次构建会重新生成 |
 | `dist/` | 打包流程 | 删除本地 DMG 等产物，不影响源码 |
 | `dmg-root/` | DMG 暂存目录 | 无，可重新生成 |
-| `SpendScope-release-notes.md` | 发布流程 | 无，可重新生成 |
+| `CodexVista-release-notes.md` | 发布流程 | 无，可重新生成 |
 | `.worktrees/` | 本地 worktree 工具 | 仅在确认没有活跃 worktree 时删除 |
-| `SpendScope.xcodeproj/project.xcworkspace/` | Xcode | 用户工作区状态会重建 |
+| `CodexVista.xcodeproj/project.xcworkspace/` | Xcode | 用户工作区状态会重建 |
 | `xcuserdata/`、`*.xcuserstate` | Xcode | 丢失个人窗口与断点等状态，不影响工程 |
 
-不要清理 `.git/`、`Sources/`、`SpendScope.xcodeproj/project.pbxproj` 或共享 Scheme。清理 `docs/images/`、测试和脚本前，也要先确认不再需要对应文档、质量保障或自动化流程。
+不要清理 `.git/`、`Sources/`、`CodexVista.xcodeproj/project.pbxproj` 或共享 Scheme。清理 `docs/images/`、测试和脚本前，也要先确认不再需要对应文档、质量保障或自动化流程。
 
 ## 7. 当前整理建议
 
 当前目录边界清晰，无需进行大规模移动或重命名。建议保持：
 
-1. 生产代码继续只放在 `Sources/SpendScope/` 的既有分层中。
-2. 测试文件与被测模块同名，统一放入 `Tests/SpendScopeTests/`。
+1. 生产代码继续只放在 `Sources/CodexVista/` 的既有分层中。
+2. 测试文件与被测模块同名，统一放入 `Tests/CodexVistaTests/`。
 3. 构建、调试和发布辅助逻辑放在 `script/`，不要混入 App 源码。
 4. 用户文档保留在 README，维护细节放入 `docs/`。
 5. 本机生成物交给 `.gitignore` 管理，不通过提交“保存”构建结果。
 6. 发布附件由 GitHub Actions 生成，不在仓库中新增 `releases/`、DMG 或源码压缩包。
+
+应用更名升级由 `Sources/CodexVista/Support/AppIdentityMigration.swift` 处理，兼容测试位于 `Tests/CodexVistaTests/AppIdentityMigrationTests.swift`。

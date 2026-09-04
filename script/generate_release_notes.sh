@@ -49,9 +49,9 @@ mkdir -p "$(dirname "$OUTPUT_FILE")"
 
 ## 下载与安装
 
-1. 在下方 **Assets** 下载 \`SpendScope-macOS-unsigned.dmg\`。
-2. 打开 DMG，将 SpendScope 拖入“应用程序”文件夹。
-3. 首次启动请在 Finder 中右键 SpendScope，选择“打开”，再确认一次。
+1. 在下方 **Assets** 下载 \`CodexVista-macOS-unsigned.dmg\`。
+2. 打开 DMG，将 CodexVista 拖入“应用程序”文件夹。
+3. 首次启动请在 Finder 中右键 CodexVista，选择“打开”，再确认一次。
 
 ## 系统与芯片支持
 
@@ -63,27 +63,27 @@ mkdir -p "$(dirname "$OUTPUT_FILE")"
 当前安装包尚未使用 Apple Developer ID 签名和公证。若系统提示应用“已损坏”，请先确认 DMG 来自本仓库的 GitHub Releases，再在终端执行：
 
 \`\`\`bash
-xattr -dr com.apple.quarantine /Applications/SpendScope.app
+xattr -dr com.apple.quarantine /Applications/CodexVista.app
 \`\`\`
 
 不要对来源不明的 App 执行此命令。
 
 ## 附件说明
 
-- \`SpendScope-macOS-unsigned.dmg\`：macOS 安装包。
-- \`SpendScope-macOS-unsigned.dmg.sha256\`：安装包 SHA-256 校验文件。
+- \`CodexVista-macOS-unsigned.dmg\`：macOS 安装包。
+- \`CodexVista-macOS-unsigned.dmg.sha256\`：安装包 SHA-256 校验文件。
 - \`Source code (zip)\` / \`Source code (tar.gz)\`：GitHub 根据本版本标签自动生成的源码包。
 
 下载 DMG 和校验文件后，可在同一目录执行：
 
 \`\`\`bash
-shasum -a 256 -c SpendScope-macOS-unsigned.dmg.sha256
+shasum -a 256 -c CodexVista-macOS-unsigned.dmg.sha256
 \`\`\`
 
 ## 已知限制
 
 - 当前安装包未签名、未公证，首次启动需要手动确认。
-- SpendScope 仅统计本机 Codex 记录，不同步其他设备或服务端历史。
+- CodexVista 仅统计本机 Codex 记录，不同步其他设备或服务端历史。
 - 模型费用仅为 API 标准价下的等值估算，不代表 Codex 实际账单；暂不提供账单对账或 API Key 实际消费分析。
 
 ## 完整变更

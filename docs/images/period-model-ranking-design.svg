@@ -47,7 +47,7 @@
   <circle cx="1470" cy="890" r="260" fill="#09AAC8" opacity="0.045"/>
 
   <text class="ui title" x="48" y="42">周期用量 · 模型排行悬浮卡</text>
-  <text class="ui small muted" x="48" y="65">SpendScope / Dashboard concept · Hover preview + click to pin</text>
+  <text class="ui small muted" x="48" y="65">CodexVista / Dashboard concept · Hover preview + click to pin</text>
   <g transform="translate(1372,28)">
     <rect width="180" height="40" rx="20" fill="#FFFFFF" stroke="#DAE0EB"/>
     <circle cx="22" cy="20" r="7" fill="url(#brand)"/>
@@ -64,7 +64,7 @@
   <circle cx="68" cy="118" r="6" fill="#FF5E57"/>
   <circle cx="88" cy="118" r="6" fill="#FEBC2E"/>
   <circle cx="108" cy="118" r="6" fill="#28C840"/>
-  <text class="ui small muted" x="555" y="123" text-anchor="middle">SpendScope</text>
+  <text class="ui small muted" x="555" y="123" text-anchor="middle">CodexVista</text>
 
   <!-- sidebar -->
   <rect x="40" y="144" width="202" height="808" fill="#F6F8FC"/>
@@ -72,7 +72,7 @@
   <g transform="translate(62,170)">
     <rect width="34" height="34" rx="10" fill="url(#brand)"/>
     <path d="M10 21 L16 14 L21 18 L26 10" fill="none" stroke="white" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
-    <text class="ui section" x="46" y="23">SpendScope</text>
+    <text class="ui section" x="46" y="23">CodexVista</text>
   </g>
   <g class="ui label">
     <g transform="translate(54,232)">
