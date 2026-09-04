@@ -2,6 +2,7 @@ import SwiftUI
 
 enum AppPreferenceKeys {
     static let colorScheme = "appearance.colorScheme"
+    static let skin = "appearance.skin"
     static let keepsDashboardOnTop = "dashboard.keepsOnTop"
     static let dashboardCloseBehavior = "dashboard.closeBehavior"
     static let automaticRefreshEnabled = "data.automaticRefreshEnabled"
@@ -49,6 +50,26 @@ enum AppColorSchemePreference: String, CaseIterable, Identifiable, Sendable {
             return .system
         }
         return resolved(from: rawValue)
+    }
+}
+
+enum AppSkinPreference: String, CaseIterable, Identifiable, Sendable {
+    case standard
+    case ink
+
+    var id: Self { self }
+    var title: String { self == .ink ? "水墨" : "经典" }
+
+    func effectiveColorScheme(for preference: AppColorSchemePreference) -> ColorScheme? {
+        self == .ink ? .light : preference.colorScheme
+    }
+
+    static func resolved(from rawValue: String) -> Self {
+        Self(rawValue: rawValue) ?? .standard
+    }
+
+    static func load(from defaults: UserDefaults = .standard) -> Self {
+        resolved(from: defaults.string(forKey: AppPreferenceKeys.skin) ?? "")
     }
 }
 

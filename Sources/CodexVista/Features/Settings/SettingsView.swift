@@ -74,6 +74,8 @@ struct SettingsView: View {
     let reminderController: UsageReminderController
     let updateService: AppUpdateService
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(AppPreferenceKeys.skin)
+    private var skinRaw = AppSkinPreference.standard.rawValue
     @AppStorage(AppPreferenceKeys.colorScheme)
     private var colorSchemeRaw = AppColorSchemePreference.system.rawValue
     @AppStorage(AppPreferenceKeys.keepsDashboardOnTop) private var keepsDashboardOnTop = false
@@ -140,25 +142,45 @@ struct SettingsView: View {
     private var appearanceSettings: some View {
         settingsSection("外观") {
             VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    ForEach(AppSkinPreference.allCases) { skin in
+                        CodexVistaSkinPreview(
+                            skin: skin,
+                            isSelected: AppSkinPreference.resolved(from: skinRaw) == skin
+                        ) { skinRaw = skin.rawValue }
+                    }
+                }
+                .padding(.vertical, 14)
+                settingsDivider
                 preferenceRow("色系", detail: appearanceDetail) {
-                    segmentedGroup {
-                        selectionSegment(
-                            "跟随系统",
-                            isSelected: colorSchemePreference == .system
-                        ) {
-                            colorSchemeRaw = AppColorSchemePreference.system.rawValue
-                        }
-                        selectionSegment(
-                            "浅色",
-                            isSelected: colorSchemePreference == .light
-                        ) {
-                            colorSchemeRaw = AppColorSchemePreference.light.rawValue
-                        }
-                        selectionSegment(
-                            "深色",
-                            isSelected: colorSchemePreference == .dark
-                        ) {
-                            colorSchemeRaw = AppColorSchemePreference.dark.rawValue
+                    if AppSkinPreference.resolved(from: skinRaw) == .ink {
+                        Label("浅色", systemImage: "sun.max")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(CodexVistaTheme.selectionText)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(CodexVistaTheme.selectionSurface, in: RoundedRectangle(cornerRadius: 7))
+                            .accessibilityLabel("色系：浅色，水墨皮肤仅支持浅色")
+                    } else {
+                        segmentedGroup {
+                            selectionSegment(
+                                "跟随系统",
+                                isSelected: colorSchemePreference == .system
+                            ) {
+                                colorSchemeRaw = AppColorSchemePreference.system.rawValue
+                            }
+                            selectionSegment(
+                                "浅色",
+                                isSelected: colorSchemePreference == .light
+                            ) {
+                                colorSchemeRaw = AppColorSchemePreference.light.rawValue
+                            }
+                            selectionSegment(
+                                "深色",
+                                isSelected: colorSchemePreference == .dark
+                            ) {
+                                colorSchemeRaw = AppColorSchemePreference.dark.rawValue
+                            }
                         }
                     }
                 }
@@ -173,10 +195,13 @@ struct SettingsView: View {
     }
 
     private var appearanceDetail: String {
-        switch colorSchemePreference {
+        if AppSkinPreference.resolved(from: skinRaw) == .ink {
+            return "水墨皮肤仅支持浅色"
+        }
+        return switch colorSchemePreference {
         case .system: "自动跟随 macOS 外观设置"
-        case .light: "暖白底色、纸感卡片与墨色文字"
-        case .dark: "石墨底色、柔和灰阶与低饱和强调色"
+        case .light: "铝灰底色，钴蓝与精密刻度"
+        case .dark: "深钢蓝底色，清晰分层"
         }
     }
 
@@ -561,16 +586,24 @@ struct SettingsView: View {
                             .padding(.horizontal, Layout.cardHorizontalPadding)
                             .background {
                                 if isCurrent(plan) {
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .fill(Color.accentColor.opacity(0.08))
+                                    RoundedRectangle(cornerRadius: currentPlanCornerRadius, style: .continuous)
+                                        .fill(CodexVistaTheme.isInk
+                                            ? CodexVistaTheme.dashboardTile
+                                            : CodexVistaTheme.dashboardAccent.opacity(0.08))
+                                        .overlay {
+                                            if CodexVistaTheme.isInk {
+                                                CodexVistaPaperGrain()
+                                                    .clipShape(RoundedRectangle(cornerRadius: currentPlanCornerRadius))
+                                            }
+                                        }
                                         .padding(.horizontal, 4)
                                         .padding(.vertical, 2)
                                 }
                             }
                             .overlay {
                                 if isCurrent(plan) {
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .stroke(Color.accentColor.opacity(0.22), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: currentPlanCornerRadius, style: .continuous)
+                                        .stroke(currentPlanAccent.opacity(CodexVistaTheme.isInk ? 0.4 : 0.22), lineWidth: 1)
                                         .padding(.horizontal, 4)
                                         .padding(.vertical, 2)
                                 }
@@ -912,31 +945,50 @@ struct SettingsView: View {
         .padding(.horizontal, 4)
     }
 
+    private var currentPlanAccent: Color {
+        CodexVistaTheme.isInk ? CodexVistaTheme.cinnabar : CodexVistaTheme.dashboardAccent
+    }
+
+    private var currentPlanCornerRadius: CGFloat {
+        CodexVistaTheme.isInk ? 4 : 7
+    }
+
     private func planRow(_ plan: CodexPlan) -> some View {
         HStack(spacing: 12) {
             Image(systemName: plan.symbol)
                 .font(.title3)
-                .foregroundStyle(isCurrent(plan) ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isCurrent(plan) ? currentPlanAccent : CodexVistaTheme.dashboardMutedText)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(plan.name)
+                        .font(CodexVistaTheme.isInk ? CodexVistaTheme.headingFont(size: 14) : .body)
                         .fontWeight(isCurrent(plan) ? .semibold : .regular)
+                        .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
 
                     if isCurrent(plan) {
                         Label("当前套餐", systemImage: "checkmark.circle.fill")
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(currentPlanAccent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                            .background(
+                                currentPlanAccent.opacity(CodexVistaTheme.isInk ? 0.06 : 0.12),
+                                in: RoundedRectangle(cornerRadius: CodexVistaTheme.isInk ? 3 : 20)
+                            )
+                            .overlay {
+                                if CodexVistaTheme.isInk {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .strokeBorder(currentPlanAccent.opacity(0.35), lineWidth: 0.5)
+                                }
+                            }
                     }
                 }
 
                 Text(plan.summary)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
             }
 
             Spacer(minLength: 16)
@@ -945,10 +997,10 @@ struct SettingsView: View {
                 if plan.isPaid {
                     Text("付费")
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
-                        .background(.quaternary, in: Capsule())
+                        .background(CodexVistaTheme.dashboardControlBackground, in: Capsule())
                 }
             }
             .frame(width: Layout.planBadgeWidth, alignment: .trailing)

@@ -79,6 +79,36 @@ private extension DashboardSnapshot {
 }
 
 final class TokenFormatterTests: XCTestCase {
+    func testSkinPalettesKeepSmallTextReadableInBothAppearances() {
+        func luminance(_ hex: UInt32) -> Double {
+            let channels = [16, 8, 0].map { shift -> Double in
+                let value = Double((hex >> shift) & 255) / 255
+                return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+        }
+        for skin in AppSkinPreference.allCases {
+            for dark in [false, true] {
+                let palette = CodexVistaPalette.resolve(skin: skin, dark: dark)
+                let textPairs: [(UInt32, UInt32)] = [
+                    (palette.primary, palette.raised),
+                    (palette.muted, palette.control),
+                    (palette.muted, palette.surface),
+                    (palette.selectedText, palette.selected),
+                    (palette.heatText, palette.accent),
+                    (0xFFFFFF, palette.action)
+                ]
+                for (foreground, background) in textPairs {
+                    let values = [luminance(foreground), luminance(background)].sorted()
+                    XCTAssertGreaterThanOrEqual(
+                        (values[1] + 0.05) / (values[0] + 0.05), 4.5,
+                        "\(skin.rawValue), dark=\(dark), foreground=\(foreground), background=\(background)"
+                    )
+                }
+            }
+        }
+    }
+
     func testWorktimeFormattingKeepsShortNonzeroDurationsVisible() {
         XCTAssertEqual(TokenFormatter.compactWorktime(0), "0m")
         XCTAssertEqual(TokenFormatter.compactWorktime(30_000), "<1m")
@@ -190,6 +220,46 @@ final class TokenFormatterTests: XCTestCase {
             forKey: AppPreferenceKeys.colorScheme
         )
         XCTAssertEqual(AppColorSchemePreference.load(from: defaults), .dark)
+    }
+
+    func testSkinPreferencePersistsIndependentlyOfColorSchemeAndFallsBackSafely() {
+        let suiteName = "SkinPreferenceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(AppSkinPreference.load(from: defaults), .standard)
+        defaults.set(AppColorSchemePreference.dark.rawValue, forKey: AppPreferenceKeys.colorScheme)
+        defaults.set(AppSkinPreference.ink.rawValue, forKey: AppPreferenceKeys.skin)
+        XCTAssertEqual(AppSkinPreference.load(from: defaults), .ink)
+        XCTAssertEqual(AppColorSchemePreference.load(from: defaults), .dark)
+
+        defaults.set("unknown-skin", forKey: AppPreferenceKeys.skin)
+        XCTAssertEqual(AppSkinPreference.load(from: defaults), .standard)
+        XCTAssertEqual(AppColorSchemePreference.load(from: defaults), .dark)
+    }
+
+    func testInkForcesLightWithoutReplacingTheClassicColorSchemePreference() {
+        let suiteName = "InkAppearanceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        for preference in AppColorSchemePreference.allCases {
+            defaults.set(preference.rawValue, forKey: AppPreferenceKeys.colorScheme)
+            defaults.set(AppSkinPreference.ink.rawValue, forKey: AppPreferenceKeys.skin)
+            let stored = AppColorSchemePreference.load(from: defaults)
+            XCTAssertEqual(AppSkinPreference.load(from: defaults).effectiveColorScheme(for: stored), .light)
+            XCTAssertEqual(stored, preference)
+
+            defaults.set(AppSkinPreference.standard.rawValue, forKey: AppPreferenceKeys.skin)
+            XCTAssertEqual(
+                AppSkinPreference.load(from: defaults).effectiveColorScheme(for: stored),
+                preference.colorScheme
+            )
+        }
+        let inkOnDarkSystem = CodexVistaPalette.resolve(skin: .ink, dark: true)
+        let inkOnLightSystem = CodexVistaPalette.resolve(skin: .ink, dark: false)
+        XCTAssertEqual(inkOnDarkSystem.background, inkOnLightSystem.background)
+        XCTAssertEqual(inkOnDarkSystem.primary, inkOnLightSystem.primary)
     }
 
     func testUsageCalendarBuildsMondayFirstSixWeekGrid() throws {

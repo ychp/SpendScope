@@ -334,7 +334,7 @@ private struct DashboardLoadingView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(CodexVistaTheme.headingFont(size: 14))
 
                 Spacer(minLength: 8)
 
@@ -363,7 +363,7 @@ private struct DashboardLoadingView: View {
                         .rotationEffect(.degrees(isHighlighted ? 230 : -40))
 
                     Text("…")
-                        .font(.system(size: 24, weight: .semibold, design: .rounded))
+                        .font(CodexVistaTheme.metricFont(size: 24))
                         .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                 }
                 .frame(width: 112, height: 112)
@@ -452,10 +452,10 @@ private struct DashboardLoadingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(
                 CodexVistaTheme.dashboardTile.opacity(0.72),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
                     .stroke(CodexVistaTheme.dashboardBorder.opacity(0.78))
             }
         }
@@ -475,7 +475,7 @@ private struct DashboardLoadingMetricTile: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(CodexVistaTheme.dashboardAccent.opacity(0.10))
+                    .fill(CodexVistaTheme.dashboardControlBackground)
                     .frame(width: 26, height: 26)
                     .overlay {
                         Image(systemName: index < 2 ? "calendar" : "chart.bar.fill")
@@ -506,10 +506,10 @@ private struct DashboardLoadingMetricTile: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             CodexVistaTheme.dashboardTile.opacity(0.74),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
                 .stroke(CodexVistaTheme.dashboardBorder.opacity(0.78))
         }
     }
@@ -728,11 +728,12 @@ private struct DashboardContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Label("额度使用", systemImage: "gauge.with.dots.needle.50percent")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(CodexVistaTheme.headingFont(size: 14))
                     .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
 
                 Spacer(minLength: 8)
 
+                if CodexVistaTheme.isInk { CodexVistaInkSeal() }
                 quotaIdentityBadge
             }
             .accessibilityElement(children: .ignore)
@@ -753,6 +754,13 @@ private struct DashboardContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(alignment: .bottom) {
+            if CodexVistaTheme.isInk {
+                CodexVistaInkPainting()
+                    .frame(height: 76)
+                    .mask(LinearGradient(colors: [.clear, .white, .white], startPoint: .top, endPoint: .bottom))
+            }
+        }
     }
 
     private var quotaIdentityBadge: some View {
@@ -786,7 +794,20 @@ private struct DashboardContentView: View {
         quota.id == "7d" ? CodexVistaTheme.dashboardAccent : CodexVistaTheme.dashboardAccentSecondary
     }
 
+    @ViewBuilder
     private var quotaRingGroup: some View {
+        if CodexVistaTheme.isInk {
+            VStack(spacing: 10) {
+                ForEach(snapshot.visibleQuotas) { quota in
+                    CodexVistaInkQuota(quota: quota, compact: snapshot.visibleQuotas.count > 1)
+                }
+            }
+        } else {
+            instrumentQuotaRingGroup
+        }
+    }
+
+    private var instrumentQuotaRingGroup: some View {
         ZStack {
             ForEach(snapshot.visibleQuotas) { quota in
                 quotaRing(
@@ -831,7 +852,7 @@ private struct DashboardContentView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(quotaColor(for: quota))
             Text("\(quota.remainingPercent)%")
-                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .font(CodexVistaTheme.metricFont(size: 24))
                 .monospacedDigit()
         }
         .accessibilityElement(children: .ignore)
@@ -876,6 +897,10 @@ private struct DashboardContentView: View {
                 .rotationEffect(.degrees(-90))
         }
         .frame(width: diameter, height: diameter)
+        .overlay {
+            CodexVistaDialTicks(remaining: quota.remaining)
+                .frame(width: diameter + 20, height: diameter + 20)
+        }
     }
 
     private var quotaResetList: some View {
@@ -955,7 +980,7 @@ private struct DashboardContentView: View {
                 .foregroundStyle(CodexVistaTheme.dashboardAccent)
                 .frame(width: 26, height: 26)
                 .background(
-                    CodexVistaTheme.dashboardAccent.opacity(0.10),
+                    CodexVistaTheme.dashboardControlBackground,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                 )
                 .accessibilityHidden(true)
@@ -979,7 +1004,7 @@ private struct DashboardContentView: View {
             Spacer(minLength: 8)
 
             Text(TokenFormatter.compact(period.total))
-                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .font(CodexVistaTheme.metricFont(size: 20))
                 .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
                 .monospacedDigit()
                 .accessibilityLabel("Token 总量 \(period.total.formatted())")
@@ -998,10 +1023,10 @@ private struct DashboardContentView: View {
         .frame(maxWidth: .infinity, minHeight: 52)
         .background(
             CodexVistaTheme.dashboardTile,
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
                 .stroke(CodexVistaTheme.dashboardBorder)
         }
         .shadow(color: CodexVistaTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
@@ -1044,7 +1069,7 @@ private struct DashboardContentView: View {
                     .foregroundStyle(CodexVistaTheme.dashboardAccent)
                     .frame(width: 26, height: 26)
                     .background(
-                        CodexVistaTheme.dashboardAccent.opacity(0.10),
+                        CodexVistaTheme.dashboardControlBackground,
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                     )
                     .accessibilityHidden(true)
@@ -1063,7 +1088,7 @@ private struct DashboardContentView: View {
                 Spacer(minLength: 6)
 
                 Text(TokenFormatter.compact(period.total))
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(CodexVistaTheme.metricFont(size: 22))
                     .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
                     .monospacedDigit()
                     .minimumScaleFactor(0.72)
@@ -1082,10 +1107,10 @@ private struct DashboardContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             CodexVistaTheme.dashboardTile,
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
                 .stroke(CodexVistaTheme.dashboardBorder)
         }
         .shadow(color: CodexVistaTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
@@ -1389,7 +1414,7 @@ private struct DashboardContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Label("Token 趋势", systemImage: "chart.xyaxis.line")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(CodexVistaTheme.headingFont(size: 14))
 
                 rangeSelector
 

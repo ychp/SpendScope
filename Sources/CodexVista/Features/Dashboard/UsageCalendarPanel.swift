@@ -262,7 +262,7 @@ struct UsageCalendarPanel: View {
     private func calendarHeader(_ month: Date) -> some View {
         HStack(spacing: 6) {
             Label("用量日历", systemImage: "calendar")
-                .font(.system(size: 14, weight: .semibold))
+                .font(CodexVistaTheme.headingFont(size: 14))
 
             Spacer(minLength: 4)
 
@@ -426,9 +426,9 @@ struct UsageCalendarPanel: View {
     private func heatColor(level: Int) -> Color {
         let opacity: Double
         switch level {
-        case 1: opacity = 0.16
-        case 2: opacity = 0.28
-        case 3: opacity = 0.46
+        case 1: opacity = CodexVistaTheme.isInk ? 0.12 : 0.16
+        case 2: opacity = CodexVistaTheme.isInk ? 0.22 : 0.28
+        case 3: opacity = CodexVistaTheme.isInk ? 0.32 : 0.42
         default: opacity = 1
         }
         return CodexVistaTheme.dashboardAccent.opacity(opacity)
