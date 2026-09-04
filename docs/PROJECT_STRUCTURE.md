@@ -16,7 +16,7 @@
 | `Sources/` | 核心 | CodexVista 全部生产源码与资源 | 是 |
 | `CodexVista.xcodeproj/` | 核心 | Xcode 工程配置、Target、构建设置和共享 Scheme | 构建时使用 |
 | `Tests/` | 工程必备 | XCTest 单元与集成测试 | 否 |
-| `script/` | 工程必备 | 本地构建运行和版本说明生成脚本 | 否 |
+| `script/` | 工程必备 | 本地构建运行、版本说明与文档截图生成脚本 | 否 |
 | `.github/` | 工程必备 | GitHub Actions 测试、Universal DMG 打包和 Release 发布 | 否 |
 | `docs/` | 工程必备 | 技术档案、结构说明和 README 截图 | 否 |
 | `README.md` | 工程必备 | 面向用户的产品、安装、隐私、开发和发布说明 | 否 |
@@ -24,7 +24,7 @@
 | `.gitignore` | 工程必备 | 排除构建产物和本机状态 | 否 |
 | `.codex/` | 可选 | Codex Desktop 的项目运行按钮配置 | 否 |
 | `.git/` | 本地核心 | Git 历史、分支、标签和远端信息；不属于项目源码 | 否 |
-| `.worktrees/` | 可选 / 可再生 | 本地 Git worktree 临时目录，目前为空 | 否 |
+| `.worktrees/` | 可选 / 可再生 | 本地 Git worktree 临时目录，以实际工作区状态为准 | 否 |
 | `.DS_Store` | 可选 / 可删除 | Finder 自动生成的目录显示元数据 | 否 |
 
 结论：真正决定 App 功能和版本的是 `Config/`、`Sources/` 与 `CodexVista.xcodeproj/`；测试、脚本、工作流和文档不进入安装包，但属于可维护、可发布项目的重要组成部分。
@@ -116,6 +116,9 @@ Features：菜单栏、看板和设置
 
 - `build_and_run.sh`：按工作区隔离 DerivedData，在构建输入变化时自动 clean；构建前和启动前都会停止旧实例，并以单实例语义启动 Debug App、验证本次生成的精确二进制；同时支持调试和日志模式。
 - `generate_release_notes.sh`：将版本亮点整理成结构化 GitHub Release 说明。
+- `export_screenshots.py`：编译隔离的文档应用，从当前 SwiftUI / AppKit 组件批量导出截图及来源清单。
+- `screenshots/DocumentationFixture.swift`：固定日期的匿名数据和数据、通知、更新服务替身。
+- `screenshots/DocumentationCapture.swift`：页面、分区、悬浮卡及主题的导出清单；不属于生产 Target。
 
 这些脚本不是运行时依赖，但统一了本地开发和发布行为，建议保留。
 
@@ -139,9 +142,13 @@ Features：菜单栏、看板和设置
 - `FEATURES.md`：完整记录用户功能、设置、数据口径、刷新机制与产品限制。
 - `TECHNICAL_ARCHIVE.md`：架构、统计口径、迁移、兼容和演进决策。
 - `PROJECT_STRUCTURE.md`：本文档，说明文件分级和清理边界。
-- `images/`：README 与功能说明使用的产品截图及设计参考图，包括状态栏、弹窗、看板、项目详情和设置界面；截图版本在引用文档中标注。
+- `design/README.md`：六款皮肤、九组配色、字体、统计层级和交互规范。
+- `images/README.md`：截图生成方法、匿名边界、覆盖清单和人工检查要求。
+- `images/manifest.json`：源码来源、联合指纹、图片尺寸及 SHA-256。
+- `images/codexvista-*.png`：当前组件导出的页面、设置、详情及悬浮卡示例。
+- `images/themes/`：全部九组配色和状态栏／刘海对照图。
 
-截图不参与 App 构建；移除前必须同步删除 README 与功能说明中的引用。
+截图及 `script/screenshots/` 均不参与正式 App 构建。生成后保留于版本控制供用户阅读；移除或更名图片前必须同步修改所有文档引用。旧设计草图不再作为当前功能截图。
 
 ### `.codex/` — 可选
 

@@ -193,7 +193,9 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 - `README.md` 面向用户，描述产品能力、安装、隐私、使用、开发和发布方法。
 - `docs/TECHNICAL_ARCHIVE.md` 面向开发维护，记录架构、统计口径、迁移、兼容与演进决策。
 - 行为发生变化时更新现在时描述，删除已经失效的步骤，不保留互相矛盾的旧说明。
-- 新增截图时放入 `docs/images/`，使用稳定、可读的文件名，并在 README 中提供有意义的替代文本。
+- 新增截图时放入 `docs/images/`（皮肤图放入 `themes/`），使用稳定、可读的文件名，并提供有意义的替代文本。
+- 全量更新文档截图使用 `python3 script/export_screenshots.py`；当前组件与手写匿名数据通过独立应用导出，不使用真实任务、项目路径或用量。同步检查 `docs/images/manifest.json`、图片布局和所有相对链接。
+- 截图脚本只在临时源码副本中开放私有视图和固定时间，不得为截图修改生产行为或引入运行时示例数据兜底。原生窗口交互仍用最新产品单独验证。
 
 ## 9. 完成交付标准
 

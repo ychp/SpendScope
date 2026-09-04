@@ -23,7 +23,7 @@ CodexVista 是第三方本地工具，并非 OpenAI 官方产品。
 
 ## 亮点功能
 
-- **从项目下钻到每次回复**：项目详情覆盖目录、任务、回复、状态、耗时、模型、Token 构成，以及每次回复调用过的完整 Skills / Tools。
+- **今日任务与回复下钻**：今日任务按状态与更新时间排序，支持独立任务详情；项目详情覆盖目录、任务、回复、状态、耗时、模型、Token 构成，以及每次回复调用过的完整 Skills / Tools。
 - **本地优先且边界清晰**：不读取提示词、回复正文、推理正文、工具参数、文件内容、项目代码或认证文件；聚合结果只保存在本机。
 - **可靠的增量统计**：基于检查点和事件去重读取活跃及归档记录；文件移动、重复扫描和应用重启不会重复累计。
 - **模型费用透明估算**：按模型展示 Token 构成和公开 API 标准价格下的等值费用；未收录独立价格的模型按 GPT-5.5 参考价估算并标记 `≈`，估算不冒充 Codex 实际账单。
@@ -33,69 +33,73 @@ CodexVista 是第三方本地工具，并非 OpenAI 官方产品。
 
 ## 软件界面
 
-现有经典皮肤采用铝灰与钴蓝，使用精密额度刻度、紧凑数字和细边框。以下为当前 SwiftUI 界面使用匿名示例数据渲染的设计预览：
+以下图片于 2026-09-04 从当前源码的 SwiftUI / AppKit 组件导出，统一使用匿名示例数据。截图覆盖最新平面统计分组、六款皮肤、模型费用和任务详情；顶部“示例数据”是文档标识。独立悬浮卡展示组件内容，窗口位置和系统标题栏以实际运行为准。生成方法和完整清单见[截图说明](docs/images/README.md)。
+
+### 今日任务与用量趋势
+
+![今日任务看板：7 天额度、订阅周期、四个统计周期及任务状态、项目、耗时和 Token](docs/images/codexvista-today-tasks.png)
+
+顶部同时展示 7 天额度、今日、7 日、30 日、累计及可选的当前订阅周期用量。四类 Token 以清晰的分组细线与分类色展示；切换皮肤会保留已经放大的看板尺寸。
+
+下方提供今日任务、用量趋势、Skills / Tools 和项目用量四个分析页。今日任务优先显示进行中的任务，再按最后更新时间排序；点击可查看目录、Token 构成、耗时与回复明细。
+
+![用量趋势：月度热力日历、时间范围切换与每日 Token 趋势](docs/images/codexvista-dashboard.png)
+
+### 六款皮肤
 
 | 经典浅色 | 经典深色 |
 | --- | --- |
-| ![经典浅色设计](docs/design/codexvista-light.png) | ![经典深色设计](docs/design/codexvista-dark.png) |
+| ![经典浅色：铝灰与钴蓝](docs/images/themes/codexvista-light.png) | ![经典深色：石墨与钴蓝](docs/images/themes/codexvista-dark.png) |
 
-现有**水墨皮肤**采用雾白纸面、册页留白、居中额度读数、细笔触额度条、远山孤舟与飞鸟、宋体标题及角落朱砂落款，仅支持浅色。前往「设置 → 外观 → 皮肤 → 水墨」切换。
+| 水墨 | 青瓷 |
+| --- | --- |
+| ![水墨：雾白纸面、朱砂与山水](docs/images/themes/codexvista-ink-light.png) | ![青瓷浅色：瓷白、青绿与涟漪](docs/images/themes/codexvista-celadon-light.png) |
 
-![水墨皮肤设计预览](docs/design/codexvista-ink-light.png)
+| 暮霞 | 未来科技 |
+| --- | --- |
+| ![暮霞浅色：暖灰、胭脂与落日](docs/images/themes/codexvista-dusk-light.png) | ![未来科技：电光青与分段额度条](docs/images/themes/codexvista-cyber-dark.png) |
 
-另有**青瓷**（瓷白与青绿）、**暮霞**（暖灰与胭脂）、**未来科技**（电光青与分段仪表）和**仙侠**（月白青玉、长剑与远山），可在设置的两列皮肤预览卡中切换。 状态栏、刘海摘要及用量弹窗同步跟随皮肤，切换后立即生效。
+![仙侠：月白青玉、长剑与远山，额度读数与重置时间独立布局](docs/images/themes/codexvista-xianxia-light.png)
 
-配色和交互说明见[外观设计说明](docs/design/README.md)。
+在“设置 → 外观”通过两列预览卡切换皮肤。经典、青瓷、暮霞支持跟随系统、浅色和深色；水墨与仙侠固定浅色，未来科技固定深色。状态栏、刘海、弹窗、设置与详情同步跟随外观。全部九组配色及交互规范见[外观设计说明](docs/design/README.md)。
 
-以下界面截图保留更名前 v1.3.0 的界面，仅供布局参考；当前应用名称已统一为 CodexVista，外观已更新为六款可选皮肤，数据会随本机 Codex 使用记录变化；关联目录、刘海摘要设置和模型排行布局已进一步调整，以本文功能说明为准。
+### 菜单栏与刘海摘要
 
-### 菜单栏与弹窗
+![状态栏摘要：剩余额度与重置倒计时](docs/images/codexvista-status-bar.png)
 
-![CodexVista 状态栏实时预览，显示 Codex 额度和重置倒计时](docs/images/codexvista-status-bar.png)
+![菜单栏弹窗：套餐、额度、今日 Token、刷新状态与操作入口](docs/images/codexvista-popover.png)
 
-![CodexVista 状态栏弹窗，展示额度、今日 Token 构成、刷新和更新入口](docs/images/codexvista-popover.png)
+默认在状态栏展示摘要，也可在“设置 → 状态栏与刘海 → 展示位置”选择“刘海下方”。摘要显示在摄像头遮挡区域下方，菜单栏保留图标入口；无刘海屏幕自动回退状态栏。设置预览与实际摘要共用绘制组件。
 
-“状态栏与刘海”设置中的实时预览与所选展示位置使用同一套绘制样式。默认在状态栏展示额度摘要，可通过设置选择“刘海下方”，此时在刘海下沿显示跟随当前皮肤的摘要，菜单栏保留图标入口；合盖或断开刘海屏幕后自动回退状态栏。内容显示在摄像头遮挡区域下方，会占用顶部一小条工作区。无需打开主窗口即可查看额度和今日用量；弹窗还提供刷新、打开看板、进入设置、检查更新和退出入口。
+![刘海下方摘要组件：额度和倒计时跟随当前皮肤](docs/images/codexvista-notch-summary.png)
 
-### 详细看板
+### 模型与调用分析
 
-![CodexVista 今日任务页，展示任务状态、项目、回复数和今日 Token](docs/images/codexvista-today-tasks.png)
+![Skills / Tools 排行：按命名空间汇总 Skill，按名称统计工具](docs/images/codexvista-activity-usage.png)
 
-![CodexVista 详细看板，展示 7 天额度、当前订阅周期、Token 汇总、用量日历和趋势图](docs/images/codexvista-dashboard.png)
+每个周期用量卡均提供模型数量入口：悬浮预览前 5 名，点击可固定并展开全部。表头费用始终包含该周期的全部模型，未收录独立价格的模型以 `≈` 标记参考估算。
 
-![CodexVista Skills 与 Tools 排行](docs/images/codexvista-activity-usage.png)
+![固定展开的模型排行：Token、占比与 API 等值费用](docs/images/codexvista-model-hover-details.png)
 
-![CodexVista 项目用量排行，展示项目、目录、任务、回复和 AI 耗时](docs/images/codexvista-project-usage.png)
+### 项目、任务与回复详情
 
-![CodexVista 周期用量卡中的模型用量与 API 等值费用排行](docs/images/codexvista-model-hover-details.png)
+![项目用量排行：目录数、任务数、回复数、AI 耗时与 Token](docs/images/codexvista-project-usage.png)
 
-详细看板在概览区同时展示 7 天额度、今日、7 日、30 日、累计和可选的当前订阅周期用量；每张用量卡都可悬浮预览或点击固定对应时间范围的模型用量与费用排行。下方包含今日任务、用量趋势、Skills / Tools 和项目用量四个分析页。今日任务按状态和最后更新时间排序，可继续查看任务的 Token 构成、项目目录与回复明细。
+![项目概览：关联目录、Token 构成与近 7 日趋势](docs/images/codexvista-project-overview.png)
 
-首次载入时使用与真实内容同构的轻量骨架，减少布局跳动。对应截图和全部悬浮明细见[完整功能说明](docs/FEATURES.md)。
+项目名与关联目录随 Codex 项目配置刷新；明确的项目身份会保留改名或目录变更前的历史归属。目录只展示安全名称，Token 统计位于项目、任务和回复层级。
 
-### 项目与回复详情
+![今日任务详情：任务摘要、四类 Token、项目相关目录与回复](docs/images/codexvista-today-task-detail.png)
 
-![CodexVista 今日任务详情，展示 Token 构成、相关目录和回复明细](docs/images/codexvista-today-task-detail.png)
+![回复明细：状态、耗时、模型调用次数及 Skills / Tools](docs/images/codexvista-reply-details.png)
 
-![CodexVista 项目详情概览，展示项目目录、AI 耗时、Token 构成和近 7 日趋势](docs/images/codexvista-project-overview.png)
-
-![CodexVista 项目任务明细](docs/images/codexvista-task-details.png)
-
-![CodexVista 项目回复明细](docs/images/codexvista-reply-details.png)
-
-项目排行和详情随刷新同步 Codex 中最新的项目名称与关联目录；项目详情的“关联目录”和今日任务详情的“项目相关目录”只展示目录名称，缺少项目配置时回退到会话记录中的工作目录。Token 用量保留在项目、任务和回复层级：Codex 的用量记录无法精确拆分到各个目录，因此目录旁不展示 Token、占比或独立用量状态。
-
-有明确 Codex 项目身份时，改名或调整关联目录后仍保留历史用量归属，即使没有新增 Token 也会随刷新更新；已确认的历史关联在重启和全量重建后保留，归属不明确的项目不会仅因同名或目录重叠而被合并。
-
-今日任务和项目排行都可以打开独立详情窗口，继续查看任务和回复级用量；子 agent 的用量会并入对应主任务，以及实际创建它的主回复，但子 agent 自己的完成事件不会提前结束仍在运行的主任务。回复中的模型会同时展示去重后的调用次数；将鼠标停在任务或回复上，还能在详情窗口外查看包含子 agent 调用在内的完整模型、Token、Skills / Tools 明细，以及按各模型实际 Token 归属计算的四类 Token API 等值费用明细与总额。
+任务和回复行均可悬浮查看完整模型、Skills / Tools、Token 和 API 等值费用。子 agent 用量并入对应主任务与创建它的主回复；子 agent 完成不会提前结束仍在运行的主任务。更多明细见[完整功能说明](docs/FEATURES.md)。
 
 ### 设置
 
-![CodexVista 完整设置页，包含外观、看板、状态栏、提醒、数据刷新、软件更新、订阅周期和套餐说明](docs/images/codexvista-settings.png)
+![外观、看板与状态栏设置：六款皮肤预览、色系、关闭行为和刘海选项](docs/images/codexvista-settings-appearance.png)
 
-设置页覆盖外观、看板行为、状态栏、提醒、数据源、刷新与重建、软件更新、订阅周期、套餐说明和隐私提示。所有悬浮明细与确认弹窗截图见[完整功能说明](docs/FEATURES.md)。
-
-这张设置页长图由 v1.3.0 分段截图后无缝拼接，包含从“外观”到“模型费用说明”的全部设置项。
+设置还提供额度提醒、来源健康状态、自动刷新、清空并重抓、软件更新、第一次订阅时间、套餐与模型费用说明。分区截图见[功能说明](docs/FEATURES.md#提醒与个性化设置)，完整内容见[设置长图](docs/images/codexvista-settings.png)。
 
 ## 系统要求
 
@@ -143,12 +147,13 @@ xattr -dr com.apple.quarantine /Applications/CodexVista.app
 
 CodexVista 只读取统计所需的最小字段，包括 Token 计数、额度窗口、模型、套餐、会话状态、工作目录、项目根目录组合、Codex 项目名称，以及 Skills / Tools 调用标识。
 
-它不会读取、保存或上传：
+它不会读取、保存或上传以下内容：
 
 - 提示词、消息、回复、摘要和推理正文；
 - 工具输入、工具输出、文件内容或项目代码；
-- `auth.json` 等认证文件的内容；
-- 原始 Git remote、完整项目路径或完整项目根目录路径。
+- `auth.json` 等认证文件的内容。
+
+项目路径和 Git 元数据仅用于本地身份识别，不保存或上传原始 remote 和完整路径；数据库中只保留派生 ID、哈希指纹、安全名称和目录数量。
 
 整理后的统计与导入进度只保存在：
 
@@ -189,13 +194,21 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   test
 ```
 
-更多调试、构建、目录职责和发布约束见项目文档。
+更新文档截图（需要 Python 3、完整 Xcode 和已登录的 macOS 图形会话）：
+
+```bash
+python3 script/export_screenshots.py
+```
+
+脚本使用独立应用和匿名数据生成图片及来源清单，不读取本机 Codex 记录。详细流程见[截图维护说明](docs/images/README.md)。发布流程及约束见[技术档案](docs/TECHNICAL_ARCHIVE.md#18-构建与发布)。
 
 ## 项目文档
 
 - [完整功能说明](docs/FEATURES.md)：所有用户可见功能、设置、数据口径、刷新机制和限制。
 - [技术档案](docs/TECHNICAL_ARCHIVE.md)：架构、事件白名单、Token 口径、存储迁移和兼容策略。
 - [项目文件结构](docs/PROJECT_STRUCTURE.md)：目录职责、核心入口和可清理的生成物。
+- [外观设计说明](docs/design/README.md)：六款皮肤、九组配色和共享交互规范。
+- [截图维护说明](docs/images/README.md)：导出方法、匿名数据和图片覆盖清单。
 
 ## 反馈问题
 
