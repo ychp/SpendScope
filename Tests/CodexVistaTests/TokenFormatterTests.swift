@@ -87,10 +87,17 @@ final class TokenFormatterTests: XCTestCase {
             }
             return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
         }
+        func blend(_ foreground: UInt32, over background: UInt32, opacity: Double) -> UInt32 {
+            [16, 8, 0].reduce(UInt32(0)) { result, shift in
+                let front = Double((foreground >> shift) & 255)
+                let back = Double((background >> shift) & 255)
+                return result | (UInt32((front * opacity + back * (1 - opacity)).rounded()) << shift)
+            }
+        }
         for skin in AppSkinPreference.allCases {
             for dark in [false, true] {
                 let palette = CodexVistaPalette.resolve(skin: skin, dark: dark)
-                let textPairs: [(UInt32, UInt32)] = [
+                var textPairs: [(UInt32, UInt32)] = [
                     (palette.primary, palette.raised),
                     (palette.muted, palette.control),
                     (palette.muted, palette.surface),
@@ -98,6 +105,11 @@ final class TokenFormatterTests: XCTestCase {
                     (palette.heatText, palette.accent),
                     (0xFFFFFF, palette.action)
                 ]
+                for level in 1...3 {
+                    textPairs.append((palette.primary, blend(
+                        palette.accent, over: palette.surface, opacity: skin.calendarOpacity(for: level)
+                    )))
+                }
                 for (foreground, background) in textPairs {
                     let values = [luminance(foreground), luminance(background)].sorted()
                     XCTAssertGreaterThanOrEqual(
@@ -260,6 +272,40 @@ final class TokenFormatterTests: XCTestCase {
         let inkOnLightSystem = CodexVistaPalette.resolve(skin: .ink, dark: false)
         XCTAssertEqual(inkOnDarkSystem.background, inkOnLightSystem.background)
         XCTAssertEqual(inkOnDarkSystem.primary, inkOnLightSystem.primary)
+    }
+
+    func testAdditionalSkinsPersistAndRespectSupportedAppearances() {
+        let suiteName = "AdditionalSkinsTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        for skin in [AppSkinPreference.celadon, .dusk] {
+            defaults.set(skin.rawValue, forKey: AppPreferenceKeys.skin)
+            XCTAssertEqual(AppSkinPreference.load(from: defaults), skin)
+            for scheme in AppColorSchemePreference.allCases {
+                XCTAssertEqual(skin.effectiveColorScheme(for: scheme), scheme.colorScheme)
+            }
+        }
+        defaults.set("midnight", forKey: AppPreferenceKeys.skin)
+        XCTAssertEqual(AppSkinPreference.load(from: defaults), .standard)
+        XCTAssertEqual(AppSkinPreference.load(from: defaults).effectiveColorScheme(for: .dark), .dark)
+    }
+
+    func testFantasyAndTechSkinsUseTheirFixedAppearancesAndPersist() {
+        let suiteName = "FixedSkinTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        for skin in [AppSkinPreference.cyber, .xianxia] {
+            defaults.set(skin.rawValue, forKey: AppPreferenceKeys.skin)
+            XCTAssertEqual(AppSkinPreference.load(from: defaults), skin)
+            for preference in AppColorSchemePreference.allCases {
+                defaults.set(preference.rawValue, forKey: AppPreferenceKeys.colorScheme)
+                XCTAssertEqual(skin.effectiveColorScheme(for: preference), skin == .cyber ? .dark : .light)
+                XCTAssertEqual(AppColorSchemePreference.load(from: defaults), preference)
+            }
+            XCTAssertEqual(CodexVistaPalette.resolve(skin: skin, dark: false).background,
+                           CodexVistaPalette.resolve(skin: skin, dark: true).background)
+        }
+        XCTAssertFalse(AppSkinPreference.allCases.map(\.rawValue).contains("midnight"))
     }
 
     func testUsageCalendarBuildsMondayFirstSixWeekGrid() throws {
@@ -535,7 +581,7 @@ final class StatusItemPresentationTests: XCTestCase {
     }
 
     func testStatusItemRendererAllocatesEnoughWidthForTwoDigitCountdownSuffix() {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .semibold)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: StatusItemLayoutMetrics.numericFontSize, weight: .semibold)
         let requiredTextWidth = NSAttributedString(
             string: "24h",
             attributes: [.font: font]
@@ -550,20 +596,60 @@ final class StatusItemPresentationTests: XCTestCase {
     }
 
     func testQuotaPillTextMaintainsReadableContrastAcrossEveryPaletteSurface() throws {
-        for role in [StatusItemQuotaPaletteRole.fiveHour, .weekly] {
-            let palette = StatusItemQuotaPalette.resolve(role)
-            XCTAssertGreaterThanOrEqual(
-                try contrastRatio(palette.text, palette.background),
-                4.5
-            )
-            XCTAssertGreaterThanOrEqual(
-                try contrastRatio(palette.start, palette.background),
-                3
-            )
-            XCTAssertGreaterThanOrEqual(
-                try contrastRatio(palette.end, palette.background),
-                3
-            )
+        for skin in AppSkinPreference.allCases {
+            for name in [NSAppearance.Name.aqua, .darkAqua] {
+                let appearance = try XCTUnwrap(NSAppearance(named: name))
+                let theme = StatusItemTheme.resolve(skin: skin, preference: .system, appearance: appearance)
+                XCTAssertGreaterThanOrEqual(try contrastRatio(theme.primary, theme.background), 4.5, skin.rawValue)
+                XCTAssertGreaterThanOrEqual(try contrastRatio(theme.countdown, theme.countdownBackground), 4.5, skin.rawValue)
+                for role in [StatusItemQuotaPaletteRole.fiveHour, .weekly] {
+                    let palette = StatusItemQuotaPalette.resolve(role, theme: theme)
+                    XCTAssertEqual(palette.background.alphaComponent, 1)
+                    XCTAssertGreaterThanOrEqual(try contrastRatio(palette.text, palette.background), 4.5, skin.rawValue)
+                    XCTAssertGreaterThanOrEqual(try contrastRatio(palette.start, palette.background), 3, skin.rawValue)
+                }
+            }
+        }
+    }
+
+    func testSummaryDigitsUseConsistentSizeWithoutClippingFullQuota() {
+        for skin in AppSkinPreference.allCases {
+            let theme = StatusItemTheme(skin: skin, dark: false)
+            XCTAssertEqual(theme.valueFont.pointSize, StatusItemLayoutMetrics.numericFontSize)
+            let bounds = NSAttributedString(string: "100%", attributes: [.font: theme.valueFont]).size()
+            XCTAssertLessThanOrEqual(bounds.width, StatusItemLayoutMetrics.richValueWidth, skin.rawValue)
+            XCTAssertLessThanOrEqual(bounds.height, 14, skin.rawValue)
+        }
+    }
+
+    func testSummaryAppearanceRespectsFixedSkinsAndExplicitColorPreference() throws {
+        let light = try XCTUnwrap(NSAppearance(named: .aqua))
+        let dark = try XCTUnwrap(NSAppearance(named: .darkAqua))
+        for skin in AppSkinPreference.allCases {
+            for preference in AppColorSchemePreference.allCases {
+                for appearance in [light, dark] {
+                    let theme = StatusItemTheme.resolve(skin: skin, preference: preference, appearance: appearance)
+                    let expectedDark = skin.fixedColorScheme.map { $0 == .dark }
+                        ?? preference.colorScheme.map { $0 == .dark }
+                        ?? (appearance.name == .darkAqua)
+                    XCTAssertEqual(theme.dark, expectedDark, "\(skin) / \(preference)")
+                }
+            }
+        }
+    }
+
+    func testThemeSwitchChangesRenderedSummaryWithoutChangingItsLayout() throws {
+        let presentation = StatusItemPresentation(snapshot: .preview, configuration: .standard)
+        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+        for style in [StatusItemRenderer.Style.menuBar, .notch] {
+            var images = Set<Data>()
+            for skin in AppSkinPreference.allCases {
+                let theme = StatusItemTheme.resolve(skin: skin, preference: .system, appearance: appearance)
+                let image = StatusItemRenderer(style: style, theme: theme).render(presentation, appearance: appearance)
+                XCTAssertEqual(image.size, presentation.imageSize)
+                images.insert(try XCTUnwrap(image.tiffRepresentation))
+            }
+            XCTAssertEqual(images.count, AppSkinPreference.allCases.count)
         }
     }
 

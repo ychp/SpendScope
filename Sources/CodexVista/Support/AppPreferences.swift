@@ -56,12 +56,53 @@ enum AppColorSchemePreference: String, CaseIterable, Identifiable, Sendable {
 enum AppSkinPreference: String, CaseIterable, Identifiable, Sendable {
     case standard
     case ink
+    case celadon
+    case dusk
+    case cyber
+    case xianxia
 
     var id: Self { self }
-    var title: String { self == .ink ? "水墨" : "经典" }
+    var title: String {
+        switch self {
+        case .standard: "经典"
+        case .ink: "水墨"
+        case .celadon: "青瓷"
+        case .dusk: "暮霞"
+        case .cyber: "未来科技"
+        case .xianxia: "仙侠"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .standard: "精密刻度 · 铝灰与钴蓝"
+        case .ink: "雾白纸面 · 石墨与朱砂"
+        case .celadon: "温润瓷白 · 青绿与涟漪"
+        case .dusk: "落日余晖 · 暖灰与胭脂"
+        case .cyber: "电光青 · 分段仪表与电路"
+        case .xianxia: "月白青玉 · 长剑与远山"
+        }
+    }
+
+    var fixedColorScheme: ColorScheme? {
+        switch self {
+        case .ink, .xianxia: .light
+        case .cyber: .dark
+        default: nil
+        }
+    }
 
     func effectiveColorScheme(for preference: AppColorSchemePreference) -> ColorScheme? {
-        self == .ink ? .light : preference.colorScheme
+        fixedColorScheme ?? preference.colorScheme
+    }
+
+    func calendarOpacity(for level: Int) -> Double {
+        switch level {
+        case 1: self == .ink ? 0.12 : 0.16
+        case 2: self == .ink ? 0.22 : 0.28
+        case 3: self == .ink ? 0.32 : 0.38
+        default: 1
+        }
     }
 
     static func resolved(from rawValue: String) -> Self {

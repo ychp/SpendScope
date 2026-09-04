@@ -150,6 +150,7 @@ struct MenuBarPopoverView: View {
         .padding(16)
         .frame(width: 390)
         .background { CodexVistaBackdrop() }
+        .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
         .task { await store.start() }
     }
 
@@ -163,7 +164,7 @@ struct MenuBarPopoverView: View {
                     .font(.caption.weight(.medium))
                 Text(verbatim: "当前版本 v\(updateService.currentVersion)")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
             }
 
             Spacer(minLength: 8)
@@ -174,10 +175,10 @@ struct MenuBarPopoverView: View {
         .padding(.vertical, 8)
         .background(
             CodexVistaTheme.dashboardControlBackground.opacity(0.58),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(10), style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(10), style: .continuous)
                 .stroke(CodexVistaTheme.dashboardBorder)
         }
     }
@@ -192,7 +193,7 @@ struct MenuBarPopoverView: View {
             HStack(spacing: 6) {
                 Button("手动下载") { updateService.openReleasePage() }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                 Button("更新") {
                     Task { await updateService.updateNow() }
                 }
@@ -205,7 +206,7 @@ struct MenuBarPopoverView: View {
                     .controlSize(.small)
                 Text("下载中")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
             }
         case .ready:
             Button("打开安装包") {
@@ -248,7 +249,7 @@ struct MenuBarPopoverView: View {
         case .available, .ready: CodexVistaTheme.accent
         case .failed: .orange
         case .upToDate: .green
-        case .idle, .checking, .downloading: .secondary
+        case .idle, .checking, .downloading: CodexVistaTheme.dashboardMutedText
         }
     }
 
@@ -268,11 +269,11 @@ struct MenuBarPopoverView: View {
                 .foregroundStyle(unavailableIconColor)
 
             Text(content.title)
-                .font(.headline)
+                .font(CodexVistaTheme.headingFont(size: 13))
 
             Text(content.description)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -297,14 +298,14 @@ struct MenuBarPopoverView: View {
                 .frame(width: 21.5, height: 21.5)
                 .foregroundStyle(.white)
                 .padding(6.5)
-                .background(CodexVistaTheme.brandGradient, in: RoundedRectangle(cornerRadius: 8))
+                .background(CodexVistaTheme.brandGradient, in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(8)))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("CodexVista")
-                    .font(.system(size: 14.5, weight: .bold))
+                    .font(CodexVistaTheme.headingFont(size: 14.5))
                 Text(MenuBarUpdateText.text(for: store.state))
                     .font(.system(size: 10.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                     .lineLimit(1)
             }
 
@@ -314,7 +315,7 @@ struct MenuBarPopoverView: View {
                 Task { await store.refresh() }
             } label: {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(8))
                         .fill(CodexVistaTheme.dashboardControlBackground)
 
                     if store.isRefreshing {
@@ -345,7 +346,7 @@ struct MenuBarPopoverView: View {
                         .frame(width: 18, height: 18)
                     Text("Codex · \(store.snapshot?.planName ?? "未检测到")")
                 }
-                .font(.headline)
+                .font(CodexVistaTheme.headingFont(size: 13))
                 Spacer()
                 Label(availabilityText, systemImage: availabilitySymbol)
                     .font(.caption.weight(.semibold))
@@ -365,21 +366,21 @@ struct MenuBarPopoverView: View {
                         .overlay(alignment: .trailing) {
                             if index.isMultiple(of: 2) {
                                 Rectangle()
-                                    .fill(Color.primary.opacity(0.07))
+                                    .fill(CodexVistaTheme.dashboardBorder)
                                     .frame(width: 1)
                             }
                         }
                         .overlay(alignment: .bottom) {
                             if index < 2 {
                                 Rectangle()
-                                    .fill(Color.primary.opacity(0.07))
+                                    .fill(CodexVistaTheme.dashboardBorder)
                                     .frame(height: 1)
                             }
                         }
                 }
             }
-            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .background(CodexVistaTheme.dashboardSurface, in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(10)))
+            .clipShape(RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(10)))
         }
         .dashboardCard(padding: 14)
     }
@@ -417,7 +418,7 @@ struct MenuBarPopoverView: View {
                 Label("退出", systemImage: "power")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(CodexVistaTheme.dashboardMutedText)
             .help("退出 CodexVista")
         }
     }
@@ -432,7 +433,7 @@ struct MenuBarPopoverView: View {
                     quotaSection
 
                     Rectangle()
-                        .fill(Color.primary.opacity(0.08))
+                        .fill(CodexVistaTheme.dashboardBorder)
                         .frame(width: 1, height: 58)
 
                     compactTodaySummary
@@ -442,7 +443,7 @@ struct MenuBarPopoverView: View {
                     quotaSection
 
                     Rectangle()
-                        .fill(Color.primary.opacity(0.08))
+                        .fill(CodexVistaTheme.dashboardBorder)
                         .frame(height: 1)
 
                     wideTodaySummary
@@ -451,14 +452,14 @@ struct MenuBarPopoverView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        .background(CodexVistaTheme.dashboardSurface, in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(10)))
     }
 
     private var compactTodaySummary: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("今日 Token")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(CodexVistaTheme.dashboardMutedText)
 
             todayTokenValue
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -470,7 +471,7 @@ struct MenuBarPopoverView: View {
         HStack(alignment: .firstTextBaseline) {
             Text("今日 Token")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(CodexVistaTheme.dashboardMutedText)
 
             Spacer()
 
@@ -480,7 +481,7 @@ struct MenuBarPopoverView: View {
 
     private var todayTokenValue: some View {
         Text(store.snapshot.map { TokenFormatter.compact($0.todayTokens) } ?? "--")
-            .font(.system(size: 20, weight: .bold, design: .rounded))
+            .font(CodexVistaTheme.metricFont(size: 20))
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.75)
@@ -493,15 +494,15 @@ struct MenuBarPopoverView: View {
         if quotas.isEmpty {
             HStack(spacing: 8) {
                 Image(systemName: "gauge.with.dots.needle.33percent")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
+                    .font(CodexVistaTheme.headingFont(size: 13))
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("暂无可用额度数据")
                         .font(.subheadline.weight(.semibold))
                     Text("等待 Codex 返回额度信息")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
@@ -520,10 +521,10 @@ struct MenuBarPopoverView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("\(quota.title)剩余")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                 Spacer(minLength: 6)
                 Text("\(quota.remainingPercent)%")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(CodexVistaTheme.metricFont(size: 16))
                     .monospacedDigit()
                     .foregroundStyle(color)
             }
@@ -534,7 +535,7 @@ struct MenuBarPopoverView: View {
 
             Text(MenuBarQuotaTimingText.text(for: quota))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
                 .allowsTightening(true)
@@ -544,7 +545,7 @@ struct MenuBarPopoverView: View {
     }
 
     private func quotaColor(for quota: QuotaSnapshot) -> Color {
-        quota.id == "7d" ? CodexVistaTheme.accentBlue : CodexVistaTheme.accent
+        quota.id == "7d" ? CodexVistaTheme.accent : CodexVistaTheme.accentBlue
     }
 
     private var tokenMetricColumns: [GridItem] {
@@ -562,13 +563,13 @@ struct MenuBarPopoverView: View {
             HStack {
                 Text("今日构成")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
 
                 Spacer()
 
                 Text(hasUsage ? "按今日总量" : "暂无数据")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
             }
 
             GeometryReader { geometry in
@@ -580,7 +581,7 @@ struct MenuBarPopoverView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.08))
+                .background(CodexVistaTheme.dashboardBorder)
                 .clipShape(Capsule())
             }
             .frame(height: 6)
@@ -595,7 +596,7 @@ struct MenuBarPopoverView: View {
         let total = store.snapshot?.todayTokens ?? 0
         return [
             MenuBarTokenMetric(id: "input", title: "输入（未缓存）", value: breakdown?.input, total: total, color: CodexVistaTheme.accent),
-            MenuBarTokenMetric(id: "cached", title: "缓存输入", value: breakdown?.cachedInput, total: total, color: CodexVistaTheme.accentBlue),
+            MenuBarTokenMetric(id: "cached", title: "缓存输入", value: breakdown?.cachedInput, total: total, color: CodexVistaTheme.dashboardCachedInput),
             MenuBarTokenMetric(id: "output", title: "可见输出", value: breakdown?.output, total: total, color: CodexVistaTheme.output),
             MenuBarTokenMetric(id: "reasoning", title: "推理", value: breakdown?.reasoning, total: total, color: CodexVistaTheme.reasoning)
         ]
@@ -610,19 +611,19 @@ struct MenuBarPopoverView: View {
 
                 Text(metric.title)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
             }
 
             HStack(alignment: .lastTextBaseline) {
                 Text(metric.valueText)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .font(CodexVistaTheme.metricFont(size: 16))
                     .monospacedDigit()
 
                 Spacer(minLength: 8)
 
                 HStack(spacing: 3) {
                     Text("占今日")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                     Text(metric.shareText)
                         .fontWeight(.semibold)
                         .monospacedDigit()
@@ -645,7 +646,7 @@ struct MenuBarPopoverView: View {
         switch store.state {
         case .loaded: .green
         case .stale: .orange
-        case .loading, .empty: .secondary
+        case .loading, .empty: CodexVistaTheme.dashboardMutedText
         case .failed, .unsupported: .red
         }
     }

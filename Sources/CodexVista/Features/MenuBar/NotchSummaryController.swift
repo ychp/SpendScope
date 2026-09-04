@@ -1,19 +1,6 @@
 import AppKit
 import SwiftUI
 
-enum NotchSummaryPalette {
-    static let primary = NSColor.white
-    static let countdown = NSColor(srgbRed: 0.988, green: 0.827, blue: 0.302, alpha: 1)
-    static let quota = StatusItemQuotaPalette(
-        start: NSColor(srgbRed: 0.357, green: 0.247, blue: 0.659, alpha: 1),
-        end: NSColor(srgbRed: 0.357, green: 0.247, blue: 0.659, alpha: 1),
-        background: NSColor(srgbRed: 0.867, green: 0.827, blue: 0.980, alpha: 1),
-        progressTrack: NSColor.black.withAlphaComponent(0.18),
-        text: NSColor(srgbRed: 0.157, green: 0.102, blue: 0.275, alpha: 1),
-        border: .clear
-    )
-}
-
 enum NotchSummaryLayout {
     static let height: CGFloat = 32
     static let horizontalPadding: CGFloat = 12
@@ -86,11 +73,13 @@ final class NotchSummaryController {
         frame: NSRect,
         presentation: StatusItemPresentation,
         quotaDisplay: QuotaDisplayPreference,
+        theme: StatusItemTheme,
         onClick: @escaping () -> Void
     ) {
         let content = NotchSummaryView(
             presentation: presentation,
             quotaDisplay: quotaDisplay,
+            theme: theme,
             onClick: onClick
         )
         if panel == nil {
@@ -125,6 +114,7 @@ final class NotchSummaryController {
 struct NotchSummaryView: View {
     let presentation: StatusItemPresentation
     let quotaDisplay: QuotaDisplayPreference
+    let theme: StatusItemTheme
     var onClick: () -> Void = {}
 
     var body: some View {
@@ -132,18 +122,24 @@ struct NotchSummaryView: View {
             HStack(spacing: NotchSummaryLayout.contentSpacing) {
                 Text(NotchSummaryLayout.label(for: presentation, quotaDisplay: quotaDisplay))
                     .font(.system(size: NotchSummaryLayout.labelFontSize, weight: .medium))
-                    .foregroundStyle(Color(nsColor: NotchSummaryPalette.primary))
-                Image(nsImage: StatusItemRenderer(style: .notch).render(
+                    .foregroundStyle(Color(nsColor: theme.primary))
+                Image(nsImage: StatusItemRenderer(style: .notch, theme: theme).render(
                     presentation,
-                    appearance: NSAppearance(named: .darkAqua)!
+                    appearance: NSAppearance(named: theme.dark ? .darkAqua : .aqua)!
                 ))
                 .interpolation(.high)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.black, in: UnevenRoundedRectangle(
-                bottomLeadingRadius: 13,
-                bottomTrailingRadius: 13
+            .background(Color(nsColor: theme.background), in: UnevenRoundedRectangle(
+                bottomLeadingRadius: theme.skin == .cyber ? 5 : 13,
+                bottomTrailingRadius: theme.skin == .cyber ? 5 : 13
             ))
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color(nsColor: theme.color(theme.palette.border)))
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 13)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -155,6 +151,6 @@ struct NotchSummaryView: View {
         .accessibilityLabel("CodexVista 刘海摘要")
         .accessibilityValue(presentation.label)
         .accessibilityHint("打开用量面板")
-        .environment(\.colorScheme, .dark)
+        .environment(\.colorScheme, theme.dark ? .dark : .light)
     }
 }

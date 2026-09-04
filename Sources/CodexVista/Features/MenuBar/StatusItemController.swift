@@ -15,32 +15,65 @@ struct StatusItemQuotaPalette {
     let text: NSColor
     let border: NSColor
 
-    static func resolve(_ role: StatusItemQuotaPaletteRole) -> StatusItemQuotaPalette {
-        let text = NSColor(srgbRed: 0.055, green: 0.11, blue: 0.20, alpha: 1)
-        switch role {
-        case .fiveHour:
-            return StatusItemQuotaPalette(
-                start: NSColor(srgbRed: 0.055, green: 0.286, blue: 0.667, alpha: 1),
-                end: NSColor(srgbRed: 0.090, green: 0.365, blue: 0.780, alpha: 1),
-                background: NSColor(srgbRed: 0.90, green: 0.94, blue: 0.99, alpha: 1),
-                progressTrack: text.withAlphaComponent(0.14),
-                text: text,
-                border: text.withAlphaComponent(0.10)
-            )
-        case .weekly:
-            return StatusItemQuotaPalette(
-                start: NSColor(srgbRed: 0.149, green: 0.337, blue: 0.635, alpha: 1),
-                end: NSColor(srgbRed: 0.200, green: 0.431, blue: 0.737, alpha: 1),
-                background: NSColor(srgbRed: 0.925, green: 0.955, blue: 0.995, alpha: 1),
-                progressTrack: text.withAlphaComponent(0.14),
-                text: text,
-                border: text.withAlphaComponent(0.10)
-            )
+    static func resolve(_ role: StatusItemQuotaPaletteRole, theme: StatusItemTheme) -> Self {
+        let palette = theme.palette
+        let accent = theme.color(role == .weekly ? palette.accent : palette.secondary)
+        return Self(
+            start: accent,
+            end: accent,
+            background: theme.color(palette.raised),
+            progressTrack: theme.color(palette.border),
+            text: theme.color(palette.primary),
+            border: theme.color(palette.border)
+        )
+    }
+}
+
+/// Shared, explicit appearance for AppKit drawing, the notch panel and settings previews.
+struct StatusItemTheme: Equatable {
+    let skin: AppSkinPreference
+    let dark: Bool
+
+    static func resolve(
+        skin: AppSkinPreference = .load(),
+        preference: AppColorSchemePreference = .load(),
+        appearance: NSAppearance
+    ) -> Self {
+        let dark = skin.effectiveColorScheme(for: preference).map { $0 == .dark }
+            ?? (appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+        return Self(skin: skin, dark: dark)
+    }
+
+    var palette: CodexVistaPalette { .resolve(skin: skin, dark: dark) }
+    var background: NSColor { color(palette.surface) }
+    var primary: NSColor { color(palette.primary) }
+    var countdown: NSColor { color(skin == .ink ? palette.selectedText : palette.secondary) }
+    var countdownBackground: NSColor { color(palette.raised) }
+
+    func cornerRadius(height: CGFloat) -> CGFloat {
+        switch skin {
+        case .standard, .celadon: height / 2
+        case .ink, .cyber: 2
+        case .dusk: 5
+        case .xianxia: 4
         }
+    }
+
+    var valueFont: NSFont {
+        skin == .cyber
+            ? .monospacedSystemFont(ofSize: StatusItemLayoutMetrics.numericFontSize, weight: .semibold)
+            : .monospacedDigitSystemFont(ofSize: StatusItemLayoutMetrics.numericFontSize, weight: .semibold)
+    }
+
+    func color(_ hex: UInt32) -> NSColor {
+        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+                green: CGFloat((hex >> 8) & 0xFF) / 255,
+                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
     }
 }
 
 enum StatusItemLayoutMetrics {
+    static let numericFontSize: CGFloat = 11
     static let imageHeight: CGFloat = 22
     static let itemOuterPadding: CGFloat = 8
     static let iconRect = NSRect(x: 2, y: 2, width: 18, height: 18)
@@ -166,9 +199,14 @@ struct StatusItemRenderer {
     }
 
     var style: Style = .menuBar
+    var theme: StatusItemTheme?
+
+    private var drawingTheme: StatusItemTheme {
+        theme ?? .resolve(appearance: NSAppearance.currentDrawing())
+    }
 
     private var primaryColor: NSColor {
-        style == .notch ? NotchSummaryPalette.primary : .labelColor
+        style == .notch ? drawingTheme.primary : .labelColor
     }
 
     func render(_ presentation: StatusItemPresentation, appearance: NSAppearance) -> NSImage {
@@ -190,7 +228,7 @@ struct StatusItemRenderer {
         }
 
         NSGraphicsContext.current?.imageInterpolation = .high
-        drawIcon(in: StatusItemLayoutMetrics.iconRect)
+        drawIcon(in: StatusItemLayoutMetrics.iconRect, themed: !presentation.metrics.isEmpty || style == .notch)
         drawRich(presentation.metrics)
         return image
     }
@@ -219,9 +257,9 @@ struct StatusItemRenderer {
                 paletteRole: metric.paletteRole,
                 in: NSRect(
                     x: x + valueOffset,
-                    y: 3,
+                    y: 2,
                     width: StatusItemLayoutMetrics.richValueWidth,
-                    height: 16
+                    height: 18
                 )
             )
             x += showsPeriodLabels
@@ -242,9 +280,7 @@ struct StatusItemRenderer {
         paletteRole: StatusItemQuotaPaletteRole,
         in rect: NSRect
     ) {
-        let palette = style == .notch
-            ? NotchSummaryPalette.quota
-            : StatusItemQuotaPalette.resolve(paletteRole)
+        let palette = StatusItemQuotaPalette.resolve(paletteRole, theme: drawingTheme)
         drawValueBackground(in: rect, palette: palette)
         drawLinearProgress(
             in: rect,
@@ -253,8 +289,9 @@ struct StatusItemRenderer {
         )
         drawText(
             value,
-            in: NSRect(x: rect.minX, y: rect.minY + 3, width: rect.width, height: 12),
-            font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .bold),
+            in: NSRect(x: rect.minX, y: rect.minY + 4,
+                       width: rect.width, height: 14),
+            font: drawingTheme.valueFont,
             color: palette.text,
             alignment: .center
         )
@@ -263,8 +300,8 @@ struct StatusItemRenderer {
     private func drawValueBackground(in rect: NSRect, palette: StatusItemQuotaPalette) {
         let path = NSBezierPath(
             roundedRect: rect,
-            xRadius: rect.height / 2,
-            yRadius: rect.height / 2
+            xRadius: drawingTheme.cornerRadius(height: rect.height),
+            yRadius: drawingTheme.cornerRadius(height: rect.height)
         )
         palette.background.setFill()
         path.fill()
@@ -284,6 +321,23 @@ struct StatusItemRenderer {
             width: rect.width - 10,
             height: 1.8
         )
+        if drawingTheme.skin == .cyber {
+            let segments = NSBezierPath()
+            let step = progressRect.width / 7
+            for index in 0..<7 {
+                segments.appendRect(NSRect(x: progressRect.minX + CGFloat(index) * step, y: progressRect.minY,
+                                           width: step - 1, height: progressRect.height))
+            }
+            palette.progressTrack.setFill()
+            segments.fill()
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: NSRect(x: progressRect.minX, y: progressRect.minY,
+                                     width: progressRect.width * min(max(fraction, 0), 1), height: progressRect.height)).addClip()
+            palette.start.setFill()
+            segments.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            return
+        }
         palette.progressTrack.setFill()
         NSBezierPath(
             roundedRect: progressRect,
@@ -328,19 +382,23 @@ struct StatusItemRenderer {
     }
 
     private func drawResetCountdown(_ value: String, x: CGFloat) {
-        let color = style == .notch ? NotchSummaryPalette.countdown : NSColor.systemBlue
+        let color = drawingTheme.countdown
         let backgroundRect = NSRect(
             x: x,
             y: 3,
             width: StatusItemLayoutMetrics.richResetWidth - 2,
             height: 16
         )
-        color.withAlphaComponent(0.14).setFill()
-        NSBezierPath(
+        drawingTheme.countdownBackground.setFill()
+        let background = NSBezierPath(
             roundedRect: backgroundRect,
-            xRadius: backgroundRect.height / 2,
-            yRadius: backgroundRect.height / 2
-        ).fill()
+            xRadius: drawingTheme.cornerRadius(height: backgroundRect.height),
+            yRadius: drawingTheme.cornerRadius(height: backgroundRect.height)
+        )
+        background.fill()
+        drawingTheme.color(drawingTheme.palette.border).setStroke()
+        background.lineWidth = 0.8
+        background.stroke()
 
         let iconRect = NSRect(x: x + 3, y: 7, width: 8, height: 8)
         if let symbol = NSImage(
@@ -357,7 +415,7 @@ struct StatusItemRenderer {
                 width: StatusItemLayoutMetrics.resetTextWidth,
                 height: 16
             ),
-            font: .monospacedDigitSystemFont(ofSize: 11.5, weight: .semibold),
+            font: .monospacedDigitSystemFont(ofSize: StatusItemLayoutMetrics.numericFontSize, weight: .semibold),
             color: color,
             alignment: .left
         )
@@ -383,9 +441,18 @@ struct StatusItemRenderer {
         text.draw(in: rect)
     }
 
-    private func drawIcon(in rect: NSRect) {
+    private func drawIcon(in rect: NSRect, themed: Bool) {
         guard let source = NSImage(named: "MenuBarIcon") else { return }
-        drawTintedImage(source, color: primaryColor, in: rect)
+        if themed {
+            drawingTheme.background.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
+            let palette = drawingTheme.palette
+            drawTintedImage(source, color: drawingTheme.color(drawingTheme.skin == .ink ? palette.selectedText : palette.accent),
+                            in: rect.insetBy(dx: 1, dy: 1))
+        } else {
+            // The icon-only entry sits directly on the system menu bar / wallpaper.
+            drawTintedImage(source, color: primaryColor, in: rect)
+        }
     }
 
     private func drawTintedImage(_ source: NSImage, color: NSColor, in rect: NSRect) {
@@ -412,7 +479,6 @@ final class StatusItemController: NSObject {
     private let store: DashboardStore
     private let updateService: AppUpdateService
     private let defaults: UserDefaults
-    private let renderer = StatusItemRenderer()
     private let notchSummary = NotchSummaryController()
     private var notchFrame: NSRect?
     private var refreshTimer: Timer?
@@ -423,6 +489,7 @@ final class StatusItemController: NSObject {
     private var appearanceObservation: NSKeyValueObservation?
     private var lastPresentation: StatusItemPresentation?
     private var lastAppearanceName: NSAppearance.Name?
+    private var lastTheme: StatusItemTheme?
     private var onOpenDashboard: () -> Void
     private var onOpenSettings: () -> Void
 
@@ -582,6 +649,8 @@ final class StatusItemController: NSObject {
     private func updateStatusItem() {
         guard let button = statusItem.button else { return }
         let configuration = menuBarConfiguration
+        let appearance = button.effectiveAppearance
+        let theme = StatusItemTheme.resolve(skin: .load(from: defaults), preference: .load(from: defaults), appearance: appearance)
         let fullPresentation = StatusItemPresentation(
             snapshot: store.snapshot,
             configuration: configuration
@@ -602,7 +671,8 @@ final class StatusItemController: NSObject {
             notchSummary.update(
                 frame: notchFrame,
                 presentation: fullPresentation,
-                quotaDisplay: configuration.quotaDisplay
+                quotaDisplay: configuration.quotaDisplay,
+                theme: theme
             ) { [weak self] in
                 guard let self else { return }
                 if self.popover?.isShown == true {
@@ -626,13 +696,13 @@ final class StatusItemController: NSObject {
         )
         button.toolTip = fullPresentation.tooltip
         button.setAccessibilityValue(fullPresentation.label)
-        let appearance = button.effectiveAppearance
-        guard presentation != lastPresentation || appearance.name != lastAppearanceName else { return }
+        guard presentation != lastPresentation || appearance.name != lastAppearanceName || theme != lastTheme else { return }
 
         lastPresentation = presentation
         lastAppearanceName = appearance.name
+        lastTheme = theme
         statusItem.length = presentation.itemLength
-        button.image = renderer.render(presentation, appearance: appearance)
+        button.image = StatusItemRenderer(theme: theme).render(presentation, appearance: appearance)
     }
 
     private var menuBarConfiguration: MenuBarLabelConfiguration {

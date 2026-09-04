@@ -25,6 +25,12 @@ struct CodexVistaPalette {
         case (.standard, false): standardLight
         case (.standard, true): standardDark
         case (.ink, _): inkLight
+        case (.celadon, false): celadonLight
+        case (.celadon, true): celadonDark
+        case (.dusk, false): duskLight
+        case (.dusk, true): duskDark
+        case (.cyber, _): cyberDark
+        case (.xianxia, _): xianxiaLight
         }
     }
 
@@ -87,6 +93,125 @@ struct CodexVistaPalette {
         heatText: 0xFFFFFF,
         action: 0x3B4850
     )
+    private static let celadonLight = Self(
+        background: 0xE5EFEB,
+        surface: 0xF0F6F2,
+        raised: 0xFAFCF8,
+        control: 0xD8E6DF,
+        border: 0xB7CEC2,
+        primary: 0x203E36,
+        muted: 0x47645B,
+        accent: 0x21664F,
+        secondary: 0x426B87,
+        cached: 0x647991,
+        output: 0xA85D37,
+        reasoning: 0x6C6B3A,
+        grid: 0xD1E1D8,
+        selected: 0xFAFCF8,
+        selectedText: 0x21664F,
+        heatText: 0xFFFFFF,
+        action: 0x21664F
+    )
+
+    private static let celadonDark = Self(
+        background: 0x142C28,
+        surface: 0x1B3630,
+        raised: 0x23433B,
+        control: 0x2B4D43,
+        border: 0x456A5C,
+        primary: 0xE6F4EB,
+        muted: 0xAAC9B9,
+        accent: 0x8BD1AE,
+        secondary: 0x9BC9DD,
+        cached: 0xB5C4DE,
+        output: 0xE9B495,
+        reasoning: 0xCAC68C,
+        grid: 0x34594C,
+        selected: 0x355D4E,
+        selectedText: 0xC0ECD3,
+        heatText: 0x152F25,
+        action: 0x275B46
+    )
+
+    private static let duskLight = Self(
+        background: 0xF1E6E3,
+        surface: 0xF8F0EB,
+        raised: 0xFFFAF4,
+        control: 0xEADAD4,
+        border: 0xD6B9B0,
+        primary: 0x4B323A,
+        muted: 0x775660,
+        accent: 0xA14960,
+        secondary: 0x936139,
+        cached: 0x7B7199,
+        output: 0x9A6332,
+        reasoning: 0x487C78,
+        grid: 0xE8D3CC,
+        selected: 0xFFFAF4,
+        selectedText: 0x963D55,
+        heatText: 0xFFFFFF,
+        action: 0x963D55
+    )
+
+    private static let duskDark = Self(
+        background: 0x302128,
+        surface: 0x3B2A32,
+        raised: 0x49343D,
+        control: 0x55404A,
+        border: 0x775766,
+        primary: 0xF9EAF0,
+        muted: 0xD9B8C4,
+        accent: 0xEBA3B8,
+        secondary: 0xE9B38B,
+        cached: 0xC7B7E6,
+        output: 0xE5BA83,
+        reasoning: 0xA6CFCC,
+        grid: 0x624653,
+        selected: 0x704656,
+        selectedText: 0xFBE0E8,
+        heatText: 0x38222B,
+        action: 0x8E3B52
+    )
+
+    private static let cyberDark = Self(
+        background: 0x10191C,
+        surface: 0x17262B,
+        raised: 0x1D3036,
+        control: 0x294149,
+        border: 0x3D626A,
+        primary: 0xE3F6F6,
+        muted: 0xA5C4C9,
+        accent: 0x65DCD3,
+        secondary: 0x83BCEC,
+        cached: 0xA9B4E5,
+        output: 0xF1B783,
+        reasoning: 0xBFD49A,
+        grid: 0x2C4D54,
+        selected: 0x31515A,
+        selectedText: 0xA3F6EC,
+        heatText: 0x122629,
+        action: 0x235F60
+    )
+
+    private static let xianxiaLight = Self(
+        background: 0xEFF3F3,
+        surface: 0xF7FAF9,
+        raised: 0xFCFDFC,
+        control: 0xE2EAE9,
+        border: 0xCEDBD8,
+        primary: 0x263F44,
+        muted: 0x50676A,
+        accent: 0x356B70,
+        secondary: 0x876C39,
+        cached: 0x7C929A,
+        output: 0x9A7560,
+        reasoning: 0x6A8067,
+        grid: 0xDEE8E5,
+        selected: 0xFCFDFC,
+        selectedText: 0x356B70,
+        heatText: 0xFFFFFF,
+        action: 0x356B70
+    )
 }
 
 enum CodexVistaTheme {
@@ -114,24 +239,37 @@ enum CodexVistaTheme {
     static var selectionText: Color { color(\.selectedText) }
     static var heatmapText: Color { color(\.heatText) }
     static var cinnabar: Color { color(\.selectedText) }
-    static var dashboardShadow: Color { Color.black.opacity(isInk ? 0.025 : 0.06) }
-    static var isInk: Bool { AppSkinPreference.load() == .ink }
+    static var dashboardShadow: Color { Color.black.opacity((isInk || skin == .xianxia) ? 0.025 : 0.06) }
+    static var skin: AppSkinPreference { AppSkinPreference.load() }
+    static var isInk: Bool { skin == .ink }
 
     static var brandGradient: LinearGradient {
         LinearGradient(colors: [color(\.action), color(\.action)], startPoint: .top, endPoint: .bottom)
     }
 
     static func headingFont(size: CGFloat) -> Font {
-        isInk ? .custom("Songti SC", size: size).weight(.semibold) : .system(size: size, weight: .semibold)
+        (isInk || skin == .xianxia) ? .custom("Songti SC", size: size).weight(.semibold) : .system(size: size, weight: .semibold)
     }
 
     static func metricFont(size: CGFloat) -> Font {
-        isInk ? .system(size: size, weight: .semibold, design: .serif)
-            : .custom("DINAlternate-Bold", size: size)
+        switch skin {
+        case .ink: .system(size: size, weight: .semibold, design: .serif)
+        case .xianxia: .system(size: size, weight: .medium)
+        case .celadon, .dusk: .system(size: size, weight: .semibold, design: .rounded)
+        case .standard: .custom("DINAlternate-Bold", size: size)
+        case .cyber: .system(size: size, weight: .medium, design: .monospaced)
+        }
     }
 
     static func cornerRadius(_ radius: CGFloat) -> CGFloat {
-        radius * (isInk ? 0.5 : 0.72)
+        switch skin {
+        case .ink: radius * 0.5
+        case .standard: radius * 0.72
+        case .celadon: radius * 1.15
+        case .dusk: radius
+        case .cyber: radius * 0.25
+        case .xianxia: radius * 0.85
+        }
     }
 
     static func swatch(_ hex: UInt32) -> Color { Color(nsColor: nsColor(hex)) }
@@ -182,92 +320,261 @@ struct CodexVistaPaperGrain: View {
 }
 
 
-/// A quiet landscape in the quota panel's lower margin, independent of usage data.
+/// A horizontal landscape with its own reserved space below the quota controls.
 struct CodexVistaInkPainting: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         Canvas { context, size in
             let ink = CodexVistaTheme.dashboardAccent
-            let strength = colorScheme == .dark ? 0.78 : 1.0
-            func point(_ x: Double, _ y: Double) -> CGPoint {
+            func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
                 CGPoint(x: x * size.width, y: y * size.height)
             }
-            // Unequal ridges and translucent washes leave a misty river between banks.
+            // Distant, broad washes and a darker near bank leave the river mostly blank.
             let ridges: [[CGPoint]] = [
-                [point(0, 0.45), point(0.08, 0.34), point(0.13, 0.43), point(0.24, 0.12), point(0.29, 0.23), point(0.34, 0.38), point(0.4, 0.34), point(0.52, 0.68)],
-                [point(0.43, 0.76), point(0.57, 0.54), point(0.63, 0.57), point(0.72, 0.3), point(0.77, 0.4), point(0.83, 0.23), point(0.89, 0.42), point(1, 0.47)],
-                [point(0, 0.52), point(0.06, 0.43), point(0.12, 0.54), point(0.18, 0.3), point(0.24, 0.48), point(0.29, 0.53), point(0.38, 0.82)]
+                [point(0, 0.44), point(0.09, 0.30), point(0.18, 0.40), point(0.28, 0.10),
+                 point(0.35, 0.24), point(0.44, 0.46), point(0.52, 0.60)],
+                [point(0.56, 0.72), point(0.67, 0.58), point(0.73, 0.41), point(0.79, 0.47),
+                 point(0.86, 0.30), point(0.94, 0.56), point(1, 0.54)],
+                [point(0, 0.61), point(0.07, 0.49), point(0.13, 0.55), point(0.2, 0.38),
+                 point(0.29, 0.60), point(0.36, 0.77)]
             ]
             for (layer, ridge) in ridges.enumerated() {
-                guard let first = ridge.first, let last = ridge.last else { continue }
                 var mountain = Path()
-                mountain.move(to: first)
+                mountain.move(to: ridge[0])
                 for index in 1..<ridge.count {
                     let previous = ridge[index - 1]
                     let current = ridge[index]
-                    let middle = CGPoint(x: (previous.x + current.x) / 2, y: (previous.y + current.y) / 2)
-                    mountain.addQuadCurve(to: middle, control: previous)
+                    mountain.addQuadCurve(to: CGPoint(x: (previous.x + current.x) / 2,
+                                                      y: (previous.y + current.y) / 2), control: previous)
                 }
+                let last = ridge[ridge.count - 1]
                 mountain.addLine(to: last)
-                mountain.addLine(to: CGPoint(x: last.x, y: size.height * 0.94))
-                mountain.addLine(to: CGPoint(x: first.x, y: size.height * 0.94))
+                mountain.addLine(to: CGPoint(x: last.x, y: size.height))
+                mountain.addLine(to: CGPoint(x: ridge[0].x, y: size.height))
                 mountain.closeSubpath()
                 context.fill(mountain, with: .linearGradient(
-                    Gradient(colors: [ink.opacity((layer == 2 ? 0.23 : 0.13) * strength), ink.opacity(0.005)]),
-                    startPoint: point(0, 0.2), endPoint: point(0, 0.96)
+                    Gradient(colors: [ink.opacity(layer == 2 ? 0.30 : 0.14), ink.opacity(0)]),
+                    startPoint: point(0, layer == 2 ? 0.38 : 0.16), endPoint: point(0, 1)
                 ))
-                var textured = context
-                textured.clip(to: mountain)
-                for stroke in 0..<24 {
-                    let x = Double((stroke * 37 + layer * 19) % 101) / 100
-                    let y = Double((stroke * 23) % 67) / 100 + 0.2
-                    var fiber = Path()
-                    fiber.move(to: point(x, y))
-                    fiber.addQuadCurve(to: point(x - 0.025, y + 0.15), control: point(x + 0.012, y + 0.05))
-                    textured.stroke(fiber, with: .color(ink.opacity(0.035 * strength)), lineWidth: 0.6)
+                var wash = context
+                wash.clip(to: mountain)
+                for index in 0..<10 {
+                    let x = CGFloat((index * 23 + layer * 7) % 100) / 100
+                    var crease = Path()
+                    crease.move(to: point(x, 0.3))
+                    crease.addQuadCurve(to: point(x - 0.06, 0.88), control: point(x + 0.02, 0.57))
+                    wash.stroke(crease, with: .color(ink.opacity(0.025)), lineWidth: 0.5)
                 }
             }
 
-            // A small skiff and a single oar give the river a human scale.
+            // One small boat establishes scale; the river remains clear around it.
             var boat = Path()
-            boat.move(to: point(0.51, 0.8))
-            boat.addQuadCurve(to: point(0.65, 0.78), control: point(0.59, 0.91))
-            boat.addQuadCurve(to: point(0.51, 0.8), control: point(0.58, 0.83))
-            context.fill(boat, with: .color(ink.opacity(0.52 * strength)))
-            var figure = Path()
-            figure.move(to: point(0.58, 0.79))
-            figure.addQuadCurve(to: point(0.572, 0.67), control: point(0.56, 0.73))
-            figure.move(to: point(0.57, 0.73))
-            figure.addLine(to: point(0.6, 0.76))
-            figure.move(to: point(0.596, 0.72))
-            figure.addLine(to: point(0.66, 0.89))
-            context.stroke(figure, with: .color(ink.opacity(0.55 * strength)), style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
-            context.fill(Path(ellipseIn: CGRect(x: size.width * 0.567, y: size.height * 0.64, width: 2.7, height: 2.7)), with: .color(ink.opacity(0.5 * strength)))
-
-            var ripples = Path()
-            for (x, y, width) in [(0.46, 0.91, 0.16), (0.56, 0.95, 0.14), (0.74, 0.86, 0.12)] {
-                ripples.move(to: point(x, y))
-                ripples.addQuadCurve(to: point(x + width, y), control: point(x + width / 2, y + 0.012))
-            }
-            context.stroke(ripples, with: .color(ink.opacity(0.16 * strength)), lineWidth: 0.5)
-
-            // Dry-brush reeds anchor the near shore without touching the metrics.
-            for index in 0..<6 {
-                let root = 0.91 + Double(index % 3) * 0.02
-                let tip = root - 0.045 + Double(index) * 0.009
-                let height = 0.17 + Double(index % 4) * 0.055
-                var reed = Path()
-                reed.move(to: point(root, 1))
-                reed.addQuadCurve(to: point(tip, 1 - height), control: point(root + 0.01, 0.84))
-                context.stroke(reed, with: .color(ink.opacity(0.32 * strength)), lineWidth: 0.65)
-                var seed = Path()
-                seed.move(to: point(tip, 1 - height))
-                seed.addLine(to: point(tip - 0.005, 0.95 - height))
-                context.stroke(seed, with: .color(ink.opacity(0.28 * strength)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            boat.move(to: point(0.53, 0.77))
+            boat.addQuadCurve(to: point(0.65, 0.74), control: point(0.60, 0.87))
+            boat.addQuadCurve(to: point(0.53, 0.77), control: point(0.59, 0.80))
+            context.fill(boat, with: .color(ink.opacity(0.62)))
+            var person = Path()
+            person.move(to: point(0.59, 0.77))
+            person.addQuadCurve(to: point(0.585, 0.63), control: point(0.57, 0.71))
+            person.move(to: point(0.585, 0.68))
+            person.addLine(to: point(0.62, 0.73))
+            person.move(to: point(0.61, 0.69))
+            person.addLine(to: point(0.66, 0.87))
+            context.stroke(person, with: .color(ink.opacity(0.65)), style: StrokeStyle(lineWidth: 0.7, lineCap: .round))
+            context.fill(Path(ellipseIn: CGRect(x: size.width * 0.581, y: size.height * 0.58, width: 2, height: 2)),
+                         with: .color(ink.opacity(0.65)))
+            var ripple = Path()
+            ripple.move(to: point(0.49, 0.91))
+            ripple.addQuadCurve(to: point(0.68, 0.89), control: point(0.58, 0.92))
+            context.stroke(ripple, with: .color(ink.opacity(0.16)), lineWidth: 0.5)
+            // Two distant birds, with no extra foreground ornament competing with the seal.
+            for (x, y, wing) in [(0.69, 0.15, 0.013), (0.76, 0.24, 0.010)] {
+                var bird = Path()
+                bird.move(to: point(x - wing, y))
+                bird.addQuadCurve(to: point(x, y + 0.035), control: point(x - wing * 0.3, y))
+                bird.addQuadCurve(to: point(x + wing, y - 0.01), control: point(x + wing * 0.4, y - 0.008))
+                context.stroke(bird, with: .color(ink.opacity(0.42)), lineWidth: 0.6)
             }
         }
         .clipped()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+struct CodexVistaSword: Shape {
+    func path(in rect: CGRect) -> Path {
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y)
+        }
+        var sword = Path()
+        sword.addLines([
+            point(0.5, 0), point(0.65, 0.025), point(0.59, 0.055),
+            point(0.59, 0.23), point(0.86, 0.215), point(1, 0.25),
+            point(0.7, 0.275), point(0.63, 0.3), point(0.61, 0.87),
+            point(0.5, 1), point(0.39, 0.87), point(0.37, 0.3),
+            point(0.3, 0.275), point(0, 0.25), point(0.14, 0.215),
+            point(0.41, 0.23), point(0.41, 0.055), point(0.35, 0.025)
+        ])
+        sword.closeSubpath()
+        return sword
+    }
+}
+
+/// A single vertical composition, kept separate from quota text and reset controls.
+struct CodexVistaXianxiaScene: View {
+    var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width / 104, size.height / 156)
+            context.translateBy(x: (size.width - 104 * scale) / 2, y: (size.height - 156 * scale) / 2)
+            context.scaleBy(x: scale, y: scale)
+            let jade = CodexVistaTheme.dashboardAccent
+            let gold = CodexVistaTheme.dashboardAccentSecondary
+            let moon = Path(ellipseIn: CGRect(x: 21, y: 12, width: 62, height: 62))
+            context.fill(moon, with: .color(CodexVistaTheme.dashboardTile))
+            context.stroke(moon, with: .color(gold.opacity(0.3)), lineWidth: 0.7)
+
+            // Layered ridgelines share one horizon; the lower edges dissolve into mist.
+            for layer in 0..<3 {
+                let offset = CGFloat(layer) * 13
+                var ridge = Path()
+                ridge.move(to: CGPoint(x: 0, y: 108 + offset))
+                ridge.addLines([
+                    CGPoint(x: 12, y: 98 + offset), CGPoint(x: 23, y: 76 + offset),
+                    CGPoint(x: 32, y: 89 + offset), CGPoint(x: 43, y: 86 + offset),
+                    CGPoint(x: 61, y: 108 + offset), CGPoint(x: 76, y: 90 + offset),
+                    CGPoint(x: 87, y: 96 + offset), CGPoint(x: 104, y: 113 + offset),
+                    CGPoint(x: 104, y: 156), CGPoint(x: 0, y: 156)
+                ])
+                ridge.closeSubpath()
+                context.fill(ridge, with: .linearGradient(
+                    Gradient(colors: [jade.opacity(0.09 + Double(layer) * 0.04), jade.opacity(0)]),
+                    startPoint: CGPoint(x: 52, y: 80 + offset), endPoint: CGPoint(x: 52, y: 156)
+                ))
+            }
+
+            let swordRect = CGRect(x: 39, y: 21, width: 26, height: 115)
+            let sword = CodexVistaSword().path(in: swordRect)
+            context.fill(sword, with: .linearGradient(
+                Gradient(colors: [jade.opacity(0.8), jade.opacity(0.14)]),
+                startPoint: CGPoint(x: 49, y: 21), endPoint: CGPoint(x: 56, y: 136)
+            ))
+            context.stroke(sword, with: .color(jade.opacity(0.72)), lineWidth: 0.65)
+            var fuller = Path()
+            fuller.move(to: CGPoint(x: 52, y: 57))
+            fuller.addLine(to: CGPoint(x: 52, y: 130))
+            context.stroke(fuller, with: .color(CodexVistaTheme.dashboardTile), lineWidth: 0.75)
+            var guardLine = Path()
+            guardLine.addLines([CGPoint(x: 40, y: 49), CGPoint(x: 52, y: 52), CGPoint(x: 64, y: 49)])
+            context.stroke(guardLine, with: .color(gold), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            for index in 0..<4 {
+                var grip = Path()
+                let y = 30 + CGFloat(index) * 4
+                grip.move(to: CGPoint(x: 50, y: y))
+                grip.addLine(to: CGPoint(x: 54, y: y + 1))
+                context.stroke(grip, with: .color(gold.opacity(0.85)), lineWidth: 0.9)
+            }
+            var cord = Path()
+            cord.move(to: CGPoint(x: 53, y: 24))
+            cord.addCurve(to: CGPoint(x: 76, y: 67),
+                          control1: CGPoint(x: 86, y: 20), control2: CGPoint(x: 58, y: 49))
+            context.stroke(cord, with: .color(gold.opacity(0.75)), lineWidth: 0.8)
+            var tassel = Path()
+            tassel.addLines([CGPoint(x: 76, y: 65), CGPoint(x: 73, y: 77), CGPoint(x: 79, y: 77)])
+            tassel.closeSubpath()
+            context.fill(tassel, with: .color(gold.opacity(0.55)))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+struct CodexVistaXianxiaQuota: View {
+    let quotas: [QuotaSnapshot]
+
+    var body: some View {
+        HStack(spacing: 20) {
+            CodexVistaXianxiaScene()
+                .frame(width: 92, height: 156)
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(quotas) { quota in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(quota.compactTitle) · 剩余额度")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(CodexVistaTheme.dashboardMutedText)
+                        HStack(alignment: .firstTextBaseline, spacing: 3) {
+                            Text("\(quota.remainingPercent)")
+                                .font(.system(size: quotas.count > 1 ? 30 : 46, weight: .light))
+                            Text("%")
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundStyle(CodexVistaTheme.dashboardMutedText)
+                        }
+                        .monospacedDigit()
+                        GeometryReader { geometry in
+                            let fraction = quota.remaining.isFinite ? min(1, max(0, quota.remaining)) : 0
+                            Capsule().fill(CodexVistaTheme.dashboardControlBackground)
+                            Capsule().fill(CodexVistaTheme.dashboardAccent)
+                                .frame(width: geometry.size.width * fraction)
+                        }
+                        .frame(height: 3)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(quota.remainingLabel)
+                }
+            }
+            .frame(width: 116, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct CodexVistaSkinMotif: View {
+    let skin: AppSkinPreference
+
+    var body: some View {
+        Canvas { context, size in
+            let accent = CodexVistaTheme.dashboardAccent
+            switch skin {
+            case .celadon:
+                // Concentric glaze rings, like a shallow porcelain bowl.
+                for index in 0..<5 {
+                    let inset = CGFloat(index) * 16
+                    let ellipse = CGRect(x: inset, y: 12 + CGFloat(index) * 5,
+                                         width: max(0, size.width - inset * 2), height: 36 - CGFloat(index) * 6)
+                    context.stroke(Path(ellipseIn: ellipse), with: .color(accent.opacity(0.05 + Double(index) * 0.018)), lineWidth: 0.7)
+                }
+            case .dusk:
+                // A low sun and warm horizontal reflections.
+                let center = CGPoint(x: size.width * 0.72, y: 35)
+                var sun = Path()
+                sun.addArc(center: center, radius: 22, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+                sun.closeSubpath()
+                context.fill(sun, with: .linearGradient(
+                    Gradient(colors: [CodexVistaTheme.dashboardAccentSecondary.opacity(0.2), accent.opacity(0.04)]),
+                    startPoint: CGPoint(x: center.x, y: 10), endPoint: center
+                ))
+                for index in 0..<4 {
+                    var horizon = Path()
+                    let inset = CGFloat(index) * 19
+                    horizon.move(to: CGPoint(x: 15 + inset, y: 36 + CGFloat(index) * 6))
+                    horizon.addLine(to: CGPoint(x: size.width - 8 - inset, y: 36 + CGFloat(index) * 6))
+                    context.stroke(horizon, with: .color(accent.opacity(0.12 - Double(index) * 0.022)), lineWidth: 0.7)
+                }
+            case .cyber:
+                for row in 0..<3 {
+                    let y = 12 + CGFloat(row) * 14
+                    var circuit = Path()
+                    circuit.move(to: CGPoint(x: 12, y: y))
+                    circuit.addLine(to: CGPoint(x: size.width * 0.35, y: y))
+                    circuit.addLine(to: CGPoint(x: size.width * 0.42, y: y - 8))
+                    circuit.addLine(to: CGPoint(x: size.width - 15 - CGFloat(row) * 20, y: y - 8))
+                    context.stroke(circuit, with: .color(accent.opacity(0.09)), lineWidth: 0.6)
+                    context.stroke(Path(CGRect(x: size.width - 18 - CGFloat(row) * 20, y: y - 11, width: 6, height: 6)),
+                                   with: .color(accent.opacity(0.22)), lineWidth: 0.6)
+                }
+            case .standard, .ink, .xianxia:
+                break
+            }
+        }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -296,60 +603,90 @@ struct CodexVistaDialTicks: View {
     }
 }
 
+struct CodexVistaCyberQuota: View {
+    let quota: QuotaSnapshot
+    let compact: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(quota.compactTitle)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(CodexVistaTheme.dashboardAccent)
+                Spacer()
+                Text("\(quota.remainingPercent)%")
+                    .font(CodexVistaTheme.metricFont(size: compact ? 27 : 40))
+                    .monospacedDigit()
+            }
+            Canvas { context, size in
+                let fraction = quota.remaining.isFinite ? min(1, max(0, quota.remaining)) : 0
+                let step = size.width / 24
+                var segments = Path()
+                for index in 0..<24 {
+                    segments.addRect(CGRect(x: CGFloat(index) * step, y: 1, width: max(0, step - 2), height: size.height - 2))
+                }
+                context.fill(segments, with: .color(CodexVistaTheme.dashboardControlBackground))
+                context.clip(to: Path(CGRect(x: 0, y: 0, width: size.width * fraction, height: size.height)))
+                context.fill(segments, with: .color(CodexVistaTheme.dashboardAccent))
+            }
+            .frame(height: compact ? 10 : 16)
+            HStack {
+                Text("剩余额度")
+                Spacer()
+                Text("100%")
+            }
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .foregroundStyle(CodexVistaTheme.dashboardMutedText)
+        }
+        .padding(.vertical, compact ? 3 : 18)
+        .frame(width: 214)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(quota.remainingLabel)
+    }
+}
+
 struct CodexVistaInkQuota: View {
     let quota: QuotaSnapshot
     let compact: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 3 : 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(quota.compactTitle)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(CodexVistaTheme.dashboardMutedText)
-                Spacer(minLength: 4)
-                Text("\(quota.remainingPercent)%")
-                    .font(CodexVistaTheme.metricFont(size: compact ? 25 : 40))
-                    .monospacedDigit()
-                Text("剩余")
-                    .font(CodexVistaTheme.headingFont(size: 12))
+        VStack(spacing: compact ? 3 : 6) {
+            Text("\(quota.title) · 剩余额度")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(CodexVistaTheme.dashboardMutedText)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text("\(quota.remainingPercent)")
+                    .font(.system(size: compact ? 28 : 44, weight: .regular, design: .serif))
+                Text("%")
+                    .font(.system(size: compact ? 13 : 18, weight: .regular, design: .serif))
                     .foregroundStyle(CodexVistaTheme.dashboardMutedText)
             }
-
+            .monospacedDigit()
             Canvas { context, size in
                 let fraction = quota.remaining.isFinite ? min(1, max(0, quota.remaining)) : 0
-                context.fill(Path(CGRect(x: 0, y: 5, width: size.width, height: 5)), with: .color(CodexVistaTheme.dashboardControlBackground))
+                context.fill(Path(CGRect(x: 0, y: 3, width: size.width, height: 2)),
+                             with: .color(CodexVistaTheme.dashboardControlBackground))
                 let width = size.width * fraction
-                if width > 0 {
-                    var brush = Path()
-                    brush.move(to: CGPoint(x: 0, y: 2))
-                    for step in 0...30 {
-                        brush.addLine(to: CGPoint(x: width * Double(step) / 30, y: 2 + sin(Double(step) * 2) * 0.6))
-                    }
-                    for step in (0...30).reversed() {
-                        brush.addLine(to: CGPoint(x: width * Double(step) / 30, y: 12 + sin(Double(step) * 3) * 0.8))
-                    }
-                    brush.closeSubpath()
-                    context.fill(brush, with: .color(CodexVistaTheme.dashboardAccent))
-                }
-                for index in 0...4 {
-                    let x = 0.5 + (size.width - 1) * Double(index) / 4
-                    var tick = Path()
-                    tick.move(to: CGPoint(x: x, y: 18))
-                    tick.addLine(to: CGPoint(x: x, y: 21))
-                    context.stroke(tick, with: .color(CodexVistaTheme.dashboardMutedText.opacity(0.55)), lineWidth: 0.75)
-                }
+                guard width > 0 else { return }
+                // A restrained, tapered stroke; its width still represents the exact quota.
+                var brush = Path()
+                brush.addLines([
+                    CGPoint(x: 0, y: 1.5), CGPoint(x: width * 0.18, y: 1), CGPoint(x: width * 0.52, y: 1.6),
+                    CGPoint(x: width * 0.87, y: 1.2), CGPoint(x: width, y: 2.3),
+                    CGPoint(x: width, y: 5.8), CGPoint(x: width * 0.65, y: 6.3),
+                    CGPoint(x: width * 0.28, y: 5.7), CGPoint(x: 0, y: 6)
+                ])
+                brush.closeSubpath()
+                context.fill(brush, with: .color(CodexVistaTheme.dashboardAccent))
+                var dryBrush = Path()
+                dryBrush.move(to: CGPoint(x: width * 0.13, y: 3.7))
+                dryBrush.addLine(to: CGPoint(x: width * 0.78, y: 3.3))
+                context.stroke(dryBrush, with: .color(CodexVistaTheme.dashboardTile.opacity(0.25)), lineWidth: 0.4)
             }
-            .frame(height: 22)
-            HStack {
-                Text("0%")
-                Spacer()
-                Text("100%")
-            }
-            .font(.system(size: 8, design: .monospaced))
-            .foregroundStyle(CodexVistaTheme.dashboardMutedText)
+            .frame(height: 8)
+            .padding(.top, compact ? 0 : 4)
         }
-        .frame(width: 210)
-        .padding(.vertical, compact ? 2 : 14)
+        .padding(.horizontal, 20)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(quota.remainingLabel)
     }
@@ -373,6 +710,20 @@ struct CodexVistaSkinPreview: View {
                             Text("墨")
                                 .font(.custom("Songti SC", size: 25))
                                 .foregroundStyle(CodexVistaTheme.swatch(palette.selectedText))
+                        } else if skin == .xianxia {
+                            Circle()
+                                .stroke(CodexVistaTheme.swatch(palette.secondary).opacity(0.35), lineWidth: 0.7)
+                            CodexVistaSword()
+                                .fill(CodexVistaTheme.swatch(palette.accent))
+                                .frame(width: 13, height: 30)
+                        } else if skin == .cyber {
+                            Image(systemName: "cpu")
+                                .font(.system(size: 25, weight: .light))
+                                .foregroundStyle(CodexVistaTheme.swatch(palette.accent))
+                        } else if skin == .celadon || skin == .dusk {
+                            Image(systemName: skin == .celadon ? "water.waves" : "sun.horizon")
+                                .font(.system(size: 25, weight: .light))
+                                .foregroundStyle(CodexVistaTheme.swatch(palette.accent))
                         } else {
                             Circle().stroke(CodexVistaTheme.swatch(palette.control), lineWidth: 4)
                             Circle().trim(from: 0, to: 0.7)
@@ -405,7 +756,7 @@ struct CodexVistaSkinPreview: View {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(CodexVistaTheme.swatch(isSelected ? palette.selectedText : palette.muted))
                 }
-                Text(skin == .ink ? "雾白纸面 · 石墨与朱砂" : "精密刻度 · 铝灰与钴蓝")
+                Text(skin.detail)
                     .font(.system(size: 10))
                     .foregroundStyle(CodexVistaTheme.swatch(palette.muted))
             }
@@ -429,15 +780,14 @@ struct CodexVistaSkinPreview: View {
 struct CodexVistaInkSeal: View {
     var body: some View {
         Text("墨")
-            .font(.custom("Songti SC", size: 15).weight(.bold))
+            .font(.custom("Songti SC", size: 12).weight(.bold))
             .foregroundStyle(CodexVistaTheme.cinnabar)
-            .frame(width: 23, height: 26)
+            .frame(width: 18, height: 22)
             .overlay {
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(CodexVistaTheme.cinnabar.opacity(0.8), lineWidth: 1)
                     .padding(1)
             }
-            .rotationEffect(.degrees(-3))
             .accessibilityHidden(true)
     }
 }

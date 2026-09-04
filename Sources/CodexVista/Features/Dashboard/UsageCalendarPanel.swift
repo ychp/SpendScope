@@ -424,14 +424,7 @@ struct UsageCalendarPanel: View {
     }
 
     private func heatColor(level: Int) -> Color {
-        let opacity: Double
-        switch level {
-        case 1: opacity = CodexVistaTheme.isInk ? 0.12 : 0.16
-        case 2: opacity = CodexVistaTheme.isInk ? 0.22 : 0.28
-        case 3: opacity = CodexVistaTheme.isInk ? 0.32 : 0.42
-        default: opacity = 1
-        }
-        return CodexVistaTheme.dashboardAccent.opacity(opacity)
+        CodexVistaTheme.dashboardAccent.opacity(CodexVistaTheme.skin.calendarOpacity(for: level))
     }
 
     private func hoverBinding(for id: DailyUsage.ID) -> Binding<Bool> {

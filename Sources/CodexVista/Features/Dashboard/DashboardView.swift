@@ -733,7 +733,6 @@ private struct DashboardContentView: View {
 
                 Spacer(minLength: 8)
 
-                if CodexVistaTheme.isInk { CodexVistaInkSeal() }
                 quotaIdentityBadge
             }
             .accessibilityElement(children: .ignore)
@@ -745,6 +744,34 @@ private struct DashboardContentView: View {
                     systemImage: "chart.donut"
                 )
                 .foregroundStyle(CodexVistaTheme.dashboardMutedText)
+            } else if CodexVistaTheme.isInk {
+                VStack(spacing: 8) {
+                    ForEach(snapshot.visibleQuotas) { quota in
+                        CodexVistaInkQuota(quota: quota, compact: snapshot.visibleQuotas.count > 1)
+                    }
+                    Spacer(minLength: 4)
+                    quotaResetList
+                        .padding(.horizontal, 20)
+                        .padding(.top, 6)
+                    CodexVistaInkPainting()
+                        .frame(height: snapshot.visibleQuotas.count > 1 ? 44 : 68)
+                        .overlay(alignment: .bottomTrailing) {
+                            CodexVistaInkSeal().padding(.trailing, 4).padding(.bottom, 2)
+                        }
+                }
+                .padding(.top, 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if CodexVistaTheme.skin == .xianxia {
+                VStack(spacing: 16) {
+                    CodexVistaXianxiaQuota(quotas: snapshot.visibleQuotas)
+                    quotaResetList
+                        .padding(.top, 10)
+                        .overlay(alignment: .top) {
+                            Rectangle().fill(CodexVistaTheme.dashboardBorder).frame(height: 0.5)
+                        }
+                }
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 5) {
                     quotaRingGroup
@@ -755,10 +782,9 @@ private struct DashboardContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(alignment: .bottom) {
-            if CodexVistaTheme.isInk {
-                CodexVistaInkPainting()
-                    .frame(height: 76)
-                    .mask(LinearGradient(colors: [.clear, .white, .white], startPoint: .top, endPoint: .bottom))
+            if !CodexVistaTheme.isInk && CodexVistaTheme.skin != .xianxia {
+                CodexVistaSkinMotif(skin: CodexVistaTheme.skin)
+                    .frame(height: 54)
             }
         }
     }
@@ -796,10 +822,10 @@ private struct DashboardContentView: View {
 
     @ViewBuilder
     private var quotaRingGroup: some View {
-        if CodexVistaTheme.isInk {
+        if CodexVistaTheme.skin == .cyber {
             VStack(spacing: 10) {
                 ForEach(snapshot.visibleQuotas) { quota in
-                    CodexVistaInkQuota(quota: quota, compact: snapshot.visibleQuotas.count > 1)
+                    CodexVistaCyberQuota(quota: quota, compact: snapshot.visibleQuotas.count > 1)
                 }
             }
         } else {
@@ -898,8 +924,15 @@ private struct DashboardContentView: View {
         }
         .frame(width: diameter, height: diameter)
         .overlay {
-            CodexVistaDialTicks(remaining: quota.remaining)
-                .frame(width: diameter + 20, height: diameter + 20)
+            if CodexVistaTheme.skin == .celadon || CodexVistaTheme.skin == .dusk {
+                Circle()
+                    .stroke(CodexVistaTheme.dashboardAccent.opacity(0.28), lineWidth: 0.75)
+                    .frame(width: diameter + 18, height: diameter + 18)
+                    .accessibilityHidden(true)
+            } else {
+                CodexVistaDialTicks(remaining: quota.remaining)
+                    .frame(width: diameter + 20, height: diameter + 20)
+            }
         }
     }
 
@@ -980,14 +1013,14 @@ private struct DashboardContentView: View {
                 .foregroundStyle(CodexVistaTheme.dashboardAccent)
                 .frame(width: 26, height: 26)
                 .background(
-                    CodexVistaTheme.dashboardControlBackground,
+                    CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardControlBackground,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                 )
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(period.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(CodexVistaTheme.isInk ? CodexVistaTheme.headingFont(size: 12) : .system(size: 12, weight: .semibold))
                     .foregroundStyle(CodexVistaTheme.dashboardPrimaryText.opacity(0.88))
                 Text(subscriptionCycleRangeText(cycle))
                     .font(.system(size: 9.5, weight: .medium))
@@ -1022,14 +1055,16 @@ private struct DashboardContentView: View {
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: 52)
         .background(
-            CodexVistaTheme.dashboardTile,
+            CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardTile,
             in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
-                .stroke(CodexVistaTheme.dashboardBorder)
+            if !CodexVistaTheme.isInk {
+                RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
+                    .stroke(CodexVistaTheme.dashboardBorder)
+            }
         }
-        .shadow(color: CodexVistaTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
+        .shadow(color: CodexVistaTheme.isInk ? .clear : CodexVistaTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
         .accessibilityElement(children: .contain)
     }
 
@@ -1069,13 +1104,13 @@ private struct DashboardContentView: View {
                     .foregroundStyle(CodexVistaTheme.dashboardAccent)
                     .frame(width: 26, height: 26)
                     .background(
-                        CodexVistaTheme.dashboardControlBackground,
+                        CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardControlBackground,
                         in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                     )
                     .accessibilityHidden(true)
 
                 Text(period.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(CodexVistaTheme.isInk ? CodexVistaTheme.headingFont(size: 13) : .system(size: 13, weight: .semibold))
                     .foregroundStyle(CodexVistaTheme.dashboardPrimaryText.opacity(0.88))
                     .lineLimit(1)
 
@@ -1106,14 +1141,16 @@ private struct DashboardContentView: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            CodexVistaTheme.dashboardTile,
+            CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardTile,
             in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
-                .stroke(CodexVistaTheme.dashboardBorder)
+            if !CodexVistaTheme.isInk {
+                RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
+                    .stroke(CodexVistaTheme.dashboardBorder)
+            }
         }
-        .shadow(color: CodexVistaTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
+        .shadow(color: CodexVistaTheme.isInk ? .clear : CodexVistaTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
         .accessibilityElement(children: .contain)
     }
 

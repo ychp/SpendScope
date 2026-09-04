@@ -142,7 +142,7 @@ struct SettingsView: View {
     private var appearanceSettings: some View {
         settingsSection("外观") {
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                     ForEach(AppSkinPreference.allCases) { skin in
                         CodexVistaSkinPreview(
                             skin: skin,
@@ -153,14 +153,14 @@ struct SettingsView: View {
                 .padding(.vertical, 14)
                 settingsDivider
                 preferenceRow("色系", detail: appearanceDetail) {
-                    if AppSkinPreference.resolved(from: skinRaw) == .ink {
-                        Label("浅色", systemImage: "sun.max")
+                    if let fixedScheme = selectedSkin.fixedColorScheme {
+                        Label(fixedScheme == .light ? "浅色" : "深色", systemImage: fixedScheme == .light ? "sun.max" : "moon")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(CodexVistaTheme.selectionText)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
                             .background(CodexVistaTheme.selectionSurface, in: RoundedRectangle(cornerRadius: 7))
-                            .accessibilityLabel("色系：浅色，水墨皮肤仅支持浅色")
+                            .accessibilityLabel(appearanceDetail)
                     } else {
                         segmentedGroup {
                             selectionSegment(
@@ -194,9 +194,16 @@ struct SettingsView: View {
         AppColorSchemePreference.resolved(from: colorSchemeRaw)
     }
 
+    private var selectedSkin: AppSkinPreference {
+        AppSkinPreference.resolved(from: skinRaw)
+    }
+
     private var appearanceDetail: String {
-        if AppSkinPreference.resolved(from: skinRaw) == .ink {
-            return "水墨皮肤仅支持浅色"
+        if let fixedScheme = selectedSkin.fixedColorScheme {
+            return "\(selectedSkin.title)皮肤仅支持\(fixedScheme == .light ? "浅色" : "深色")"
+        }
+        if selectedSkin != .standard {
+            return colorSchemePreference == .system ? "\(selectedSkin.title)明暗自动跟随 macOS" : selectedSkin.detail
         }
         return switch colorSchemePreference {
         case .system: "自动跟随 macOS 外观设置"
@@ -300,11 +307,12 @@ struct SettingsView: View {
                         if summaryPlacementRaw == SummaryPlacementPreference.notch.rawValue {
                             NotchSummaryView(
                                 presentation: statusItemPresentation,
-                                quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining
+                                quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining,
+                                theme: StatusItemTheme.resolve(appearance: previewAppearance)
                             )
                             .allowsHitTesting(false)
                         } else {
-                            Image(nsImage: StatusItemRenderer().render(
+                            Image(nsImage: StatusItemRenderer(theme: .resolve(appearance: previewAppearance)).render(
                                 statusItemPresentation,
                                 appearance: previewAppearance
                             ))
