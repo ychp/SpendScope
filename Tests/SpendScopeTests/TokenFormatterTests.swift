@@ -368,26 +368,28 @@ final class StatusItemPresentationTests: XCTestCase {
             screenFrame: screen,
             topInset: 32,
             leftArea: NSRect(x: -1512, y: 1150, width: 660, height: 32),
-            rightArea: NSRect(x: -660, y: 1150, width: 660, height: 32)
+            rightArea: NSRect(x: -660, y: 1150, width: 660, height: 32),
+            contentWidth: 180
         ))
         XCTAssertEqual(frame.midX, -756)
         XCTAssertEqual(frame.maxY, screen.maxY - 32)
         XCTAssertTrue(screen.contains(frame))
-        XCTAssertGreaterThanOrEqual(frame.width, 224)
+        XCTAssertEqual(frame.width, 180)
     }
 
     func testNotchSummaryFallsBackForUnobscuredOrUnknownScreens() {
         let screen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
         XCTAssertNil(NotchSummaryLayout.frame(
-            screenFrame: screen, topInset: 0, leftArea: nil, rightArea: nil
+            screenFrame: screen, topInset: 0, leftArea: nil, rightArea: nil, contentWidth: 180
         ))
         XCTAssertNil(NotchSummaryLayout.frame(
-            screenFrame: screen, topInset: 32, leftArea: nil, rightArea: nil
+            screenFrame: screen, topInset: 32, leftArea: nil, rightArea: nil, contentWidth: 180
         ))
         XCTAssertNil(NotchSummaryLayout.frame(
             screenFrame: screen, topInset: 32,
             leftArea: NSRect(x: 0, y: 1048, width: 960, height: 32),
-            rightArea: NSRect(x: 960, y: 1048, width: 960, height: 32)
+            rightArea: NSRect(x: 960, y: 1048, width: 960, height: 32),
+            contentWidth: 180
         ))
     }
 

@@ -16,18 +16,35 @@ enum NotchSummaryPalette {
 
 enum NotchSummaryLayout {
     static let height: CGFloat = 32
+    static let horizontalPadding: CGFloat = 12
+    static let contentSpacing: CGFloat = 8
+    static let labelFontSize: CGFloat = 11
+
+    static func label(for presentation: StatusItemPresentation, quotaDisplay: QuotaDisplayPreference) -> String {
+        presentation.metrics.isEmpty
+            ? "暂无额度"
+            : quotaDisplay == .remaining ? "7 天剩余" : "7 天已用"
+    }
+
+    static func width(for presentation: StatusItemPresentation, quotaDisplay: QuotaDisplayPreference) -> CGFloat {
+        let labelWidth = NSAttributedString(
+            string: label(for: presentation, quotaDisplay: quotaDisplay),
+            attributes: [.font: NSFont.systemFont(ofSize: labelFontSize, weight: .medium)]
+        ).size().width
+        return ceil(labelWidth + contentSpacing + presentation.imageSize.width + horizontalPadding * 2)
+    }
 
     static func frame(
         screenFrame: NSRect,
         topInset: CGFloat,
         leftArea: NSRect?,
-        rightArea: NSRect?
+        rightArea: NSRect?,
+        contentWidth: CGFloat
     ) -> NSRect? {
         guard topInset > 0,
               let leftArea, let rightArea,
               rightArea.minX > leftArea.maxX else { return nil }
-        let notchWidth = rightArea.minX - leftArea.maxX
-        let width = min(max(notchWidth + 16, 224), screenFrame.width)
+        let width = min(contentWidth, screenFrame.width)
         let centerX = (leftArea.maxX + rightArea.minX) / 2
         return NSRect(
             x: min(max(centerX - width / 2, screenFrame.minX), screenFrame.maxX - width),
@@ -38,12 +55,13 @@ enum NotchSummaryLayout {
     }
 
     @MainActor
-    static func frame(on screen: NSScreen) -> NSRect? {
+    static func frame(on screen: NSScreen, contentWidth: CGFloat) -> NSRect? {
         frame(
             screenFrame: screen.frame,
             topInset: screen.safeAreaInsets.top,
             leftArea: screen.auxiliaryTopLeftArea,
-            rightArea: screen.auxiliaryTopRightArea
+            rightArea: screen.auxiliaryTopRightArea,
+            contentWidth: contentWidth
         )
     }
 }
@@ -111,11 +129,9 @@ struct NotchSummaryView: View {
 
     var body: some View {
         Button(action: onClick) {
-            HStack(spacing: 10) {
-                Text(presentation.metrics.isEmpty
-                     ? "暂无额度"
-                     : quotaDisplay == .remaining ? "7 天剩余" : "7 天已用")
-                    .font(.system(size: 11, weight: .medium))
+            HStack(spacing: NotchSummaryLayout.contentSpacing) {
+                Text(NotchSummaryLayout.label(for: presentation, quotaDisplay: quotaDisplay))
+                    .font(.system(size: NotchSummaryLayout.labelFontSize, weight: .medium))
                     .foregroundStyle(Color(nsColor: NotchSummaryPalette.primary))
                 Image(nsImage: StatusItemRenderer(style: .notch).render(
                     presentation,
@@ -131,7 +147,10 @@ struct NotchSummaryView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(height: NotchSummaryLayout.height)
+        .frame(
+            width: NotchSummaryLayout.width(for: presentation, quotaDisplay: quotaDisplay),
+            height: NotchSummaryLayout.height
+        )
         .help(presentation.tooltip)
         .accessibilityLabel("SpendScope 刘海摘要")
         .accessibilityValue(presentation.label)

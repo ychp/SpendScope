@@ -582,18 +582,22 @@ final class StatusItemController: NSObject {
     private func updateStatusItem() {
         guard let button = statusItem.button else { return }
         let configuration = menuBarConfiguration
+        let fullPresentation = StatusItemPresentation(
+            snapshot: store.snapshot,
+            configuration: configuration
+        )
+        let contentWidth = NotchSummaryLayout.width(
+            for: fullPresentation,
+            quotaDisplay: configuration.quotaDisplay
+        )
         let nextNotchFrame = SummaryPlacementPreference.load(from: defaults) == .notch
             && configuration.showsLivePreview
-            ? NSScreen.screens.compactMap { NotchSummaryLayout.frame(on: $0) }.first
+            ? NSScreen.screens.compactMap { NotchSummaryLayout.frame(on: $0, contentWidth: contentWidth) }.first
             : nil
         if nextNotchFrame != notchFrame {
             closePopover()
             notchFrame = nextNotchFrame
         }
-        let fullPresentation = StatusItemPresentation(
-            snapshot: store.snapshot,
-            configuration: configuration
-        )
         if let notchFrame {
             notchSummary.update(
                 frame: notchFrame,

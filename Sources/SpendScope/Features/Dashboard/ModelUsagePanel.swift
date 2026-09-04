@@ -374,8 +374,17 @@ struct ModelUsagePanel: View {
             }
             .frame(width: 84, alignment: .trailing)
 
-            Text("预估费用")
-                .frame(width: 84, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(ModelCostFormatter.usd(ranking.estimatedCostUSD))
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(SpendScopeTheme.dashboardAccent)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                Text("预估费用总计")
+                    .font(.system(size: 8.5, weight: .medium))
+            }
+            .frame(width: 84, alignment: .trailing)
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundStyle(SpendScopeTheme.dashboardMutedText)
