@@ -37,20 +37,18 @@ struct PeriodModelUsageControl: View {
             .padding(.horizontal, 7)
             .frame(height: 23)
             .background(
-                CodexVistaTheme.dashboardAccent.opacity(ranking.entries.isEmpty ? 0.04 : 0.09),
+                isPinned ? CodexVistaTheme.dashboardAccent.opacity(0.12) : CodexVistaTheme.dashboardControlBackground,
                 in: Capsule()
             )
             .overlay {
                 Capsule()
                     .stroke(
-                        CodexVistaTheme.dashboardAccent.opacity(
-                            isPinned ? 0.58 : (ranking.entries.isEmpty ? 0.08 : 0.22)
-                        ),
+                        isPinned ? CodexVistaTheme.dashboardAccent : CodexVistaTheme.dashboardBorder,
                         lineWidth: isPinned ? 1 : 0.7
                     )
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CodexVistaControlStyle())
         .disabled(ranking.entries.isEmpty)
         .contentShape(Capsule())
         .onHover(perform: updateTriggerHover)
@@ -213,7 +211,7 @@ private struct PeriodModelRankingPopover: View {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CodexVistaControlStyle())
                 .keyboardShortcut(.cancelAction)
                 .accessibilityLabel("关闭模型排行")
                 .help("关闭")
@@ -311,7 +309,7 @@ struct ModelUsagePanel: View {
             .frame(height: 32)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CodexVistaControlStyle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             "仅显示 Token 用量前 5 名，另有 \(omittedModelCount) 个模型，点击固定并展开全部"

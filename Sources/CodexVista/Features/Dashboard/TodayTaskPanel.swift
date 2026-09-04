@@ -364,19 +364,7 @@ struct TodayTaskDetailView: View {
         }
         .frame(minWidth: 720, minHeight: 520)
         .ignoresSafeArea(.container, edges: .top)
-        .background {
-            ZStack {
-                Rectangle().fill(.regularMaterial)
-                LinearGradient(
-                    colors: [
-                        CodexVistaTheme.dashboardAccent.opacity(0.045),
-                        CodexVistaTheme.dashboardSurfaceStrong.opacity(0.92)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-        }
+        .background { CodexVistaBackdrop() }
         .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
         .onDisappear { onReplyHover(nil) }
         .onExitCommand(perform: onClose)
@@ -420,14 +408,7 @@ struct TodayTaskDetailView: View {
                 .foregroundStyle(Color.white)
                 .frame(width: 52, height: 52)
                 .background(
-                    LinearGradient(
-                        colors: [
-                            CodexVistaTheme.dashboardAccentSecondary,
-                            CodexVistaTheme.dashboardAccent
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
+                    CodexVistaTheme.brandGradient,
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
                 .shadow(color: CodexVistaTheme.dashboardAccent.opacity(0.22), radius: 8, y: 3)

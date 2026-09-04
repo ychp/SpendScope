@@ -149,22 +149,7 @@ struct MenuBarPopoverView: View {
         }
         .padding(16)
         .frame(width: 390)
-        .background {
-            ZStack {
-                CodexVistaVisualEffect(style: .popover)
-                CodexVistaTheme.dashboardBackground
-                LinearGradient(
-                    colors: [
-                        CodexVistaTheme.accent.opacity(colorScheme == .dark ? 0.18 : 0.08),
-                        Color.clear,
-                        CodexVistaTheme.accentBlue.opacity(colorScheme == .dark ? 0.12 : 0.05)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-            .ignoresSafeArea()
-        }
+        .background { CodexVistaBackdrop() }
         .task { await store.start() }
     }
 

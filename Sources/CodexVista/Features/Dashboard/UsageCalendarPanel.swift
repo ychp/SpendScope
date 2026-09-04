@@ -420,7 +420,7 @@ struct UsageCalendarPanel: View {
         if !cell.isInDisplayedMonth || cell.isFuture {
             return CodexVistaTheme.dashboardMutedText.opacity(0.48)
         }
-        return level == 4 ? .white : CodexVistaTheme.dashboardPrimaryText.opacity(0.82)
+        return level == 4 ? CodexVistaTheme.heatmapText : CodexVistaTheme.dashboardPrimaryText
     }
 
     private func heatColor(level: Int) -> Color {
@@ -429,7 +429,7 @@ struct UsageCalendarPanel: View {
         case 1: opacity = 0.16
         case 2: opacity = 0.28
         case 3: opacity = 0.46
-        default: opacity = 0.82
+        default: opacity = 1
         }
         return CodexVistaTheme.dashboardAccent.opacity(opacity)
     }

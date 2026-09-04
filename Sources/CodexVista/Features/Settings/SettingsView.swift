@@ -116,22 +116,7 @@ struct SettingsView: View {
         }
         .scrollIndicators(.automatic)
         .frame(width: 640, height: 700)
-        .background {
-            ZStack {
-                CodexVistaVisualEffect(style: .window)
-                CodexVistaTheme.dashboardBackground
-                LinearGradient(
-                    colors: [
-                        CodexVistaTheme.accent.opacity(colorScheme == .dark ? 0.14 : 0.055),
-                        Color.clear,
-                        CodexVistaTheme.accentBlue.opacity(colorScheme == .dark ? 0.10 : 0.035)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            }
-            .ignoresSafeArea()
-        }
+        .background { CodexVistaBackdrop() }
         .task {
             await store.start()
             await reminderController.refreshAuthorizationStatus()
@@ -190,8 +175,8 @@ struct SettingsView: View {
     private var appearanceDetail: String {
         switch colorSchemePreference {
         case .system: "自动跟随 macOS 外观设置"
-        case .light: "使用清爽的冷白科技配色"
-        case .dark: "使用深海军蓝与光谱高亮"
+        case .light: "暖白底色、纸感卡片与墨色文字"
+        case .dark: "石墨底色、柔和灰阶与低饱和强调色"
         }
     }
 
@@ -1105,7 +1090,7 @@ struct SettingsView: View {
             content()
         }
         .padding(2)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(CodexVistaTheme.dashboardControlBackground, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     private func selectionSegment(
@@ -1117,13 +1102,13 @@ struct SettingsView: View {
             Text(title)
                 .font(.callout)
                 .frame(maxWidth: .infinity, minHeight: 20)
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .foregroundStyle(isSelected ? CodexVistaTheme.selectionText : CodexVistaTheme.dashboardMutedText)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CodexVistaControlStyle())
         .background {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(isSelected ? Color.accentColor : Color.clear)
+                .fill(isSelected ? CodexVistaTheme.selectionSurface : Color.clear)
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

@@ -279,8 +279,7 @@ private struct SkillBreakdownPopover: View {
         .background {
             let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
             shape
-                .fill(.thinMaterial)
-                .overlay { shape.fill(CodexVistaTheme.glassTintStrong) }
+                .fill(CodexVistaTheme.dashboardSurfaceStrong)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)

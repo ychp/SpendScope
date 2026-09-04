@@ -85,8 +85,7 @@ struct DashboardView: View {
         }
         .task { await store.start() }
         .background {
-            CodexVistaVisualEffect(style: .window)
-                .ignoresSafeArea()
+            CodexVistaBackdrop()
         }
         .background(DashboardWindowSizingBridge(
             expandedContentSize: DashboardWindowLayout.expandedContentSize(
@@ -364,7 +363,7 @@ private struct DashboardLoadingView: View {
                         .rotationEffect(.degrees(isHighlighted ? 230 : -40))
 
                     Text("…")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: 24, weight: .semibold, design: .rounded))
                         .foregroundStyle(CodexVistaTheme.dashboardMutedText)
                 }
                 .frame(width: 112, height: 112)
@@ -540,55 +539,7 @@ private struct DashboardLoadingBlock: View {
 }
 
 private struct DashboardBackdrop: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        CodexVistaTheme.dashboardBackground
-            .overlay {
-                LinearGradient(
-                    colors: [
-                        CodexVistaTheme.dashboardAccent.opacity(colorScheme == .dark ? 0.15 : 0.055),
-                        Color.clear,
-                        CodexVistaTheme.dashboardAccentSecondary.opacity(
-                            colorScheme == .dark ? 0.11 : 0.035
-                        )
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .allowsHitTesting(false)
-            }
-            .overlay(alignment: .topLeading) {
-                RadialGradient(
-                    colors: [
-                        CodexVistaTheme.dashboardAccent.opacity(colorScheme == .dark ? 0.18 : 0.09),
-                        CodexVistaTheme.dashboardAccentSecondary.opacity(
-                            colorScheme == .dark ? 0.09 : 0.035
-                        ),
-                        .clear
-                    ],
-                    center: .topLeading,
-                    startRadius: 12,
-                    endRadius: 560
-                )
-                .allowsHitTesting(false)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                RadialGradient(
-                    colors: [
-                        CodexVistaTheme.dashboardAccentSecondary.opacity(
-                            colorScheme == .dark ? 0.14 : 0.055
-                        ),
-                        .clear
-                    ],
-                    center: .bottomTrailing,
-                    startRadius: 10,
-                    endRadius: 480
-                )
-                .allowsHitTesting(false)
-            }
-            .ignoresSafeArea()
-    }
+    var body: some View { CodexVistaBackdrop() }
 }
 
 enum DashboardWindowLayout {
@@ -880,7 +831,7 @@ private struct DashboardContentView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(quotaColor(for: quota))
             Text("\(quota.remainingPercent)%")
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
                 .monospacedDigit()
         }
         .accessibilityElement(children: .ignore)
@@ -910,7 +861,7 @@ private struct DashboardContentView: View {
     ) -> some View {
         ZStack {
             Circle()
-                .stroke(color.opacity(0.28), lineWidth: 1.5)
+                .stroke(CodexVistaTheme.dashboardControlBackground, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: quota.remaining)
                 .stroke(
@@ -1268,10 +1219,8 @@ private struct DashboardContentView: View {
                 Spacer()
                 if selectedAnalyticsTab == .activity {
                     activityRangeSelector
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
                 } else if selectedAnalyticsTab == .project {
                     projectRangeSelector
-                        .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
             .frame(height: 30)
@@ -1317,10 +1266,8 @@ private struct DashboardContentView: View {
                     isSelected: selectedAnalyticsTab == tab,
                     width: tab == .activity ? 102 : 82
                 ) {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
-                        hoveredUsageID = nil
-                        selectedAnalyticsTab = tab
-                    }
+                    hoveredUsageID = nil
+                    selectedAnalyticsTab = tab
                 }
             }
         }
@@ -1363,9 +1310,7 @@ private struct DashboardContentView: View {
                     isSelected: selectedRange == range,
                     width: 48
                 ) {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
-                        onSelect(range)
-                    }
+                    onSelect(range)
                 }
             }
         }
@@ -1391,21 +1336,21 @@ private struct DashboardContentView: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? Color.white : CodexVistaTheme.dashboardMutedText)
+                .foregroundStyle(isSelected ? CodexVistaTheme.selectionText : CodexVistaTheme.dashboardMutedText)
                 .frame(width: width, height: 24)
                 .background {
                     if isSelected {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(CodexVistaTheme.brandGradient)
+                            .fill(CodexVistaTheme.selectionSurface)
                             .shadow(
-                                color: CodexVistaTheme.dashboardAccent.opacity(0.24),
+                                color: CodexVistaTheme.dashboardShadow,
                                 radius: 5,
                                 y: 2
                             )
                     }
                 }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CodexVistaControlStyle())
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -1470,7 +1415,7 @@ private struct DashboardContentView: View {
                 .foregroundStyle(
                     LinearGradient(
                         colors: [
-                            CodexVistaTheme.dashboardAccent.opacity(0.34),
+                            CodexVistaTheme.dashboardAccent.opacity(0.16),
                             CodexVistaTheme.dashboardAccentSecondary.opacity(0.05)
                         ],
                         startPoint: .top,
@@ -1575,26 +1520,24 @@ private struct DashboardContentView: View {
         HStack(spacing: 2) {
             ForEach(availableTrendRanges) { range in
                 Button {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) {
-                        hoveredUsageID = nil
-                        selectedRange = range
-                    }
+                    hoveredUsageID = nil
+                    selectedRange = range
                 } label: {
                     Text(range.rawValue)
                         .font(.system(size: 11, weight: selectedRange == range ? .semibold : .medium))
                         .foregroundStyle(
-                            selectedRange == range ? Color.white : CodexVistaTheme.dashboardMutedText
+                            selectedRange == range ? CodexVistaTheme.selectionText : CodexVistaTheme.dashboardMutedText
                         )
                         .frame(width: 54, height: 26)
                         .background {
                             if selectedRange == range {
                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(CodexVistaTheme.brandGradient)
-                                    .shadow(color: CodexVistaTheme.dashboardAccent.opacity(0.24), radius: 5, y: 2)
+                                    .fill(CodexVistaTheme.selectionSurface)
+                                    .shadow(color: CodexVistaTheme.dashboardShadow, radius: 5, y: 2)
                             }
                         }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CodexVistaControlStyle())
                 .accessibilityAddTraits(selectedRange == range ? .isSelected : [])
             }
         }
