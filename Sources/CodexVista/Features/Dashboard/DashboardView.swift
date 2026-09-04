@@ -543,7 +543,6 @@ private struct DashboardBackdrop: View {
 }
 
 enum DashboardWindowLayout {
-    private static let removedHeaderHeight: CGFloat = 48
     static let standardOverviewHeight: CGFloat = 238
     static let subscriptionOverviewHeight: CGFloat = 300
     static let baseExpandedContentSize = CGSize(width: 920, height: 618)
@@ -561,19 +560,15 @@ enum DashboardWindowLayout {
         )
     }
 
-    static func targetExpandedContentSize(
-        current: CGSize,
-        requested: CGSize,
-        adoptsRequestedHeight: Bool = false
-    ) -> CGSize {
-        let usesPreviousManagedHeight = abs(
-            current.height - requested.height - removedHeaderHeight
-        ) < 0.5
-        return CGSize(
-            width: max(current.width, requested.width),
-            height: adoptsRequestedHeight || usesPreviousManagedHeight
-                ? requested.height
-                : max(current.height, requested.height)
+    static func targetExpandedContentSize(current: CGSize, requested: CGSize) -> CGSize {
+        CGSize(width: max(current.width, requested.width), height: max(current.height, requested.height))
+    }
+
+    /// NSWindow content size can include the transparent toolbar; dashboard size cannot.
+    static func windowContentSize(for usableSize: CGSize, contentSize: CGSize, layoutSize: CGSize) -> CGSize {
+        CGSize(
+            width: usableSize.width + max(0, contentSize.width - layoutSize.width),
+            height: usableSize.height + max(0, contentSize.height - layoutSize.height)
         )
     }
 }
@@ -615,59 +610,63 @@ private final class DashboardWindowChromeView: NSView {
 }
 
 @MainActor
-private final class DashboardWindowSizingView: NSView {
+final class DashboardWindowSizingView: NSView {
     private var requestedExpandedContentSize = DashboardWindowLayout.baseExpandedContentSize
     private weak var managedWindow: NSWindow?
-    private var hasAppliedInitialExpandedSize = false
+    private var layoutObservation: NSKeyValueObservation?
+    private var sizingUpdatePending = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window, managedWindow !== window else { return }
+        guard managedWindow !== window else { return }
+        layoutObservation = nil
         managedWindow = window
-        hasAppliedInitialExpandedSize = false
+        // SwiftUI may install or rebuild its toolbar after this view joins the window.
+        layoutObservation = window?.observe(\.contentLayoutRect, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.scheduleSizingUpdate() }
+        }
         scheduleSizingUpdate()
     }
 
     func setLayout(expandedContentSize: CGSize) {
-        guard requestedExpandedContentSize != expandedContentSize else {
-            return
-        }
+        guard requestedExpandedContentSize != expandedContentSize else { return }
         requestedExpandedContentSize = expandedContentSize
         scheduleSizingUpdate()
     }
 
     private func scheduleSizingUpdate() {
+        guard !sizingUpdatePending else { return }
+        sizingUpdatePending = true
         DispatchQueue.main.async { [weak self] in
-            self?.applyRequestedState()
+            guard let self else { return }
+            self.sizingUpdatePending = false
+            self.applyRequestedState()
         }
     }
 
     private func applyRequestedState() {
-        guard let window else { return }
-        enforceExpandedMinimumSize(window)
-    }
-
-    private func enforceExpandedMinimumSize(_ window: NSWindow) {
-        window.contentMinSize = requestedExpandedContentSize
-        let currentSize = window.contentRect(forFrameRect: window.frame).size
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        let layoutSize = window.contentLayoutRect.size
+        guard layoutSize.width > 0, layoutSize.height > 0 else { return }
+        var frame = window.frame
+        let contentSize = window.contentRect(forFrameRect: frame).size
+        let minimumContentSize = DashboardWindowLayout.windowContentSize(
+            for: requestedExpandedContentSize, contentSize: contentSize, layoutSize: layoutSize
+        )
+        if window.contentMinSize != minimumContentSize {
+            window.contentMinSize = minimumContentSize
+        }
         let targetSize = DashboardWindowLayout.targetExpandedContentSize(
-            current: currentSize,
-            requested: requestedExpandedContentSize,
-            adoptsRequestedHeight: !hasAppliedInitialExpandedSize
+            current: layoutSize, requested: requestedExpandedContentSize
         )
-        hasAppliedInitialExpandedSize = true
-        guard targetSize != currentSize else { return }
-        resize(window, toContentSize: targetSize)
-    }
+        guard targetSize.width - layoutSize.width > 0.5 || targetSize.height - layoutSize.height > 0.5 else { return }
 
-    private func resize(_ window: NSWindow, toContentSize contentSize: CGSize) {
-        let currentFrame = window.frame
-        var targetFrame = window.frameRect(
-            forContentRect: NSRect(origin: .zero, size: contentSize)
-        )
-        targetFrame.origin.x = currentFrame.origin.x
-        targetFrame.origin.y = currentFrame.maxY - targetFrame.height
-        window.setFrame(targetFrame, display: true, animate: true)
+        let heightIncrease = targetSize.height - layoutSize.height
+        frame.size.width += targetSize.width - layoutSize.width
+        frame.size.height += heightIncrease
+        frame.origin.y -= heightIncrease
+        // Immediate sizing avoids overlapping animated resizes during loading/skin changes.
+        window.setFrame(frame, display: true, animate: false)
     }
 }
 

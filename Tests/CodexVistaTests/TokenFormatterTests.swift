@@ -174,15 +174,76 @@ final class TokenFormatterTests: XCTestCase {
         )
     }
 
-    func testDashboardWindowLayoutAdoptsCompactHeightOnInitialMount() {
+    func testDashboardWindowLayoutDoesNotShrinkWhenSkinRebuildsContent() {
         XCTAssertEqual(
             DashboardWindowLayout.targetExpandedContentSize(
                 current: CGSize(width: 1_040, height: 780),
-                requested: CGSize(width: 920, height: 680),
-                adoptsRequestedHeight: true
+                requested: CGSize(width: 920, height: 680)
             ),
-            CGSize(width: 1_040, height: 680)
+            CGSize(width: 1_040, height: 780)
         )
+        XCTAssertEqual(
+            DashboardWindowLayout.targetExpandedContentSize(
+                current: CGSize(width: 920, height: 728), requested: CGSize(width: 920, height: 680)
+            ).height, 728
+        )
+    }
+
+    func testDashboardWindowSizingReservesToolbarOutsideUsableContent() {
+        XCTAssertEqual(
+            DashboardWindowLayout.windowContentSize(
+                for: CGSize(width: 920, height: 680),
+                contentSize: CGSize(width: 920, height: 680),
+                layoutSize: CGSize(width: 920, height: 628)
+            ), CGSize(width: 920, height: 732)
+        )
+        XCTAssertEqual(
+            DashboardWindowLayout.windowContentSize(
+                for: CGSize(width: 920, height: 680),
+                contentSize: CGSize(width: 920, height: 680),
+                layoutSize: CGSize(width: 920, height: 680)
+            ), CGSize(width: 920, height: 680)
+        )
+    }
+
+    @MainActor
+    func testDashboardSizingRechecksToolbarChangesAndPreservesExpandedWindow() async throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 920, height: 680),
+                              styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.titlebarAppearsTransparent = true
+        XCTAssertLessThan(window.contentLayoutRect.height, 680)
+        let bridge = DashboardWindowSizingView()
+        bridge.setLayout(expandedContentSize: CGSize(width: 920, height: 680))
+        window.contentView = bridge
+        await settleWindowLayout()
+        XCTAssertEqual(window.contentLayoutRect.height, 680, accuracy: 0.5)
+
+        // Reproduce the toolbar being attached after the content first mounts.
+        window.toolbar = NSToolbar(identifier: "DashboardSizingRegression")
+        window.toolbarStyle = .unified
+        await settleWindowLayout()
+        XCTAssertEqual(window.contentLayoutRect.height, 680, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(window.contentMinSize.height, 680)
+
+        var largerFrame = window.frame
+        largerFrame.size.height += 90
+        window.setFrame(largerFrame, display: false)
+        let expandedHeight = window.frame.height
+        window.contentView = DashboardWindowSizingView()
+        await settleWindowLayout()
+        XCTAssertEqual(window.frame.height, expandedHeight, accuracy: 0.5)
+    }
+
+    @MainActor
+    private func settleWindowLayout() async {
+        // Allow the deferred sizing pass and contentLayoutRect observation to settle.
+        for _ in 0..<5 {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+        }
     }
 
     func testDashboardCloseBehaviorResolvesStoredPreferenceAndUsesSafeFallback() {
