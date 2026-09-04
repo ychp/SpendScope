@@ -1013,14 +1013,14 @@ private struct DashboardContentView: View {
                 .frame(width: 26, height: 26)
                 .background(
                     CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardControlBackground,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(8), style: .continuous)
                 )
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(period.title)
-                    .font(CodexVistaTheme.isInk ? CodexVistaTheme.headingFont(size: 12) : .system(size: 12, weight: .semibold))
-                    .foregroundStyle(CodexVistaTheme.dashboardPrimaryText.opacity(0.88))
+                    .font(CodexVistaTheme.headingFont(size: 12))
+                    .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
                 Text(subscriptionCycleRangeText(cycle))
                     .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(CodexVistaTheme.dashboardMutedText)
@@ -1042,7 +1042,7 @@ private struct DashboardContentView: View {
                 .accessibilityLabel("Token 总量 \(period.total.formatted())")
 
             Rectangle()
-                .fill(CodexVistaTheme.dashboardBorder.opacity(0.82))
+                .fill(CodexVistaTheme.dashboardGrid)
                 .frame(width: 1, height: 28)
                 .accessibilityHidden(true)
 
@@ -1053,17 +1053,7 @@ private struct DashboardContentView: View {
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, minHeight: 52)
-        .background(
-            CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardTile,
-            in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
-        )
-        .overlay {
-            if !CodexVistaTheme.isInk {
-                RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
-                    .stroke(CodexVistaTheme.dashboardBorder)
-            }
-        }
-        .shadow(color: CodexVistaTheme.isInk ? .clear : CodexVistaTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
+        .modifier(CodexVistaMetricSurface())
         .accessibilityElement(children: .contain)
     }
 
@@ -1081,7 +1071,7 @@ private struct DashboardContentView: View {
 
             Text(TokenFormatter.compact(value))
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(CodexVistaTheme.dashboardPrimaryText.opacity(0.88))
+                .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
                 .monospacedDigit()
         }
         .frame(minWidth: 42, alignment: .trailing)
@@ -1104,13 +1094,13 @@ private struct DashboardContentView: View {
                     .frame(width: 26, height: 26)
                     .background(
                         CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardControlBackground,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(8), style: .continuous)
                     )
                     .accessibilityHidden(true)
 
                 Text(period.title)
-                    .font(CodexVistaTheme.isInk ? CodexVistaTheme.headingFont(size: 13) : .system(size: 13, weight: .semibold))
-                    .foregroundStyle(CodexVistaTheme.dashboardPrimaryText.opacity(0.88))
+                    .font(CodexVistaTheme.headingFont(size: 13))
+                    .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
                     .lineLimit(1)
 
                 PeriodModelUsageControl(
@@ -1131,7 +1121,7 @@ private struct DashboardContentView: View {
             }
 
             Rectangle()
-                .fill(CodexVistaTheme.dashboardBorder.opacity(0.82))
+                .fill(CodexVistaTheme.dashboardGrid)
                 .frame(height: 1)
                 .accessibilityHidden(true)
 
@@ -1139,17 +1129,7 @@ private struct DashboardContentView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardTile,
-            in: RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
-        )
-        .overlay {
-            if !CodexVistaTheme.isInk {
-                RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
-                    .stroke(CodexVistaTheme.dashboardBorder)
-            }
-        }
-        .shadow(color: CodexVistaTheme.isInk ? .clear : CodexVistaTheme.dashboardShadow.opacity(0.55), radius: 6, y: 2)
+        .modifier(CodexVistaMetricSurface())
         .accessibilityElement(children: .contain)
     }
 
@@ -1177,7 +1157,7 @@ private struct DashboardContentView: View {
             .frame(maxHeight: .infinity)
 
             Rectangle()
-                .fill(CodexVistaTheme.dashboardBorder.opacity(0.72))
+                .fill(CodexVistaTheme.dashboardGrid)
                 .frame(height: 1)
                 .accessibilityHidden(true)
 
@@ -1207,7 +1187,7 @@ private struct DashboardContentView: View {
 
     private var periodMetricVerticalDivider: some View {
         Rectangle()
-            .fill(CodexVistaTheme.dashboardBorder.opacity(0.72))
+            .fill(CodexVistaTheme.dashboardGrid)
             .frame(width: 1)
             .padding(.vertical, 2)
             .accessibilityHidden(true)
@@ -1240,7 +1220,7 @@ private struct DashboardContentView: View {
             Spacer(minLength: 3)
             Text(TokenFormatter.compact(value))
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(CodexVistaTheme.dashboardPrimaryText.opacity(0.88))
+                .foregroundStyle(CodexVistaTheme.dashboardPrimaryText)
                 .monospacedDigit()
                 .minimumScaleFactor(0.72)
                 .lineLimit(1)

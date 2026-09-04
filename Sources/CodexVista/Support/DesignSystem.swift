@@ -44,8 +44,8 @@ struct CodexVistaPalette {
         muted: 0x566876,
         accent: 0x2147A7,
         secondary: 0x2A657E,
-        cached: 0x6A7297,
-        output: 0xA85E26,
+        cached: 0x666D91,
+        output: 0xA65D26,
         reasoning: 0x2D756A,
         grid: 0xD8E0E7,
         selected: 0xFFFFFF,
@@ -83,10 +83,10 @@ struct CodexVistaPalette {
         primary: 0x303B40,
         muted: 0x5B686A,
         accent: 0x3B4850,
-        secondary: 0x587777,
-        cached: 0x768C8A,
+        secondary: 0x557373,
+        cached: 0x607170,
         output: 0xA33F3B,
-        reasoning: 0x7C714C,
+        reasoning: 0x786E4A,
         grid: 0xD8DDD7,
         selected: 0xFAFAF5,
         selectedText: 0xA33F3B,
@@ -103,8 +103,8 @@ struct CodexVistaPalette {
         muted: 0x47645B,
         accent: 0x21664F,
         secondary: 0x426B87,
-        cached: 0x647991,
-        output: 0xA85D37,
+        cached: 0x5E7288,
+        output: 0xA65C36,
         reasoning: 0x6C6B3A,
         grid: 0xD1E1D8,
         selected: 0xFAFCF8,
@@ -143,9 +143,9 @@ struct CodexVistaPalette {
         muted: 0x775660,
         accent: 0xA14960,
         secondary: 0x936139,
-        cached: 0x7B7199,
-        output: 0x9A6332,
-        reasoning: 0x487C78,
+        cached: 0x72698E,
+        output: 0x986232,
+        reasoning: 0x457773,
         grid: 0xE8D3CC,
         selected: 0xFFFAF4,
         selectedText: 0x963D55,
@@ -203,9 +203,9 @@ struct CodexVistaPalette {
         muted: 0x50676A,
         accent: 0x356B70,
         secondary: 0x876C39,
-        cached: 0x7C929A,
-        output: 0x9A7560,
-        reasoning: 0x6A8067,
+        cached: 0x64767D,
+        output: 0x8E6C58,
+        reasoning: 0x647861,
         grid: 0xDEE8E5,
         selected: 0xFCFDFC,
         selectedText: 0x356B70,
@@ -247,11 +247,11 @@ enum CodexVistaTheme {
         LinearGradient(colors: [color(\.action), color(\.action)], startPoint: .top, endPoint: .bottom)
     }
 
-    static func headingFont(size: CGFloat) -> Font {
-        (isInk || skin == .xianxia) ? .custom("Songti SC", size: size).weight(.semibold) : .system(size: size, weight: .semibold)
+    static func headingFont(size: CGFloat, skin: AppSkinPreference = skin) -> Font {
+        (skin == .ink || skin == .xianxia) ? .custom("Songti SC", size: size).weight(.semibold) : .system(size: size, weight: .semibold)
     }
 
-    static func metricFont(size: CGFloat) -> Font {
+    static func metricFont(size: CGFloat, skin: AppSkinPreference = skin) -> Font {
         switch skin {
         case .ink: .system(size: size, weight: .semibold, design: .serif)
         case .xianxia: .system(size: size, weight: .medium)
@@ -261,7 +261,7 @@ enum CodexVistaTheme {
         }
     }
 
-    static func cornerRadius(_ radius: CGFloat) -> CGFloat {
+    static func cornerRadius(_ radius: CGFloat, skin: AppSkinPreference = skin) -> CGFloat {
         switch skin {
         case .ink: radius * 0.5
         case .standard: radius * 0.72
@@ -692,88 +692,137 @@ struct CodexVistaInkQuota: View {
     }
 }
 
+/// The sample is illustrative; typography, geometry and colors use the same theme tokens as the dashboard.
 struct CodexVistaSkinPreview: View {
     let skin: AppSkinPreference
     let isSelected: Bool
     let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var isFocused: Bool
+    @State private var isHovered = false
+
+    private var schemeLabel: String {
+        switch skin.fixedColorScheme {
+        case .light: "仅浅色"
+        case .dark: "仅深色"
+        default: "浅色 / 深色"
+        }
+    }
 
     var body: some View {
         let palette = CodexVistaPalette.resolve(skin: skin, dark: colorScheme == .dark)
-        let radius: CGFloat = skin == .ink ? 6 : 9
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        if skin == .ink {
-                            Text("墨")
-                                .font(.custom("Songti SC", size: 25))
-                                .foregroundStyle(CodexVistaTheme.swatch(palette.selectedText))
-                        } else if skin == .xianxia {
-                            Circle()
-                                .stroke(CodexVistaTheme.swatch(palette.secondary).opacity(0.35), lineWidth: 0.7)
-                            CodexVistaSword()
-                                .fill(CodexVistaTheme.swatch(palette.accent))
-                                .frame(width: 13, height: 30)
-                        } else if skin == .cyber {
-                            Image(systemName: "cpu")
-                                .font(.system(size: 25, weight: .light))
-                                .foregroundStyle(CodexVistaTheme.swatch(palette.accent))
-                        } else if skin == .celadon || skin == .dusk {
-                            Image(systemName: skin == .celadon ? "water.waves" : "sun.horizon")
-                                .font(.system(size: 25, weight: .light))
-                                .foregroundStyle(CodexVistaTheme.swatch(palette.accent))
-                        } else {
-                            Circle().stroke(CodexVistaTheme.swatch(palette.control), lineWidth: 4)
-                            Circle().trim(from: 0, to: 0.7)
-                                .stroke(CodexVistaTheme.swatch(palette.accent), style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                                .rotationEffect(.degrees(-90))
-                        }
-                    }
-                    .frame(width: 34, height: 34)
-                    VStack(alignment: .leading, spacing: 5) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(CodexVistaTheme.swatch(palette.accent).opacity(0.65))
-                            .frame(width: 72, height: 5)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(CodexVistaTheme.swatch(palette.border))
-                            .frame(width: 100, height: 4)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(CodexVistaTheme.swatch(palette.border))
-                            .frame(width: 86, height: 4)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 14) {
+                    previewGauge(palette)
+                        .frame(width: 48, height: 48)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("剩余额度")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(CodexVistaTheme.swatch(palette.muted))
+                        Text("68%")
+                            .font(CodexVistaTheme.metricFont(size: 26, skin: skin))
+                            .monospacedDigit()
                     }
                     Spacer(minLength: 0)
+                    VStack(spacing: 5) {
+                        ForEach([palette.accent, palette.cached, palette.output, palette.reasoning], id: \.self) { color in
+                            Capsule().fill(CodexVistaTheme.swatch(color))
+                                .frame(width: 16, height: 4)
+                        }
+                    }
                 }
                 .padding(12)
-                .frame(maxWidth: .infinity)
-                .background(CodexVistaTheme.swatch(palette.raised), in: RoundedRectangle(cornerRadius: radius))
+                .frame(maxWidth: .infinity, minHeight: 76)
+                .background(CodexVistaTheme.swatch(palette.raised), in: RoundedRectangle(
+                    cornerRadius: CodexVistaTheme.cornerRadius(10, skin: skin), style: .continuous
+                ))
+                .accessibilityHidden(true)
 
-                HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(skin.title)
-                        .font(skin == .ink ? .custom("Songti SC", size: 14).weight(.semibold) : .system(size: 13, weight: .semibold))
-                    Spacer()
+                        .font(CodexVistaTheme.headingFont(size: 13, skin: skin))
+                    Text(schemeLabel)
+                        .font(.system(size: 10))
+                        .foregroundStyle(CodexVistaTheme.swatch(palette.muted))
+                    Spacer(minLength: 0)
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(CodexVistaTheme.swatch(isSelected ? palette.selectedText : palette.muted))
                 }
                 Text(skin.detail)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(CodexVistaTheme.swatch(palette.muted))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(10)
+            .padding(12)
             .foregroundStyle(CodexVistaTheme.swatch(palette.primary))
-            .background(CodexVistaTheme.swatch(palette.background), in: RoundedRectangle(cornerRadius: 11))
+            .background(CodexVistaTheme.swatch(palette.background), in: shape)
             .overlay {
-                RoundedRectangle(cornerRadius: 11)
-                    .strokeBorder(CodexVistaTheme.swatch(isFocused || isSelected ? palette.selectedText : palette.border), lineWidth: isFocused ? 2 : 1)
+                shape.strokeBorder(
+                    CodexVistaTheme.swatch(isSelected || isHovered ? palette.selectedText : palette.border),
+                    lineWidth: isSelected ? 2 : 1
+                )
+            }
+            .overlay {
+                if isFocused {
+                    shape.inset(by: -3)
+                        .stroke(CodexVistaTheme.swatch(palette.selectedText), lineWidth: 2)
+                }
             }
         }
         .buttonStyle(CodexVistaControlStyle())
         .focused($isFocused)
+        .onHover { isHovered = $0 }
+        .help("\(skin.detail)，\(schemeLabel)；额度为示例")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(skin.title)皮肤")
+        .accessibilityLabel("\(skin.title)皮肤，\(skin.detail)，\(schemeLabel)")
+        .accessibilityValue(isSelected ? "已选中" : "未选中")
         .accessibilityAddTraits(.isButton)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func previewGauge(_ palette: CodexVistaPalette) -> some View {
+        let accent = CodexVistaTheme.swatch(palette.accent)
+        switch skin {
+        case .ink:
+            Text("墨")
+                .font(.custom("Songti SC", size: 26).weight(.medium))
+                .foregroundStyle(CodexVistaTheme.swatch(palette.selectedText))
+                .frame(width: 32, height: 38)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 2)
+                        .strokeBorder(CodexVistaTheme.swatch(palette.selectedText), lineWidth: 1)
+                }
+        case .xianxia:
+            ZStack {
+                Circle().stroke(CodexVistaTheme.swatch(palette.secondary).opacity(0.5), lineWidth: 0.75)
+                CodexVistaSword().fill(accent).frame(width: 16, height: 42)
+            }
+        case .cyber:
+            HStack(spacing: 3) {
+                ForEach(0..<8) { index in
+                    Rectangle()
+                        .fill(index < 5 ? accent : CodexVistaTheme.swatch(palette.control))
+                }
+            }
+            .frame(height: 25)
+        case .standard, .celadon, .dusk:
+            ZStack {
+                Circle().stroke(CodexVistaTheme.swatch(palette.control), lineWidth: 4)
+                Circle().trim(from: 0, to: 0.68)
+                    .stroke(accent, style: StrokeStyle(lineWidth: skin == .dusk ? 3 : 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                if skin == .celadon || skin == .dusk {
+                    Image(systemName: skin == .celadon ? "water.waves" : "sun.horizon")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(accent)
+                }
+            }
+            .padding(3)
+        }
     }
 }
 
@@ -916,6 +965,22 @@ struct CodexVistaGlassSurface: ViewModifier {
                 radius: 8,
                 y: 2
             )
+    }
+}
+
+struct CodexVistaMetricSurface: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: CodexVistaTheme.cornerRadius(12), style: .continuous)
+        content
+            .background(CodexVistaTheme.isInk ? Color.clear : CodexVistaTheme.dashboardSurface, in: shape)
+            .overlay {
+                if contrast == .increased {
+                    shape.strokeBorder(CodexVistaTheme.dashboardMutedText, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            }
     }
 }
 

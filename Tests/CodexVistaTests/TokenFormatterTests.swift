@@ -105,6 +105,11 @@ final class TokenFormatterTests: XCTestCase {
                     (palette.heatText, palette.accent),
                     (0xFFFFFF, palette.action)
                 ]
+                // Token colors are also used for small labels in popovers and legends.
+                for color in [palette.accent, palette.secondary, palette.cached, palette.output, palette.reasoning] {
+                    textPairs.append((color, palette.surface))
+                    textPairs.append((color, palette.raised))
+                }
                 for level in 1...3 {
                     textPairs.append((palette.primary, blend(
                         palette.accent, over: palette.surface, opacity: skin.calendarOpacity(for: level)
