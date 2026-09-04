@@ -349,6 +349,48 @@ final class TokenFormatterTests: XCTestCase {
 
 @MainActor
 final class StatusItemPresentationTests: XCTestCase {
+    func testSummaryPlacementPersistsAndDefaultsToMenuBar() {
+        let suiteName = "SummaryPlacementTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        XCTAssertEqual(SummaryPlacementPreference.load(from: defaults), .menuBar)
+        defaults.set("notch", forKey: AppPreferenceKeys.summaryPlacement)
+        XCTAssertEqual(SummaryPlacementPreference.load(from: defaults), .notch)
+        defaults.set("menuBar", forKey: AppPreferenceKeys.summaryPlacement)
+        XCTAssertEqual(SummaryPlacementPreference.load(from: defaults), .menuBar)
+        defaults.set("unknown", forKey: AppPreferenceKeys.summaryPlacement)
+        XCTAssertEqual(SummaryPlacementPreference.load(from: defaults), .menuBar)
+    }
+
+    func testNotchSummaryUsesGlobalCoordinatesAndStaysBelowCamera() throws {
+        let screen = NSRect(x: -1512, y: 200, width: 1512, height: 982)
+        let frame = try XCTUnwrap(NotchSummaryLayout.frame(
+            screenFrame: screen,
+            topInset: 32,
+            leftArea: NSRect(x: -1512, y: 1150, width: 660, height: 32),
+            rightArea: NSRect(x: -660, y: 1150, width: 660, height: 32)
+        ))
+        XCTAssertEqual(frame.midX, -756)
+        XCTAssertEqual(frame.maxY, screen.maxY - 32)
+        XCTAssertTrue(screen.contains(frame))
+        XCTAssertGreaterThanOrEqual(frame.width, 224)
+    }
+
+    func testNotchSummaryFallsBackForUnobscuredOrUnknownScreens() {
+        let screen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        XCTAssertNil(NotchSummaryLayout.frame(
+            screenFrame: screen, topInset: 0, leftArea: nil, rightArea: nil
+        ))
+        XCTAssertNil(NotchSummaryLayout.frame(
+            screenFrame: screen, topInset: 32, leftArea: nil, rightArea: nil
+        ))
+        XCTAssertNil(NotchSummaryLayout.frame(
+            screenFrame: screen, topInset: 32,
+            leftArea: NSRect(x: 0, y: 1048, width: 960, height: 32),
+            rightArea: NSRect(x: 960, y: 1048, width: 960, height: 32)
+        ))
+    }
+
     func testAppWindowLevelPolicyKeepsSettingsAbovePinnedDashboard() {
         let dashboardLevel = AppWindowLevelPolicy.level(
             for: .dashboard,
@@ -421,7 +463,7 @@ final class StatusItemPresentationTests: XCTestCase {
     }
 
     func testStatusItemRendererAllocatesEnoughWidthForTwoDigitCountdownSuffix() {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .semibold)
         let requiredTextWidth = NSAttributedString(
             string: "24h",
             attributes: [.font: font]

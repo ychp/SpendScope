@@ -11,6 +11,7 @@ enum AppPreferenceKeys {
     static let remindsAtFivePercent = "usageReminders.thresholds.five"
     static let usageReminderCheckpoint = "usageReminders.checkpoint.v1"
     static let showsLivePreview = "menuBar.showsLivePreview"
+    static let summaryPlacement = "menuBar.summaryPlacement"
     static let showsResetCountdown = "menuBar.showsResetCountdown"
     static let quotaDisplay = "menuBar.quotaDisplay"
     static let firstSubscriptionDate = "subscription.firstSubscribedAt"
@@ -154,6 +155,17 @@ enum QuotaDisplayPreference: String, CaseIterable, Identifiable, Sendable {
     case remaining
 
     var id: Self { self }
+}
+
+enum SummaryPlacementPreference: String, CaseIterable, Identifiable, Sendable {
+    case notch
+    case menuBar
+
+    var id: Self { self }
+
+    static func load(from defaults: UserDefaults = .standard) -> Self {
+        Self(rawValue: defaults.string(forKey: AppPreferenceKeys.summaryPlacement) ?? "") ?? .menuBar
+    }
 }
 
 struct MenuBarLabelConfiguration: Equatable, Sendable {

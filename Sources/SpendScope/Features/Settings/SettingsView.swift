@@ -85,6 +85,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKeys.remindsAtTenPercent) private var remindsAtTenPercent = true
     @AppStorage(AppPreferenceKeys.remindsAtFivePercent) private var remindsAtFivePercent = true
     @AppStorage(AppPreferenceKeys.showsLivePreview) private var showsLivePreview = true
+    @AppStorage(AppPreferenceKeys.summaryPlacement) private var summaryPlacementRaw = SummaryPlacementPreference.menuBar.rawValue
     @AppStorage(AppPreferenceKeys.showsResetCountdown) private var showsResetCountdown = true
     @AppStorage(AppPreferenceKeys.quotaDisplay) private var quotaDisplayRaw = QuotaDisplayPreference.remaining.rawValue
     @AppStorage(AppPreferenceKeys.firstSubscriptionDate)
@@ -264,9 +265,20 @@ struct SettingsView: View {
     }
 
     private var statusBarSettings: some View {
-        settingsSection("状态栏") {
+        settingsSection("状态栏与刘海") {
             VStack(spacing: 0) {
-                preferenceRow("实时预览", detail: "在设置中显示状态栏当前效果") {
+                preferenceRow("展示位置", detail: "无刘海屏幕自动使用状态栏") {
+                    segmentedGroup {
+                        selectionSegment("状态栏", isSelected: summaryPlacementRaw == SummaryPlacementPreference.menuBar.rawValue) {
+                            summaryPlacementRaw = SummaryPlacementPreference.menuBar.rawValue
+                        }
+                        selectionSegment("刘海下方", isSelected: summaryPlacementRaw == SummaryPlacementPreference.notch.rawValue) {
+                            summaryPlacementRaw = SummaryPlacementPreference.notch.rawValue
+                        }
+                    }
+                }
+                settingsDivider
+                preferenceRow("实时预览", detail: "显示额度摘要，关闭后仅保留图标") {
                     Toggle("", isOn: $showsLivePreview)
                         .labelsHidden()
                         .toggleStyle(.switch)
@@ -274,20 +286,28 @@ struct SettingsView: View {
 
                 VStack(spacing: 0) {
                     settingsDivider
-                    preferenceRow("预览效果", detail: "与实际状态栏使用同一绘制样式") {
-                        Image(nsImage: StatusItemRenderer().render(
-                            statusItemPresentation,
-                            appearance: previewAppearance
-                        ))
-                        .interpolation(.high)
-                        .frame(maxWidth: .infinity, minHeight: 34)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-                        .accessibilityLabel("SpendScope 状态栏预览")
-                        .accessibilityValue(statusItemPresentation.label)
+                    preferenceRow("预览效果", detail: "与所选位置使用同一绘制样式") {
+                        if summaryPlacementRaw == SummaryPlacementPreference.notch.rawValue {
+                            NotchSummaryView(
+                                presentation: statusItemPresentation,
+                                quotaDisplay: QuotaDisplayPreference(rawValue: quotaDisplayRaw) ?? .remaining
+                            )
+                            .allowsHitTesting(false)
+                        } else {
+                            Image(nsImage: StatusItemRenderer().render(
+                                statusItemPresentation,
+                                appearance: previewAppearance
+                            ))
+                            .interpolation(.high)
+                            .frame(maxWidth: .infinity, minHeight: 34)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                            .accessibilityLabel("SpendScope 状态栏预览")
+                            .accessibilityValue(statusItemPresentation.label)
+                        }
                     }
                     settingsDivider
 
-                    preferenceRow("额度口径", detail: "选择状态栏百分比的统计方式") {
+                    preferenceRow("额度口径", detail: "选择摘要百分比的统计方式") {
                         segmentedGroup {
                             selectionSegment(
                                 "已用量",
@@ -305,7 +325,7 @@ struct SettingsView: View {
                     }
                     settingsDivider
 
-                    preferenceRow("重置倒计时", detail: "控制状态栏及悬浮提示中的倒计时") {
+                    preferenceRow("重置倒计时", detail: "控制摘要及悬浮提示中的倒计时") {
                         Toggle("", isOn: $showsResetCountdown)
                             .labelsHidden()
                             .toggleStyle(.switch)

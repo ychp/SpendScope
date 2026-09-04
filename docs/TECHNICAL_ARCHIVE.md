@@ -356,6 +356,8 @@ Guardian 的“命令权限检查”属于内部任务：其 Token 保留在工�
 
 ### 14.1 菜单栏
 
+摘要展示位置通过 `menuBar.summaryPlacement` 持久化，默认使用状态栏（`menuBar`），未知配置值也回退为状态栏；用户可选择刘海（`notch`）。`NotchSummaryController` 只管理非激活 `NSPanel`，复用 `StatusItemPresentation` 与 `StatusItemRenderer`，不新增数据源。使用 `NSScreen.safeAreaInsets` 和左右辅助区域的全局坐标，将 32 pt 高的摘要放在摄像头下沿；通过屏幕参数变化通知重新定位，无刘海时恢复完整状态栏摘要。有刘海时保留状态栏图标入口，两个入口复用同一个弹窗。每 30 秒重算展示时间，不触发采集；关闭实时预览会隐藏刘海面板。
+
 状态项固定使用 7 天额度，并可配置：
 
 - 已用或剩余百分比。

@@ -48,7 +48,7 @@ enum StatusItemLayoutMetrics {
     static let leadingContentWidth: CGFloat = iconRect.maxX + elementSpacing
     static let richValueWidth: CGFloat = 38
     static let richMetricWidth: CGFloat = 58
-    static let resetTextWidth: CGFloat = 20
+    static let resetTextWidth: CGFloat = 24
     static let richResetWidth: CGFloat = 12 + resetTextWidth + 5
     static let richMetricSpacing: CGFloat = 5
     static let emptyImageWidth: CGFloat = 24
@@ -160,6 +160,17 @@ struct StatusItemPresentation: Equatable {
 }
 
 struct StatusItemRenderer {
+    enum Style {
+        case menuBar
+        case notch
+    }
+
+    var style: Style = .menuBar
+
+    private var primaryColor: NSColor {
+        style == .notch ? NotchSummaryPalette.primary : .labelColor
+    }
+
     func render(_ presentation: StatusItemPresentation, appearance: NSAppearance) -> NSImage {
         var renderedImage: NSImage?
         appearance.performAsCurrentDrawingAppearance {
@@ -197,7 +208,7 @@ struct StatusItemRenderer {
                     metric.label,
                     in: NSRect(x: x, y: 4, width: 17, height: 14),
                     font: .monospacedDigitSystemFont(ofSize: 9.8, weight: .semibold),
-                    color: NSColor.labelColor,
+                    color: primaryColor,
                     alignment: .right
                 )
             }
@@ -231,7 +242,9 @@ struct StatusItemRenderer {
         paletteRole: StatusItemQuotaPaletteRole,
         in rect: NSRect
     ) {
-        let palette = StatusItemQuotaPalette.resolve(paletteRole)
+        let palette = style == .notch
+            ? NotchSummaryPalette.quota
+            : StatusItemQuotaPalette.resolve(paletteRole)
         drawValueBackground(in: rect, palette: palette)
         drawLinearProgress(
             in: rect,
@@ -315,7 +328,7 @@ struct StatusItemRenderer {
     }
 
     private func drawResetCountdown(_ value: String, x: CGFloat) {
-        let color = NSColor.systemBlue
+        let color = style == .notch ? NotchSummaryPalette.countdown : NSColor.systemBlue
         let backgroundRect = NSRect(
             x: x,
             y: 3,
@@ -340,11 +353,11 @@ struct StatusItemRenderer {
             value,
             in: NSRect(
                 x: x + 12,
-                y: 4,
+                y: 3,
                 width: StatusItemLayoutMetrics.resetTextWidth,
-                height: 13
+                height: 16
             ),
-            font: .monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold),
+            font: .monospacedDigitSystemFont(ofSize: 11.5, weight: .semibold),
             color: color,
             alignment: .left
         )
@@ -372,7 +385,7 @@ struct StatusItemRenderer {
 
     private func drawIcon(in rect: NSRect) {
         guard let source = NSImage(named: "MenuBarIcon") else { return }
-        drawTintedImage(source, color: NSColor.labelColor, in: rect)
+        drawTintedImage(source, color: primaryColor, in: rect)
     }
 
     private func drawTintedImage(_ source: NSImage, color: NSColor, in rect: NSRect) {
@@ -400,6 +413,9 @@ final class StatusItemController: NSObject {
     private let updateService: AppUpdateService
     private let defaults: UserDefaults
     private let renderer = StatusItemRenderer()
+    private let notchSummary = NotchSummaryController()
+    private var notchFrame: NSRect?
+    private var refreshTimer: Timer?
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
     private var popover: NSPopover?
@@ -426,7 +442,8 @@ final class StatusItemController: NSObject {
         install()
     }
 
-    deinit {
+    isolated deinit {
+        refreshTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -469,6 +486,15 @@ final class StatusItemController: NSObject {
             name: NSApplication.didBecomeActiveNotification,
             object: NSApp
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenParametersDidChange),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.updateStatusItem() }
+        }
         observeStore()
         updateStatusItem()
     }
@@ -495,6 +521,11 @@ final class StatusItemController: NSObject {
         focusPopoverIfReady()
     }
 
+    @objc private func screenParametersDidChange(_ notification: Notification) {
+        closePopover()
+        updateStatusItem()
+    }
+
     @objc private func statusItemClicked() {
         if popover?.isShown == true {
             closePopover()
@@ -503,8 +534,8 @@ final class StatusItemController: NSObject {
         }
     }
 
-    private func showPopover() {
-        guard let button = statusItem.button else { return }
+    private func showPopover(from anchor: NSView? = nil) {
+        guard let button = anchor ?? statusItem.button else { return }
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
@@ -550,10 +581,47 @@ final class StatusItemController: NSObject {
 
     private func updateStatusItem() {
         guard let button = statusItem.button else { return }
+        let configuration = menuBarConfiguration
+        let nextNotchFrame = SummaryPlacementPreference.load(from: defaults) == .notch
+            && configuration.showsLivePreview
+            ? NSScreen.screens.compactMap { NotchSummaryLayout.frame(on: $0) }.first
+            : nil
+        if nextNotchFrame != notchFrame {
+            closePopover()
+            notchFrame = nextNotchFrame
+        }
+        let fullPresentation = StatusItemPresentation(
+            snapshot: store.snapshot,
+            configuration: configuration
+        )
+        if let notchFrame {
+            notchSummary.update(
+                frame: notchFrame,
+                presentation: fullPresentation,
+                quotaDisplay: configuration.quotaDisplay
+            ) { [weak self] in
+                guard let self else { return }
+                if self.popover?.isShown == true {
+                    self.closePopover()
+                } else {
+                    self.showPopover(from: self.notchSummary.anchorView)
+                }
+            }
+        } else {
+            notchSummary.hide()
+        }
         let presentation = StatusItemPresentation(
             snapshot: store.snapshot,
-            configuration: menuBarConfiguration
+            configuration: notchFrame == nil ? configuration : MenuBarLabelConfiguration(
+                showsLivePreview: false,
+                quotaDisplay: configuration.quotaDisplay,
+                showsFiveHour: false,
+                showsWeekly: true,
+                showsResetCountdown: configuration.showsResetCountdown
+            )
         )
+        button.toolTip = fullPresentation.tooltip
+        button.setAccessibilityValue(fullPresentation.label)
         let appearance = button.effectiveAppearance
         guard presentation != lastPresentation || appearance.name != lastAppearanceName else { return }
 
@@ -561,8 +629,6 @@ final class StatusItemController: NSObject {
         lastAppearanceName = appearance.name
         statusItem.length = presentation.itemLength
         button.image = renderer.render(presentation, appearance: appearance)
-        button.toolTip = presentation.tooltip
-        button.setAccessibilityValue(presentation.label)
     }
 
     private var menuBarConfiguration: MenuBarLabelConfiguration {
