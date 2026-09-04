@@ -1,6 +1,6 @@
 # SpendScope 项目文件结构
 
-更新日期：2026-09-03
+更新日期：2026-09-04
 
 本文档说明仓库中每个目录的职责、重要程度和清理边界。重要程度分为三类：
 
@@ -40,7 +40,7 @@
 | `Data/Dashboard/` | 核心 | 从本地数据库生成看板和会话查询结果 | 统计口径应与存储层一致 |
 | `Data/Storage/` | 核心 | SQLite 连接、迁移、事务、事件、聚合和文件检查点 | 表结构变化必须提供迁移 |
 | `Features/Dashboard/` | 核心 | Token 看板、趋势、日历、活动/项目/模型排行、项目详情窗口、回复调用悬浮面板和费用明细 | 不在 UI 中重复计算业务口径 |
-| `Features/MenuBar/` | 核心 | 菜单栏状态项及其弹窗 | 与 `DashboardStore` 共享状态 |
+| `Features/MenuBar/` | 核心 | 菜单栏状态项、刘海摘要及共用弹窗 | 与 `DashboardStore` 共享状态，不新增采集路径 |
 | `Features/Settings/` | 核心 | 设置窗口、刷新、提醒、数据来源和更新选项 | 新设置需补默认值与持久化 |
 | `Models/` | 核心 | 查询层与界面层共享的数据模型 | 避免放入数据库或 UI 专属逻辑 |
 | `Resources/` | 核心 | App 图标、菜单栏图标和 Codex 图标资源 | 删除会造成资源缺失或构建异常 |
@@ -91,7 +91,7 @@ Features：菜单栏、看板和设置
 - `DashboardQueryServiceTests`、`SessionQueryServiceTests`：周期统计、额度、活动/工作区/模型排行、同目录跨工作区归属、归档工作区名称、Git worktree 合并、推测工作区回退、Guardian 指标过滤、任务排序、回复 Token 与 Skill / 工具归属、费用估算和会话查询。
 - `DashboardStoreTests`：加载、本地增量刷新、自动调度、错误和全局状态协调。
 - `UsageReminderTests`、`AppUpdateServiceTests`：提醒阈值和软件更新校验。
-- `TokenFormatterTests`、`SessionStateReducerTests`：展示格式与会话事实归约。
+- `TokenFormatterTests`、`SessionStateReducerTests`：展示格式、摘要位置偏好、刘海屏坐标与无刘海回退，以及会话事实归约。
 
 数据层、统计层或 SQLite 发生变化时，应运行完整 XCTest，而不是只验证 App 能启动。
 
